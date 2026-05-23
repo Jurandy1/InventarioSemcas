@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import { idbGet, idbSet } from "./db.js";
 
 const XLSX_PATH = `${import.meta.env.BASE_URL}patrimonio_por_unidade.xlsx`;
-const CACHE_KEY = "unidades_v1";
+const CACHE_KEY = "unidades_v2";
 const TTL = 24 * 60 * 60 * 1000;
 
 export async function loadUnidades(forceRefresh = false) {
@@ -22,6 +22,21 @@ export async function loadUnidades(forceRefresh = false) {
   return data;
 }
 
+function parseVal(s) {
+  const match = String(s || "")
+    .trim()
+    .match(/^[\d.,]+/);
+  if (!match) return 0;
+  return parseFloat(match[0].replace(/\./g, "").replace(",", ".")) || 0;
+}
+
+function normalizaTipo(raw) {
+  const v = String(raw || "").toUpperCase().trim();
+  if (v === "INCORPORADO") return "Incorporado";
+  if (v === "DOAÇÃO" || v === "DOACAO") return "Doação";
+  return "Próprio";
+}
+
 export function parseXLSX(wb) {
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
@@ -29,7 +44,6 @@ export function parseXLSX(wb) {
   const units = [];
   let cur = null;
   let hdrs = null;
-  const pv = (s) => parseFloat(String(s || "").split(" ")[0].replace(/\./g, "").replace(",", ".")) || 0;
 
   for (const row of raw) {
     const f = String(row[0] || "").trim();
@@ -46,6 +60,7 @@ export function parseXLSX(wb) {
         const i = hdrs.indexOf(n);
         return i >= 0 ? String(row[i] || "").trim() : "";
       };
+      const nf = g("N.F.").replace(/^[/\s]+$/, "").trim();
       cur.itens.push({
         id: f,
         data: g("Data"),
@@ -54,15 +69,14 @@ export function parseXLSX(wb) {
         marca: g("Marca"),
         fornecedor: g("Fornecedor"),
         empenho: g("Empenho"),
-        nf: g("N.F."),
+        nf,
         dataNF: g("Data N.F."),
-        tipoEntrada: g("Tipo de Entrada"),
-        valor: pv(g("Valor NF/Reavaliado")),
-        valorAtual: pv(g("Valor Atual")),
+        tipoEntrada: normalizaTipo(g("Tipo de Entrada")),
+        valor: parseVal(g("Valor NF/Reavaliado")),
+        valorAtual: parseVal(g("Valor Atual")),
       });
     }
   }
   if (cur?.itens.length) units.push(cur);
   return units;
 }
-

@@ -40,6 +40,9 @@ export default function App() {
   const [globalSearch, setGlobalSearch] = useState("");
   const [globalResults, setGlobalResults] = useState([]);
   const [globalSearching, setGlobalSearching] = useState(false);
+  const [nfSearch, setNfSearch] = useState("");
+  const [nfTipo, setNfTipo] = useState("Todos");
+  const [nfPage, setNfPage] = useState(1);
   const [loginMode, setLoginMode] = useState("login");
   const [ft, setFt] = useState(0);
 
@@ -298,6 +301,16 @@ export default function App() {
   const totalFound = allItens.filter((i) => foundSet.has(i.id)).length;
   const progresso = totalBens > 0 ? Math.round((totalFound / totalBens) * 100) : 0;
 
+  const todosItens = unidades.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeNome: u.nome, unidadeId: u.id })));
+
+  const parseNFDate = (s) => {
+    if (!s) return new Date(0);
+    const parts = String(s).split("/");
+    if (parts.length !== 3) return new Date(0);
+    const [d, m, y] = parts;
+    return new Date(+y, +m - 1, +d);
+  };
+
   const filtered = allItens.filter((i) => {
     const s = search.toLowerCase();
     return !s || i.id.toLowerCase().includes(s) || (i.especie || "").toLowerCase().includes(s) || (i.descricao || "").toLowerCase().includes(s) || (i.fornecedor || "").toLowerCase().includes(s);
@@ -305,14 +318,37 @@ export default function App() {
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
-  const nfMap = allItens.reduce((m, i) => {
-    if (i.nf) {
-      if (!m[i.nf]) m[i.nf] = { nf: i.nf, fornecedor: i.fornecedor, itens: [], total: 0 };
-      m[i.nf].itens.push(i);
-      m[i.nf].total += i.valor || 0;
+  const origemMeta = {
+    Próprio: { bg: "#dbeafe", tx: "#1d4ed8", ico: "🏛️" },
+    Doação: { bg: "#fef3c7", tx: "#92400e", ico: "🎁" },
+    Incorporado: { bg: "#d1fae5", tx: "#065f46", ico: "📋" },
+    Permuta: { bg: "#ede9fe", tx: "#6d28d9", ico: "🔄" },
+  };
+
+  const nfDataMap = {};
+  for (const item of todosItens) {
+    const nf = (item.nf || "").trim();
+    if (!nf) continue;
+    if (!nfDataMap[nf]) {
+      nfDataMap[nf] = {
+        nf,
+        dataNF: item.dataNF || "",
+        fornecedor: item.fornecedor || "",
+        tipoEntrada: item.tipoEntrada || "Próprio",
+        itens: [],
+        valorTotal: 0,
+        valorAtualTotal: 0,
+      };
     }
-    return m;
-  }, {});
+    nfDataMap[nf].itens.push(item);
+    nfDataMap[nf].valorTotal += Number(item.valor || 0) || 0;
+    nfDataMap[nf].valorAtualTotal += Number(item.valorAtual || 0) || 0;
+    if (!nfDataMap[nf].dataNF && item.dataNF) nfDataMap[nf].dataNF = item.dataNF;
+    if (!nfDataMap[nf].fornecedor && item.fornecedor) nfDataMap[nf].fornecedor = item.fornecedor;
+    if (!nfDataMap[nf].tipoEntrada && item.tipoEntrada) nfDataMap[nf].tipoEntrada = item.tipoEntrada;
+  }
+  const nfDataList = Object.values(nfDataMap).sort((a, b) => parseNFDate(b.dataNF) - parseNFDate(a.dataNF));
+  const NF_PER_PAGE = 15;
 
   const inp = { width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" };
   const bp = { background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
@@ -572,7 +608,8 @@ export default function App() {
                           detLocal: f?.localId || "",
                           detObs: f?.obs || "",
                           detMarca: f?.marca || item.marca || "",
-                          detOrigem: f?.origem || "Próprio",
+                          detOrigem: f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
+                          detOrigemLocked: !item.isManual,
                           detExistingUrls: f?.fotoUrls || [],
                           detNewBase64: [],
                         };
@@ -646,7 +683,18 @@ export default function App() {
                     onClick={() => {
                       const u = unidades.find((x) => x.id === item.unidadeId);
                       if (u) saveAtiva(u);
-                      form.current = { detItem: item, detEstado: foundMap[item.id]?.estado || "Bom", detSituacao: foundMap[item.id]?.situacao || "Em uso", detLocal: foundMap[item.id]?.localId || "", detObs: foundMap[item.id]?.obs || "", detMarca: foundMap[item.id]?.marca || item.marca || "", detOrigem: foundMap[item.id]?.origem || "Próprio", detExistingUrls: foundMap[item.id]?.fotoUrls || [], detNewBase64: [] };
+                      form.current = {
+                        detItem: item,
+                        detEstado: foundMap[item.id]?.estado || "Bom",
+                        detSituacao: foundMap[item.id]?.situacao || "Em uso",
+                        detLocal: foundMap[item.id]?.localId || "",
+                        detObs: foundMap[item.id]?.obs || "",
+                        detMarca: foundMap[item.id]?.marca || item.marca || "",
+                        detOrigem: foundMap[item.id]?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
+                        detOrigemLocked: !item.isManual,
+                        detExistingUrls: foundMap[item.id]?.fotoUrls || [],
+                        detNewBase64: [],
+                      };
                       setFt((t) => t + 1);
                       setModal("detalhe");
                     }}
@@ -711,7 +759,18 @@ export default function App() {
                                 <div
                                   key={item.id}
                                   onClick={() => {
-                                    form.current = { detItem: item, detEstado: f?.estado || "Bom", detSituacao: f?.situacao || "Em uso", detLocal: f?.localId || "", detObs: f?.obs || "", detMarca: f?.marca || item.marca || "", detOrigem: f?.origem || "Próprio", detExistingUrls: f?.fotoUrls || [], detNewBase64: [] };
+                                    form.current = {
+                                      detItem: item,
+                                      detEstado: f?.estado || "Bom",
+                                      detSituacao: f?.situacao || "Em uso",
+                                      detLocal: f?.localId || "",
+                                      detObs: f?.obs || "",
+                                      detMarca: f?.marca || item.marca || "",
+                                      detOrigem: f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
+                                      detOrigemLocked: !item.isManual,
+                                      detExistingUrls: f?.fotoUrls || [],
+                                      detNewBase64: [],
+                                    };
                                     setFt((t) => t + 1);
                                     setModal("detalhe");
                                   }}
@@ -759,28 +818,162 @@ export default function App() {
 
           {tab === "nf" && (
             <div>
-              <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>🧾 Notas Fiscais</h2>
-              <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(360px, 1fr))", gap: 10 }}>
-                {Object.values(nfMap).sort((a, b) => b.total - a.total).map((n) => (
-                  <div key={n.nf} style={cd}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                      <div>
-                        <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>NF {n.nf}</p>
-                        <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>{n.fornecedor}</p>
-                      </div>
-                      <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#16a34a" }}>R$ {n.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-                    </div>
-                    <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 6 }}>
-                      {n.itens.slice(0, 5).map((i) => (
-                        <p key={i.id} style={{ margin: "2px 0", fontSize: 11, color: "#374151" }}>
-                          {i.id} — {i.descricao || i.especie}
-                        </p>
-                      ))}
-                      {n.itens.length > 5 && <p style={{ margin: "4px 0 0", fontSize: 11, color: "#94a3b8" }}>+{n.itens.length - 5} mais</p>}
-                    </div>
-                  </div>
-                ))}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>🧾 Notas Fiscais</h2>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>{nfDataList.length} nota(s) no total</p>
+                </div>
               </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "2fr 1fr", gap: 8, marginBottom: 12 }}>
+                <TInput
+                  initial=""
+                  onVal={(v) => {
+                    setNfSearch(v);
+                    setNfPage(1);
+                  }}
+                  placeholder="🔍 Buscar NF ou fornecedor..."
+                  style={inp}
+                />
+                <select
+                  value={nfTipo}
+                  onChange={(e) => {
+                    setNfTipo(e.target.value);
+                    setNfPage(1);
+                  }}
+                  style={inp}
+                >
+                  {["Todos", "Próprio", "Doação", "Incorporado"].map((t) => (
+                    <option key={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              {(() => {
+                const term = nfSearch.toLowerCase().trim();
+                const list = nfDataList.filter((n) => {
+                  const tipoOk = nfTipo === "Todos" || (n.tipoEntrada || "Próprio") === nfTipo;
+                  const txtOk = !term || String(n.nf || "").toLowerCase().includes(term) || String(n.fornecedor || "").toLowerCase().includes(term);
+                  return tipoOk && txtOk;
+                });
+
+                const totalNfPages = Math.max(1, Math.ceil(list.length / NF_PER_PAGE));
+                const curPage = Math.min(nfPage, totalNfPages);
+                const pagedNf = list.slice((curPage - 1) * NF_PER_PAGE, curPage * NF_PER_PAGE);
+
+                return (
+                  <>
+                    <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px" }}>{list.length} nota(s) encontrada(s)</p>
+                    <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(420px, 1fr))", gap: 10 }}>
+                      {pagedNf.map((n) => {
+                        const meta = origemMeta[n.tipoEntrada || "Próprio"] || origemMeta["Próprio"];
+                        const inv = n.itens.filter((i) => foundSet.has(i.id)).length;
+                        const pct = n.itens.length > 0 ? Math.round((inv / n.itens.length) * 100) : 0;
+
+                        return (
+                          <div key={n.nf} style={{ ...cd, border: "1.5px solid #e2e8f0" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", marginBottom: 10 }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                  <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: "#0f172a" }}>NF {n.nf}</p>
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "4px 10px", fontSize: 11, fontWeight: 800, background: meta.bg, color: meta.tx }}>
+                                    {meta.ico} {n.tipoEntrada || "Próprio"}
+                                  </span>
+                                </div>
+                                <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.fornecedor || "—"}</p>
+                                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>
+                                  {n.dataNF || "—"} · {n.itens.length} item(ns)
+                                </p>
+                              </div>
+                              <div style={{ textAlign: "right" }}>
+                                <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#16a34a" }}>R$ {n.valorTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Atual: R$ {n.valorAtualTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                              </div>
+                            </div>
+
+                            <div style={{ marginBottom: 10 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                                <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>Inventário</span>
+                                <span style={{ fontSize: 11, color: "#1e3a8a", fontWeight: 800 }}>
+                                  {inv}/{n.itens.length} ({pct}%)
+                                </span>
+                              </div>
+                              <div style={{ height: 6, borderRadius: 3, background: "#e2e8f0" }}>
+                                <div style={{ height: "100%", borderRadius: 3, background: pct === 100 ? "#16a34a" : "#1e3a8a", width: `${pct}%`, transition: "width .2s" }} />
+                              </div>
+                            </div>
+
+                            <div style={{ display: "grid", gap: 6 }}>
+                              {n.itens.slice(0, 4).map((i) => (
+                                <div
+                                  key={i.id}
+                                  onClick={() => {
+                                    const u = unidades.find((x) => x.id === i.unidadeId);
+                                    if (u) saveAtiva(u);
+                                    const f = foundMap[i.id];
+                                    form.current = {
+                                      detItem: i,
+                                      detEstado: f?.estado || "Bom",
+                                      detSituacao: f?.situacao || "Em uso",
+                                      detLocal: f?.localId || "",
+                                      detObs: f?.obs || "",
+                                      detMarca: f?.marca || i.marca || "",
+                                      detOrigem: f?.origem || (i.isManual ? "Próprio" : i.tipoEntrada || "Próprio"),
+                                      detOrigemLocked: !i.isManual,
+                                      detExistingUrls: f?.fotoUrls || [],
+                                      detNewBase64: [],
+                                    };
+                                    setFt((t) => t + 1);
+                                    setModal("detalhe");
+                                  }}
+                                  style={{
+                                    display: "flex",
+                                    gap: 10,
+                                    alignItems: "center",
+                                    padding: "8px 10px",
+                                    borderRadius: 10,
+                                    cursor: "pointer",
+                                    border: `1px solid ${foundSet.has(i.id) ? "#bbf7d0" : "#e2e8f0"}`,
+                                    background: foundSet.has(i.id) ? "#f0fdf4" : "#fff",
+                                  }}
+                                >
+                                  <span style={{ fontSize: 12 }}>{foundSet.has(i.id) ? "✅" : "⬜"}</span>
+                                  <div style={{ minWidth: 0 }}>
+                                    <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                      {i.descricao || i.especie || "—"}
+                                    </p>
+                                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {i.id} · {i.unidadeNome}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {n.itens.length > 4 && <p style={{ margin: "10px 0 0", fontSize: 11, color: "#94a3b8", textAlign: "center" }}>+{n.itens.length - 4} item(ns) nesta NF</p>}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {totalNfPages > 1 && (
+                      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 16, flexWrap: "wrap" }}>
+                        <button onClick={() => setNfPage(1)} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
+                          «
+                        </button>
+                        <button onClick={() => setNfPage((p) => Math.max(1, p - 1))} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
+                          ‹
+                        </button>
+                        <span style={{ fontSize: 12, color: "#64748b" }}>Pág {curPage}/{totalNfPages}</span>
+                        <button onClick={() => setNfPage((p) => Math.min(totalNfPages, p + 1))} disabled={curPage === totalNfPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
+                          ›
+                        </button>
+                        <button onClick={() => setNfPage(totalNfPages)} disabled={curPage === totalNfPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
+                          »
+                        </button>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -988,13 +1181,49 @@ export default function App() {
             ))}
           </select>
           <Lbl>Origem</Lbl>
-          <div style={{ display: "flex", gap: 8 }}>
-            {["Próprio", "Doação", "Permuta"].map((o) => (
-              <button key={o} onClick={() => { form.current.detOrigem = o; setFt((t) => t + 1); }} style={{ flex: 1, padding: "10px", borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: "pointer", border: `2px solid ${(form.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#e2e8f0"}`, background: (form.current.detOrigem || "Próprio") === o ? "#dbeafe" : "#fff", color: (form.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#6b7280" }}>
-                {o === "Próprio" ? "🏛️ Próprio" : o === "Doação" ? "🎁 Doação" : "🔄 Permuta"}
-              </button>
-            ))}
-          </div>
+          {form.current.detOrigemLocked ? (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: (origemMeta[form.current.detOrigem || "Próprio"] || origemMeta["Próprio"]).bg,
+                color: (origemMeta[form.current.detOrigem || "Próprio"] || origemMeta["Próprio"]).tx,
+                fontSize: 12,
+                fontWeight: 800,
+              }}
+            >
+              <span style={{ fontSize: 14 }}>{(origemMeta[form.current.detOrigem || "Próprio"] || origemMeta["Próprio"]).ico}</span>
+              <span>{form.current.detOrigem || "Próprio"}</span>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 8 }}>
+              {["Próprio", "Doação", "Permuta"].map((o) => (
+                <button
+                  key={o}
+                  onClick={() => {
+                    form.current.detOrigem = o;
+                    setFt((t) => t + 1);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    borderRadius: 9,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    border: `2px solid ${(form.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#e2e8f0"}`,
+                    background: (form.current.detOrigem || "Próprio") === o ? "#dbeafe" : "#fff",
+                    color: (form.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#6b7280",
+                  }}
+                >
+                  {o === "Próprio" ? "🏛️ Próprio" : o === "Doação" ? "🎁 Doação" : "🔄 Permuta"}
+                </button>
+              ))}
+            </div>
+          )}
           <Lbl>Marca (se diferente do relatório)</Lbl>
           <TInput initial={form.current.detMarca} onVal={(v) => uf("detMarca", v)} placeholder="Ex: Tramontina..." style={inp} />
           <Lbl>Estado de Conservação</Lbl>
@@ -1141,4 +1370,3 @@ export default function App() {
     </div>
   );
 }
-
