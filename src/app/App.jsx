@@ -4,10 +4,11 @@ import { Badge } from "../components/Badge.jsx";
 import { CameraModal } from "../components/CameraModal.jsx";
 import { TArea, TInput } from "../components/FormFields.jsx";
 import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js";
-import { fbLogin, fbRegister, clearFirebaseSession, fsDel, fsGet, fsSet, setFirebaseSession } from "../services/firebase.js";
+import { fbLogin, fbRegister, clearFirebaseSession, fsDel, fsGet, fsSet, isFirebaseConfigured, setFirebaseSession } from "../services/firebase.js";
 import { parseXLSXFile } from "../utils/xlsx.js";
 
 export default function App() {
+  const firebaseOk = isFirebaseConfigured();
   const [logado, setLogado] = useState(null);
   const [tab, setTab] = useState("inventario");
   const [unidades, setUnidades] = useState([]);
@@ -58,6 +59,10 @@ export default function App() {
 
   useEffect(() => {
     async function load() {
+      if (!firebaseOk) {
+        setLoading(false);
+        return;
+      }
       try {
         const saved = localStorage.getItem("inv-session");
         if (saved) {
@@ -148,6 +153,10 @@ export default function App() {
   };
 
   const handleLogin = async (email, senha) => {
+    if (!firebaseOk) {
+      setLoginError("Firebase não configurado. Crie um arquivo .env e reinicie o servidor.");
+      return;
+    }
     if (!email?.trim() || !senha?.trim()) {
       setLoginError("Preencha email e senha");
       return;
@@ -362,18 +371,27 @@ export default function App() {
         <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 400 }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>📋 Inventário SEMCAS</h1>
           <p style={{ color: "#94a3b8", fontSize: 13, margin: "6px 0 24px" }}>{loginMode === "login" ? "Acesse sua conta" : "Criar nova conta"}</p>
+          {!firebaseOk && (
+            <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#9a3412" }}>Configuração do Firebase ausente</p>
+              <p style={{ margin: "6px 0 0", fontSize: 11, color: "#9a3412", lineHeight: 1.3 }}>
+                Crie um arquivo <span style={{ fontWeight: 700 }}>.env</span> na raiz do projeto com <span style={{ fontWeight: 700 }}>VITE_FB_API_KEY</span>, <span style={{ fontWeight: 700 }}>VITE_FB_PROJECT_ID</span> e <span style={{ fontWeight: 700 }}>VITE_FB_STORAGE_BUCKET</span>, e reinicie o <span style={{ fontWeight: 700 }}>npm run dev</span>.
+              </p>
+            </div>
+          )}
           <TInput initial="" onVal={(v) => uf("email", v)} type="email" placeholder="Email" style={{ ...inp, marginBottom: 12 }} />
           <TInput initial="" onVal={(v) => uf("senha", v)} type="password" placeholder="Senha (mín. 6 caracteres)" style={{ ...inp, marginBottom: 8 }} />
           {loginError && <p style={{ color: "#dc2626", fontSize: 12, fontWeight: 600, margin: "8px 0" }}>{loginError}</p>}
-          <button onClick={() => handleLogin(gf("email"), gf("senha"))} style={{ ...bp, width: "100%", marginTop: 8 }}>
+          <button disabled={!firebaseOk} onClick={() => handleLogin(gf("email"), gf("senha"))} style={{ ...bp, width: "100%", marginTop: 8, opacity: firebaseOk ? 1 : 0.6, cursor: firebaseOk ? "pointer" : "not-allowed" }}>
             {loginMode === "login" ? "🔐 Entrar" : "📝 Criar conta"}
           </button>
           <button
+            disabled={!firebaseOk}
             onClick={() => {
               setLoginMode(loginMode === "login" ? "register" : "login");
               setLoginError("");
             }}
-            style={{ width: "100%", background: "none", border: "none", color: "#1e3a8a", fontSize: 13, cursor: "pointer", marginTop: 12, fontWeight: 600 }}
+            style={{ width: "100%", background: "none", border: "none", color: "#1e3a8a", fontSize: 13, cursor: firebaseOk ? "pointer" : "not-allowed", marginTop: 12, fontWeight: 600, opacity: firebaseOk ? 1 : 0.6 }}
           >
             {loginMode === "login" ? "Não tem conta? Criar agora" : "Já tem conta? Fazer login"}
           </button>
@@ -1160,4 +1178,3 @@ export default function App() {
     </div>
   );
 }
-

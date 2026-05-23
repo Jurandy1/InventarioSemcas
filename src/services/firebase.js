@@ -1,16 +1,22 @@
-function requireEnv(name, value) {
-  if (!value) throw new Error(`Config ausente: ${name}`);
-  return value;
-}
-
 const FB = {
-  apiKey: requireEnv("VITE_FB_API_KEY", import.meta.env.VITE_FB_API_KEY),
-  projectId: requireEnv("VITE_FB_PROJECT_ID", import.meta.env.VITE_FB_PROJECT_ID),
-  storageBucket: requireEnv("VITE_FB_STORAGE_BUCKET", import.meta.env.VITE_FB_STORAGE_BUCKET),
+  apiKey: import.meta.env.VITE_FB_API_KEY || "",
+  projectId: import.meta.env.VITE_FB_PROJECT_ID || "",
+  storageBucket: import.meta.env.VITE_FB_STORAGE_BUCKET || "",
 };
 
+export function isFirebaseConfigured() {
+  return Boolean(FB.apiKey && FB.projectId && FB.storageBucket);
+}
+
+function assertFirebaseConfigured() {
+  if (!isFirebaseConfigured()) {
+    throw new Error(
+      "Firebase não configurado. Crie um arquivo .env na raiz com VITE_FB_API_KEY, VITE_FB_PROJECT_ID e VITE_FB_STORAGE_BUCKET e reinicie o servidor.",
+    );
+  }
+}
+
 const AUTH_URL = `https://identitytoolkit.googleapis.com/v1/accounts`;
-const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
 
 let authToken = null;
 let authUid = null;
@@ -30,6 +36,7 @@ export function getFirebaseSession() {
 }
 
 export async function fbLogin(email, password) {
+  assertFirebaseConfigured();
   const r = await fetch(`${AUTH_URL}:signInWithPassword?key=${FB.apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -59,6 +66,7 @@ export async function fbLogin(email, password) {
 }
 
 export async function fbRegister(email, password) {
+  assertFirebaseConfigured();
   const r = await fetch(`${AUTH_URL}:signUp?key=${FB.apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -111,7 +119,9 @@ function fromFsDoc(doc) {
 }
 
 export async function fsSet(collection, docId, data) {
+  assertFirebaseConfigured();
   if (!authToken) return;
+  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
   const fields = {};
   for (const k in data) fields[k] = toFsValue(data[k]);
   await fetch(`${FS_URL}/${collection}/${docId}?key=${FB.apiKey}`, {
@@ -122,7 +132,9 @@ export async function fsSet(collection, docId, data) {
 }
 
 export async function fsGet(collection, docId) {
+  assertFirebaseConfigured();
   if (!authToken) return null;
+  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
   const r = await fetch(`${FS_URL}/${collection}/${docId}?key=${FB.apiKey}`, {
     headers: { Authorization: `Bearer ${authToken}` },
   });
@@ -131,7 +143,9 @@ export async function fsGet(collection, docId) {
 }
 
 export async function fsGetAll(collection) {
+  assertFirebaseConfigured();
   if (!authToken) return [];
+  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
   const r = await fetch(`${FS_URL}/${collection}?key=${FB.apiKey}&pageSize=1000`, {
     headers: { Authorization: `Bearer ${authToken}` },
   });
@@ -141,7 +155,9 @@ export async function fsGetAll(collection) {
 }
 
 export async function fsDel(collection, docId) {
+  assertFirebaseConfigured();
   if (!authToken) return;
+  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
   await fetch(`${FS_URL}/${collection}/${docId}?key=${FB.apiKey}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${authToken}` },
