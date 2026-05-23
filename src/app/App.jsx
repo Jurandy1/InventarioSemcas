@@ -349,6 +349,13 @@ export default function App() {
   }
   const nfDataList = Object.values(nfDataMap).sort((a, b) => parseNFDate(b.dataNF) - parseNFDate(a.dataNF));
   const NF_PER_PAGE = 15;
+  const xlsxCorrompidos = todosItens.filter((i) => {
+    const noText = !String(i.descricao || "").trim() && !String(i.especie || "").trim() && !String(i.fornecedor || "").trim() && !String(i.marca || "").trim();
+    const noNums = !(Number(i.valor || 0) || 0) && !(Number(i.valorAtual || 0) || 0);
+    const noDocs = !String(i.nf || "").trim() && !String(i.dataNF || "").trim() && !String(i.empenho || "").trim();
+    const noDate = !String(i.data || "").trim();
+    return noText && noNums && noDocs && noDate;
+  });
 
   const inp = { width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" };
   const bp = { background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
@@ -1035,6 +1042,36 @@ export default function App() {
                   </div>
                 ))}
               </div>
+              {xlsxCorrompidos.length > 0 && (
+                <div style={{ ...cd, border: "1.5px solid #fed7aa", background: "#fff7ed", marginBottom: 16 }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#9a3412" }}>Registros incompletos na planilha (XLSX): {xlsxCorrompidos.length}</p>
+                  <p style={{ margin: "6px 0 0", fontSize: 12, color: "#9a3412", fontWeight: 600, lineHeight: 1.35 }}>
+                    Alguns patrimônios estão com apenas o número preenchido e sem dados (NF, fornecedor, descrição, valores). Isso pode fazer a aba de Notas Fiscais parecer “faltando itens”.
+                  </p>
+                  <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
+                    {xlsxCorrompidos.slice(0, 10).map((i) => (
+                      <div key={`${i.unidadeId}_${i.id}`} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 10px", borderRadius: 10, background: "#fff", border: "1px solid #fed7aa" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: 12, fontWeight: 900, color: "#7c2d12" }}>Nº {i.id}</p>
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#9a3412", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.unidadeNome}</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const u = unidades.find((x) => x.id === i.unidadeId);
+                            if (u) saveAtiva(u);
+                            setTab("inventario");
+                            showT("Abra o item para revisar os dados");
+                          }}
+                          style={{ ...bs, padding: "6px 10px", fontSize: 12 }}
+                        >
+                          Ver
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {xlsxCorrompidos.length > 10 && <p style={{ margin: "8px 0 0", fontSize: 11, color: "#9a3412" }}>Mostrando 10 de {xlsxCorrompidos.length}.</p>}
+                </div>
+              )}
               <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Estado de Conservação</h3>
               <div style={cd}>
                 {(() => {
