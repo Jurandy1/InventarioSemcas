@@ -4,7 +4,7 @@ import { Badge } from "../components/Badge.jsx";
 import { CameraModal } from "../components/CameraModal.jsx";
 import { TArea, TInput } from "../components/FormFields.jsx";
 import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js";
-import { fbLogin, fbRegister, clearFirebaseSession, fsDel, fsGet, fsSet, isFirebaseConfigured, setFirebaseSession } from "../services/firebase.js";
+import { fbLogin, fbRegister, clearFirebaseSession, fsDel, fsGet, fsGetAll, fsSet, getFirebaseSession, isFirebaseConfigured, setFirebaseSession } from "../services/firebase.js";
 import { parseXLSXFile } from "../utils/xlsx.js";
 
 export default function App() {
@@ -39,6 +39,9 @@ export default function App() {
   const form = useRef({});
   const [ft, setFt] = useState(0);
   const fileRef = useRef(null);
+  const [adminUids, setAdminUids] = useState(null);
+  const [inventariantes, setInventariantes] = useState([]);
+  const [inventariantesLoading, setInventariantesLoading] = useState(false);
 
   const [loginError, setLoginError] = useState("");
   const [loginMode, setLoginMode] = useState("login");
@@ -91,9 +94,48 @@ export default function App() {
         if (d.found) setFound(d.found);
         if (d.tombosNE) setTombosNE(d.tombosNE);
         if (d.tombosDup) setTombosDup(d.tombosDup);
+        setAdminUids(Array.isArray(d.adminUids) ? d.adminUids : []);
       }
     } catch {}
   };
+
+  const isAdmin = Array.isArray(adminUids) && adminUids.includes(logado?.uid);
+
+  useEffect(() => {
+    if (!logado) return;
+    if (!Array.isArray(adminUids)) return;
+    if (adminUids.length > 0) return;
+    const next = [logado.uid];
+    setAdminUids(next);
+    saveToFirebase({ adminUids: next });
+  }, [logado?.uid, adminUids]);
+
+  const loadInventariantes = async () => {
+    if (!isAdmin) return;
+    setInventariantesLoading(true);
+    try {
+      const list = await fsGetAll("inventariantes");
+      const norm = (list || []).map((x) => ({
+        uid: x.uid || x._id,
+        email: x.email || "",
+        nome: x.nome || "",
+        ativo: x.ativo !== false,
+        criadoEm: x.criadoEm || "",
+        criadoPor: x.criadoPor || "",
+      }));
+      norm.sort((a, b) => (a.nome || a.email).localeCompare(b.nome || b.email, "pt-BR"));
+      setInventariantes(norm);
+    } catch {
+      setInventariantes([]);
+    } finally {
+      setInventariantesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!logado) return;
+    loadInventariantes();
+  }, [logado?.uid, isAdmin]);
 
   useEffect(() => {
     if (!logado) return;
@@ -177,6 +219,49 @@ export default function App() {
       showT(`Bem-vindo, ${user.nome}!`);
     } catch (err) {
       setLoginError(err.message);
+    }
+  };
+
+  const addInventariante = async () => {
+    if (!isAdmin) return;
+    const nome = gf("invNome").trim();
+    const email = gf("invEmail").trim();
+    const senha = gf("invSenha").trim();
+    if (!email || !email.includes("@")) {
+      showT("Informe um email válido");
+      return;
+    }
+    if (!senha || senha.length < 6) {
+      showT("A senha deve ter pelo menos 6 caracteres");
+      return;
+    }
+    try {
+      const prev = getFirebaseSession();
+      const created = await fbRegister(email, senha);
+      setFirebaseSession(prev);
+      const entry = {
+        uid: created.uid,
+        email: created.email,
+        nome: nome || created.nome || created.email.split("@")[0].toUpperCase(),
+        ativo: true,
+        criadoEm: new Date().toISOString(),
+        criadoPor: logado?.uid || "",
+        criadoPorNome: logado?.nome || "",
+      };
+      await fsSet("inventariantes", created.uid, entry);
+      setInventariantes((p) => {
+        const next = [...p.filter((x) => x.uid !== entry.uid), entry];
+        next.sort((a, b) => (a.nome || a.email).localeCompare(b.nome || b.email, "pt-BR"));
+        return next;
+      });
+      form.current.invNome = "";
+      form.current.invEmail = "";
+      form.current.invSenha = "";
+      setFt((t) => t + 1);
+      setModal(null);
+      showT("Inventariante cadastrado");
+    } catch (err) {
+      showT(err.message || "Erro ao cadastrar inventariante");
     }
   };
 
@@ -930,6 +1015,47 @@ export default function App() {
                   );
                 })()}
               </div>
+
+              {isAdmin && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: THEME.text }}>Inventariantes</h3>
+                    <button
+                      onClick={() => {
+                        form.current.invNome = "";
+                        form.current.invEmail = "";
+                        form.current.invSenha = "";
+                        setFt((t) => t + 1);
+                        setModal("addInventariante");
+                      }}
+                      style={{ ...bp, fontSize: 12 }}
+                    >
+                      Adicionar
+                    </button>
+                  </div>
+                  <div style={cd}>
+                    {inventariantesLoading ? (
+                      <p style={{ margin: 0, fontSize: 12, color: THEME.muted, fontWeight: 700 }}>Carregando...</p>
+                    ) : inventariantes.length === 0 ? (
+                      <p style={{ margin: 0, fontSize: 12, color: THEME.muted, fontWeight: 700 }}>Nenhum inventariante cadastrado.</p>
+                    ) : (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {inventariantes.map((u) => (
+                          <div key={u.uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: THEME.radiusSm, border: `1px solid ${THEME.border}`, background: THEME.surface }}>
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: THEME.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.nome || "—"}</p>
+                              <p style={{ margin: "2px 0 0", fontSize: 12, color: THEME.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</p>
+                            </div>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: u.ativo ? THEME.success : THEME.muted, border: `1px solid ${THEME.border}`, background: THEME.bg, padding: "4px 8px", borderRadius: 999 }}>
+                              {u.ativo ? "ATIVO" : "INATIVO"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1247,6 +1373,27 @@ export default function App() {
                 Finalizar
               </button>
             </div>
+          </div>
+        </Overlay>
+      )}
+
+      {modal === "addInventariante" && (
+        <Overlay onClose={() => setModal(null)}>
+          <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 900, color: THEME.text }}>Adicionar inventariante</h2>
+          <p style={{ margin: "0 0 14px", fontSize: 12, color: THEME.muted, fontWeight: 700 }}>Cria um novo usuário para acesso ao sistema.</p>
+          <Lbl>Nome</Lbl>
+          <TInput key={"invNome_" + ft} initial={gf("invNome")} onVal={(v) => uf("invNome", v)} placeholder="Nome completo" style={inp} />
+          <Lbl>Email *</Lbl>
+          <TInput key={"invEmail_" + ft} initial={gf("invEmail")} onVal={(v) => uf("invEmail", v)} type="email" placeholder="email@dominio" style={inp} />
+          <Lbl>Senha *</Lbl>
+          <TInput key={"invSenha_" + ft} initial={gf("invSenha")} onVal={(v) => uf("invSenha", v)} type="password" placeholder="Mínimo 6 caracteres" style={inp} />
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
+              Cancelar
+            </button>
+            <button onClick={addInventariante} style={{ ...bp, flex: 1 }}>
+              Salvar
+            </button>
           </div>
         </Overlay>
       )}
