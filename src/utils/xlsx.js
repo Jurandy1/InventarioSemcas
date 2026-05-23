@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import { idbGet, idbSet } from "./db.js";
 
 const XLSX_PATH = `${import.meta.env.BASE_URL}patrimonio_por_unidade.xlsx`;
-const CACHE_KEY = "unidades_v2";
+const CACHE_KEY = "unidades_v3";
 const TTL = 24 * 60 * 60 * 1000;
 
 export async function loadUnidades(forceRefresh = false) {
@@ -23,9 +23,7 @@ export async function loadUnidades(forceRefresh = false) {
 }
 
 function parseVal(s) {
-  const match = String(s || "")
-    .trim()
-    .match(/^[\d.,]+/);
+  const match = String(s || "").trim().match(/^[\d.,]+/);
   if (!match) return 0;
   return parseFloat(match[0].replace(/\./g, "").replace(",", ".")) || 0;
 }
@@ -35,6 +33,21 @@ function normalizaTipo(raw) {
   if (v === "INCORPORADO") return "Incorporado";
   if (v === "DOAÇÃO" || v === "DOACAO") return "Doação";
   return "Próprio";
+}
+
+function parseValPair(valorRaw, valorAtualRaw) {
+  const nums = String(valorRaw || "").match(/\d{1,3}(?:\.\d{3})*,\d{2}/g) || [];
+  const valor = nums.length > 0 ? parseFloat(nums[0].replace(/\./g, "").replace(",", ".")) : parseVal(valorRaw);
+
+  if (valorAtualRaw && String(valorAtualRaw).trim() && String(valorAtualRaw).trim() !== "/") {
+    return [valor, parseVal(valorAtualRaw)];
+  }
+
+  if (nums.length >= 2) {
+    return [valor, parseFloat(nums[1].replace(/\./g, "").replace(",", "."))];
+  }
+
+  return [valor, 0];
 }
 
 export function parseXLSX(wb) {
@@ -60,20 +73,25 @@ export function parseXLSX(wb) {
         const i = hdrs.indexOf(n);
         return i >= 0 ? String(row[i] || "").trim() : "";
       };
+
       const nf = g("N.F.").replace(/^[/\s]+$/, "").trim();
+      const [valor, valorAtual] = parseValPair(g("Valor NF/Reavaliado"), g("Valor Atual"));
+      const descricaoRaw = g("Descrição");
+      const especieRaw = g("Espécie");
+
       cur.itens.push({
         id: f,
         data: g("Data"),
-        especie: g("Espécie"),
-        descricao: g("Descrição"),
+        especie: especieRaw,
+        descricao: descricaoRaw,
         marca: g("Marca"),
         fornecedor: g("Fornecedor"),
         empenho: g("Empenho"),
         nf,
         dataNF: g("Data N.F."),
         tipoEntrada: normalizaTipo(g("Tipo de Entrada")),
-        valor: parseVal(g("Valor NF/Reavaliado")),
-        valorAtual: parseVal(g("Valor Atual")),
+        valor,
+        valorAtual,
       });
     }
   }
