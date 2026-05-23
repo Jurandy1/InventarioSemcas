@@ -5,11 +5,16 @@ import { fileURLToPath } from "node:url";
 
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
-  envDir: projectRoot,
-  plugins: [react()],
-  server: {
-    host: true,
-    port: 5173,
-  },
+export default defineConfig(({ command }) => {
+  const repoName = "InventarioSemcas";
+
+  return {
+    envDir: projectRoot,
+    base: command === "build" ? `/${repoName}/` : "/",
+    plugins: [react()],
+    server: {
+      host: true,
+      port: 5173,
+    },
+  };
 });
