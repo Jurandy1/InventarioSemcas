@@ -95,6 +95,8 @@ export default function App() {
         if (d.tombosNE) setTombosNE(d.tombosNE);
         if (d.tombosDup) setTombosDup(d.tombosDup);
         setAdminUids(Array.isArray(d.adminUids) ? d.adminUids : []);
+      } else {
+        setAdminUids([]);
       }
     } catch {}
   };
@@ -984,7 +986,24 @@ export default function App() {
 
           {tab === "dash" && (
             <div>
-              <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 800, color: THEME.text }}>Painel</h2>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 10, margin: "0 0 16px" }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: THEME.text }}>Painel</h2>
+                  <p style={{ margin: "6px 0 0", fontSize: 12, color: THEME.muted, fontWeight: 700 }}>
+                    {adminUids === null ? "Carregando permissões..." : isAdmin ? "Perfil: Administrador" : "Perfil: Usuário"}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    loadFirebaseData();
+                    loadInventariantes();
+                    showT("Atualizado");
+                  }}
+                  style={{ ...bs, fontSize: 12 }}
+                >
+                  Atualizar
+                </button>
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
                 {[{ l: "Total", v: totalBens, c: THEME.primary }, { l: "Encontrados", v: totalFound, c: THEME.success }, { l: "Pendentes", v: totalBens - totalFound, c: THEME.danger }, { l: "Progresso", v: `${progresso}%`, c: THEME.primary }].map((s) => (
                   <div key={s.l} style={cd}>
@@ -1016,46 +1035,53 @@ export default function App() {
                 })()}
               </div>
 
-              {isAdmin && (
-                <div style={{ marginTop: 16 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: THEME.text }}>Inventariantes</h3>
-                    <button
-                      onClick={() => {
-                        form.current.invNome = "";
-                        form.current.invEmail = "";
-                        form.current.invSenha = "";
-                        setFt((t) => t + 1);
-                        setModal("addInventariante");
-                      }}
-                      style={{ ...bp, fontSize: 12 }}
-                    >
-                      Adicionar
-                    </button>
-                  </div>
-                  <div style={cd}>
-                    {inventariantesLoading ? (
-                      <p style={{ margin: 0, fontSize: 12, color: THEME.muted, fontWeight: 700 }}>Carregando...</p>
-                    ) : inventariantes.length === 0 ? (
-                      <p style={{ margin: 0, fontSize: 12, color: THEME.muted, fontWeight: 700 }}>Nenhum inventariante cadastrado.</p>
-                    ) : (
-                      <div style={{ display: "grid", gap: 8 }}>
-                        {inventariantes.map((u) => (
-                          <div key={u.uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: THEME.radiusSm, border: `1px solid ${THEME.border}`, background: THEME.surface }}>
-                            <div style={{ minWidth: 0 }}>
-                              <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: THEME.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.nome || "—"}</p>
-                              <p style={{ margin: "2px 0 0", fontSize: 12, color: THEME.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</p>
-                            </div>
-                            <span style={{ fontSize: 11, fontWeight: 800, color: u.ativo ? THEME.success : THEME.muted, border: `1px solid ${THEME.border}`, background: THEME.bg, padding: "4px 8px", borderRadius: 999 }}>
-                              {u.ativo ? "ATIVO" : "INATIVO"}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+              <div style={{ marginTop: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: THEME.text }}>Inventariantes</h3>
+                  <button
+                    disabled={!isAdmin}
+                    onClick={() => {
+                      if (!isAdmin) return;
+                      form.current.invNome = "";
+                      form.current.invEmail = "";
+                      form.current.invSenha = "";
+                      setFt((t) => t + 1);
+                      setModal("addInventariante");
+                    }}
+                    style={{ ...bp, fontSize: 12, opacity: isAdmin ? 1 : 0.6, cursor: isAdmin ? "pointer" : "not-allowed" }}
+                  >
+                    Adicionar
+                  </button>
                 </div>
-              )}
+                <div style={cd}>
+                  {!isAdmin ? (
+                    <div>
+                      <p style={{ margin: 0, fontSize: 12, color: THEME.text, fontWeight: 800 }}>Acesso restrito</p>
+                      <p style={{ margin: "6px 0 0", fontSize: 12, color: THEME.muted, fontWeight: 700, lineHeight: 1.35 }}>
+                        Apenas o administrador pode cadastrar inventariantes. Entre com a conta administradora (normalmente a primeira conta que acessou o sistema) e volte ao Painel.
+                      </p>
+                    </div>
+                  ) : inventariantesLoading ? (
+                    <p style={{ margin: 0, fontSize: 12, color: THEME.muted, fontWeight: 700 }}>Carregando...</p>
+                  ) : inventariantes.length === 0 ? (
+                    <p style={{ margin: 0, fontSize: 12, color: THEME.muted, fontWeight: 700 }}>Nenhum inventariante cadastrado.</p>
+                  ) : (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {inventariantes.map((u) => (
+                        <div key={u.uid} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: THEME.radiusSm, border: `1px solid ${THEME.border}`, background: THEME.surface }}>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: THEME.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.nome || "—"}</p>
+                            <p style={{ margin: "2px 0 0", fontSize: 12, color: THEME.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{u.email}</p>
+                          </div>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: u.ativo ? THEME.success : THEME.muted, border: `1px solid ${THEME.border}`, background: THEME.bg, padding: "4px 8px", borderRadius: 999 }}>
+                            {u.ativo ? "ATIVO" : "INATIVO"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
