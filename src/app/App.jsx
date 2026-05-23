@@ -7,6 +7,27 @@ import { clearFirebaseSession, fsDel, fsGet, fsGetAll, fsSet, isFirebaseConfigur
 import { uploadPhotos, isStorageOk as isCloudinaryOk, deletePhoto } from "../services/storage.js";
 import { loadUnidades } from "../utils/xlsx.js";
 
+const CATEGORY_DEFS = [
+  { name: "Cadeiras", icon: "🪑", re: /CADEIRA|POLTRONA|LONGARINA|ASSENTO/ },
+  { name: "Mesas", icon: "🪞", re: /^MESA|BANCADA|BALCÃO/ },
+  { name: "Armários", icon: "🗄️", re: /ARMÁRI|ARMARIO|ARQUIVO|ESTANTE|GAVETEIRO|RACK|PRATELEIRA|ROUPEIRO/ },
+  { name: "Informática", icon: "💻", re: /NOTEBOOK|COMPUTADOR|MICROCOMPUTADOR|CPU|LAPTOP|TABLET|DESKTOP|SCANNER|IMPRESSORA|MULTIFUNCIONAL|MONITOR|FRAGMENTADORA/ },
+  { name: "TV / AV", icon: "📺", re: /TELEVISOR|TV |PROJETOR|TELÃO|DISPLAY|TELA/ },
+  { name: "Climatização", icon: "❄️", re: /AR CONDICIONADO|VENTILADOR|CLIMATIZADOR|EXAUSTOR|SPLIT|PURIFICADOR/ },
+  { name: "Rede / TI", icon: "🔌", re: /CÂMERA|CAMERA|ROTEADOR|SWITCH|NOBREAK|ESTABILIZADOR|SERVIDOR|HUB|MICROFONE|CAIXA AMPLIF/ },
+  { name: "Cozinha", icon: "🍳", re: /LIQUIDIFICADOR|GELADEIRA|FOGÃO|MICROONDAS|CAFETEIRA|BEBEDOURO|FREEZER|FORNO|FILTRO|REFRIGERADOR|FOGAO/ },
+  { name: "Saúde", icon: "🏥", re: /CAMA |MACA|COLCHÃO|BERÇO|BERCE/ },
+  { name: "Outros", icon: "📦", re: null },
+];
+
+function getCategoryGroup(especie) {
+  const e = String(especie || "").toUpperCase();
+  for (const c of CATEGORY_DEFS) {
+    if (c.re && c.re.test(e)) return c.name;
+  }
+  return "Outros";
+}
+
 export default function App() {
   const firebaseOk = isFirebaseConfigured();
   const isProd = import.meta.env.PROD;
@@ -35,6 +56,8 @@ export default function App() {
   const [itensFilterCat, setItensFilterCat] = useState("Todas");
   const [itensFilterEst, setItensFilterEst] = useState("Todos");
   const [itensFilterOrig, setItensFilterOrig] = useState("Todas");
+  const [itensFilterUnit, setItensFilterUnit] = useState("Todas");
+  const [itensFilterStatus, setItensFilterStatus] = useState("Todos");
   const [itensPage, setItensPage] = useState(1);
   const [loginError, setLoginError] = useState("");
   const [globalSearch, setGlobalSearch] = useState("");
@@ -716,111 +739,383 @@ export default function App() {
           )}
 
           {tab === "itens" && (
-            <div>
-              <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>🪑 Itens</h2>
-              {(() => {
-                const categorias = ["Todas", ...Array.from(new Set(allItens.map((i) => i.especie || "OUTROS"))).sort()];
+            (() => {
+              const IPER = 24;
+              const base = todosItens;
+
+              const catCounts = (() => {
+                const m = { Todas: base.length };
+                for (const i of base) {
+                  const g = getCategoryGroup(i.especie);
+                  m[g] = (m[g] || 0) + 1;
+                }
+                return m;
+              })();
+
+              const unitOptions = unidades.map((u) => ({
+                id: u.id,
+                label: u.nome.replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 50),
+              }));
+
+              const filteredItens = base.filter((i) => {
+                const q = itensSearch.toLowerCase().trim();
+                if (itensFilterCat !== "Todas" && getCategoryGroup(i.especie) !== itensFilterCat) return false;
+                if (itensFilterEst !== "Todos" && foundMap[i.id]?.estado !== itensFilterEst) return false;
+                if (itensFilterUnit !== "Todas" && i.unidadeId !== itensFilterUnit) return false;
+                if (itensFilterStatus === "Inventariados" && !foundSet.has(i.id)) return false;
+                if (itensFilterStatus === "Pendentes" && foundSet.has(i.id)) return false;
+                if (
+                  q &&
+                  !(
+                    i.id.toLowerCase().includes(q) ||
+                    (i.descricao || "").toLowerCase().includes(q) ||
+                    (i.especie || "").toLowerCase().includes(q) ||
+                    (i.marca || "").toLowerCase().includes(q) ||
+                    (i.fornecedor || "").toLowerCase().includes(q) ||
+                    (i.nf || "").toLowerCase().includes(q)
+                  )
+                )
+                  return false;
+                return true;
+              });
+
+              const totalPages = Math.max(1, Math.ceil(filteredItens.length / IPER));
+              const curPage = Math.min(itensPage, totalPages);
+              const paged = filteredItens.slice((curPage - 1) * IPER, curPage * IPER);
+
+              const CatBtn = ({ name, icon, count }) => {
+                const active = itensFilterCat === name;
                 return (
-                  <>
-                    <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "2fr 1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-                      <TInput initial="" onVal={(v) => { setItensSearch(v); setItensPage(1); }} placeholder="🔍 Buscar item..." style={inp} />
-                      <select value={itensFilterCat} onChange={(e) => { setItensFilterCat(e.target.value); setItensPage(1); }} style={inp}>
-                        {categorias.map((c) => (
-                          <option key={c}>{c}</option>
-                        ))}
-                      </select>
-                      <select value={itensFilterEst} onChange={(e) => { setItensFilterEst(e.target.value); setItensPage(1); }} style={inp}>
-                        <option>Todos</option>
+                  <button
+                    onClick={() => {
+                      setItensFilterCat(name);
+                      setItensPage(1);
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      width: "100%",
+                      background: active ? "#1e3a8a" : "transparent",
+                      color: active ? "#fff" : "#374151",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "8px 10px",
+                      fontSize: 13,
+                      fontWeight: active ? 700 : 500,
+                      cursor: "pointer",
+                      marginBottom: 2,
+                      textAlign: "left",
+                    }}
+                  >
+                    <span style={{ fontSize: 16, lineHeight: 1 }}>{icon}</span>
+                    <span style={{ flex: 1 }}>{name}</span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        background: active ? "rgba(255,255,255,.2)" : "#e2e8f0",
+                        color: active ? "#fff" : "#64748b",
+                        borderRadius: 99,
+                        padding: "1px 6px",
+                        minWidth: 26,
+                        textAlign: "center",
+                      }}
+                    >
+                      {count || 0}
+                    </span>
+                  </button>
+                );
+              };
+
+              const ItemCard = ({ item }) => {
+                const f = foundMap[item.id];
+                const foto = f?.fotoUrls?.[0];
+                const isF = !!f;
+                const catDef = CATEGORY_DEFS.find((c) => getCategoryGroup(item.especie) === c.name) || CATEGORY_DEFS[CATEGORY_DEFS.length - 1];
+
+                return (
+                  <div
+                    onClick={() => {
+                      const u = unidades.find((x) => x.id === item.unidadeId);
+                      if (u) saveAtiva(u);
+                      form.current = {
+                        detItem: item,
+                        detEstado: f?.estado || "Bom",
+                        detSituacao: f?.situacao || "Em uso",
+                        detLocal: f?.localId || "",
+                        detObs: f?.obs || "",
+                        detMarca: f?.marca || item.marca || "",
+                        detOrigem: f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
+                        detOrigemLocked: !item.isManual,
+                        detExistingUrls: f?.fotoUrls || [],
+                        detNewBase64: [],
+                      };
+                      setFt((t) => t + 1);
+                      setModal("detalhe");
+                    }}
+                    style={{
+                      ...cd,
+                      cursor: "pointer",
+                      padding: 0,
+                      overflow: "hidden",
+                      border: `1.5px solid ${isF ? "#bbf7d0" : "#e2e8f0"}`,
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "100%",
+                        height: 140,
+                        flexShrink: 0,
+                        position: "relative",
+                        background: foto ? "#000" : isF ? "#f0fdf4" : "#f8fafc",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {foto ? (
+                        <img src={foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                          <span style={{ fontSize: 36, opacity: isF ? 0.6 : 0.25 }}>{catDef.icon}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: isF ? "#16a34a" : "#94a3b8", letterSpacing: ".05em" }}>{isF ? "✅ SEM FOTO" : "📷 PENDENTE"}</span>
+                        </div>
+                      )}
+                      <div style={{ position: "absolute", top: 6, right: 6, background: isF ? "#16a34a" : "#f59e0b", borderRadius: 99, width: 10, height: 10, boxShadow: "0 0 0 2px #fff" }} />
+                      {(f?.fotoUrls?.length || 0) > 1 && (
+                        <div style={{ position: "absolute", bottom: 6, right: 6, background: "rgba(0,0,0,.55)", color: "#fff", borderRadius: 99, fontSize: 10, fontWeight: 700, padding: "2px 7px" }}>
+                          📷 {f.fotoUrls.length}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ padding: "10px 12px 12px", flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+                      <p
+                        style={{
+                          margin: 0,
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: "#0f172a",
+                          lineHeight: 1.3,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                        }}
+                      >
+                        {item.descricao || item.especie || "—"}
+                      </p>
+                      <p style={{ margin: 0, fontSize: 10, color: "#64748b", fontWeight: 600 }}>Nº {item.id}</p>
+                      <p style={{ margin: "1px 0 0", fontSize: 10, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {item.unidadeNome?.replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 38)}
+                      </p>
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
+                        {isF ? (
+                          <>
+                            <Badge label={f.estado} c={EC[f.estado]} />
+                            {item.tipoEntrada && item.tipoEntrada !== "Próprio" && (
+                              <Badge label={item.tipoEntrada} c={item.tipoEntrada === "Doação" ? { bg: "#fef3c7", tx: "#92400e" } : { bg: "#d1fae5", tx: "#065f46" }} />
+                            )}
+                          </>
+                        ) : (
+                          <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
+                        )}
+                      </div>
+                      <p style={{ margin: "4px 0 0", fontSize: 11, color: "#059669", fontWeight: 700 }}>R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  </div>
+                );
+              };
+
+              return (
+                <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                  {!isMob && (
+                    <div style={{ width: 196, flexShrink: 0, background: "#fff", borderRadius: 12, padding: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06)", position: "sticky", top: 80, maxHeight: "calc(100vh - 100px)", overflowY: "auto" }}>
+                      <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em" }}>Categoria</p>
+                      <CatBtn name="Todas" icon="🗂️" count={catCounts.Todas} />
+                      {CATEGORY_DEFS.map((c) => (
+                        <CatBtn key={c.name} name={c.name} icon={c.icon} count={catCounts[c.name] || 0} />
+                      ))}
+                      <hr style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "12px 0 10px" }} />
+                      <p style={{ margin: "0 0 8px", fontSize: 11, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em" }}>Status</p>
+                      {["Todos", "Inventariados", "Pendentes"].map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => {
+                            setItensFilterStatus(s);
+                            setItensPage(1);
+                          }}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            textAlign: "left",
+                            background: itensFilterStatus === s ? "#1e3a8a" : "transparent",
+                            color: itensFilterStatus === s ? "#fff" : "#374151",
+                            border: "none",
+                            borderRadius: 8,
+                            padding: "7px 10px",
+                            fontSize: 12,
+                            fontWeight: itensFilterStatus === s ? 700 : 500,
+                            cursor: "pointer",
+                            marginBottom: 2,
+                          }}
+                        >
+                          {s === "Todos" ? "📋 Todos" : s === "Inventariados" ? "✅ Inventariados" : "⏳ Pendentes"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                      <div>
+                        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>🪑 Itens</h2>
+                        <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>
+                          {filteredItens.length.toLocaleString("pt-BR")} item(s)
+                          {itensFilterCat !== "Todas" ? ` · ${itensFilterCat}` : ""}
+                          {itensFilterStatus !== "Todos" ? ` · ${itensFilterStatus}` : ""}
+                        </p>
+                      </div>
+                      {isMob && (
+                        <div style={{ width: "100%", display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
+                          {[{ name: "Todas", icon: "🗂️" }, ...CATEGORY_DEFS].map((c) => (
+                            <button
+                              key={c.name}
+                              onClick={() => {
+                                setItensFilterCat(c.name);
+                                setItensPage(1);
+                              }}
+                              style={{
+                                flexShrink: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 4,
+                                background: itensFilterCat === c.name ? "#1e3a8a" : "#f1f5f9",
+                                color: itensFilterCat === c.name ? "#fff" : "#374151",
+                                border: "none",
+                                borderRadius: 99,
+                                padding: "5px 10px",
+                                fontSize: 11,
+                                fontWeight: 700,
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              <span>{c.icon}</span> {c.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "2fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
+                      <TInput
+                        initial=""
+                        onVal={(v) => {
+                          setItensSearch(v);
+                          setItensPage(1);
+                        }}
+                        placeholder="🔍 Buscar descrição, Nº, marca, NF..."
+                        style={inp}
+                      />
+                      <select
+                        value={itensFilterEst}
+                        onChange={(e) => {
+                          setItensFilterEst(e.target.value);
+                          setItensPage(1);
+                        }}
+                        style={inp}
+                      >
+                        <option value="Todos">Estado: Todos</option>
                         {ESTADOS.map((e) => (
                           <option key={e}>{e}</option>
                         ))}
                       </select>
-                      <select value={itensFilterOrig} onChange={(e) => { setItensFilterOrig(e.target.value); setItensPage(1); }} style={inp}>
-                        <option>Todas</option>
-                        <option>Próprio</option>
-                        <option>Doação</option>
-                        <option>Permuta</option>
+                      <select
+                        value={itensFilterUnit}
+                        onChange={(e) => {
+                          setItensFilterUnit(e.target.value);
+                          setItensPage(1);
+                        }}
+                        style={inp}
+                      >
+                        <option value="Todas">Unidade: Todas</option>
+                        {unitOptions.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
-                    {(() => {
-                      const filteredItens = allItens.filter((item) => {
-                        const s = itensSearch.toLowerCase();
-                        const f = foundMap[item.id];
-                        return (
-                          (!s || item.id.toLowerCase().includes(s) || (item.especie || "").toLowerCase().includes(s) || (item.descricao || "").toLowerCase().includes(s) || (item.marca || "").toLowerCase().includes(s)) &&
-                          (itensFilterCat === "Todas" || (item.especie || "OUTROS") === itensFilterCat) &&
-                          (itensFilterEst === "Todos" || f?.estado === itensFilterEst) &&
-                          (itensFilterOrig === "Todas" || (f?.origem || "Próprio") === itensFilterOrig)
-                        );
-                      });
-                      const itensTotalPages = Math.ceil(filteredItens.length / PER_PAGE);
-                      const pagedItens = filteredItens.slice((itensPage - 1) * PER_PAGE, itensPage * PER_PAGE);
-                      return (
-                        <>
-                          <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px" }}>{filteredItens.length} item(s) encontrado(s)</p>
-                          <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
-                            {pagedItens.map((item) => {
-                              const f = foundMap[item.id];
-                              const ph = f?.fotoUrls?.[0];
-                              return (
-                                <div
-                                  key={item.id}
-                                  onClick={() => {
-                                    form.current = {
-                                      detItem: item,
-                                      detEstado: f?.estado || "Bom",
-                                      detSituacao: f?.situacao || "Em uso",
-                                      detLocal: f?.localId || "",
-                                      detObs: f?.obs || "",
-                                      detMarca: f?.marca || item.marca || "",
-                                      detOrigem: f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
-                                      detOrigemLocked: !item.isManual,
-                                      detExistingUrls: f?.fotoUrls || [],
-                                      detNewBase64: [],
-                                    };
-                                    setFt((t) => t + 1);
-                                    setModal("detalhe");
-                                  }}
-                                  style={{ ...cd, cursor: "pointer", padding: 0, overflow: "hidden" }}
-                                >
-                                  {ph ? <img src={ph} alt="" style={{ width: "100%", height: 140, objectFit: "cover", display: "block" }} /> : <div style={{ width: "100%", height: 140, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, color: "#94a3b8" }}><span style={{ fontSize: 32 }}>📷</span><span style={{ fontSize: 10, fontWeight: 600 }}>SEM FOTO</span></div>}
-                                  <div style={{ padding: 12 }}>
-                                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{item.descricao || item.especie || "—"}</p>
-                                    <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Nº {item.id}</p>
-                                    <p style={{ margin: "0 0 6px", fontSize: 11, color: "#94a3b8" }}>{item.marca || foundMap[item.id]?.marca || "Sem marca"} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-                                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                                      {f ? (
-                                        <>
-                                          <Badge label={f.estado} c={EC[f.estado]} />
-                                          <Badge label={f.origem || "Próprio"} c={f.origem === "Doação" ? { bg: "#fef3c7", tx: "#92400e" } : { bg: "#dbeafe", tx: "#1d4ed8" }} />
-                                        </>
-                                      ) : (
-                                        <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          {itensTotalPages > 1 && (
-                            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 16 }}>
-                              <button onClick={() => setItensPage((p) => Math.max(1, p - 1))} disabled={itensPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                                ‹
-                              </button>
-                              <span style={{ fontSize: 12, color: "#64748b" }}>Pág {itensPage}/{itensTotalPages}</span>
-                              <button onClick={() => setItensPage((p) => Math.min(itensTotalPages, p + 1))} disabled={itensPage === itensTotalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                                ›
-                              </button>
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </>
-                );
-              })()}
-            </div>
+
+                    {isMob && (
+                      <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                        {["Todos", "Inventariados", "Pendentes"].map((s) => (
+                          <button
+                            key={s}
+                            onClick={() => {
+                              setItensFilterStatus(s);
+                              setItensPage(1);
+                            }}
+                            style={{
+                              flex: 1,
+                              background: itensFilterStatus === s ? "#1e3a8a" : "#f1f5f9",
+                              color: itensFilterStatus === s ? "#fff" : "#374151",
+                              border: "none",
+                              borderRadius: 8,
+                              padding: "7px 4px",
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            {s === "Todos" ? "Todos" : s === "Inventariados" ? "✅ Inventariados" : "⏳ Pendentes"}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {paged.length === 0 ? (
+                      <div style={{ ...cd, textAlign: "center", padding: 48 }}>
+                        <p style={{ fontSize: 40, margin: "0 0 8px" }}>🔍</p>
+                        <p style={{ color: "#94a3b8", margin: 0 }}>Nenhum item encontrado com esses filtros.</p>
+                      </div>
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: isMob ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+                        {paged.map((item) => (
+                          <ItemCard key={`${item.unidadeId}_${item.id}`} item={item} />
+                        ))}
+                      </div>
+                    )}
+
+                    {totalPages > 1 && (
+                      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 16, flexWrap: "wrap" }}>
+                        <button onClick={() => setItensPage(1)} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
+                          «
+                        </button>
+                        <button onClick={() => setItensPage((p) => Math.max(1, p - 1))} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
+                          ‹
+                        </button>
+                        <span style={{ fontSize: 12, color: "#64748b" }}>
+                          Pág {curPage}/{totalPages} · {filteredItens.length.toLocaleString("pt-BR")} itens
+                        </span>
+                        <button onClick={() => setItensPage((p) => Math.min(totalPages, p + 1))} disabled={curPage === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
+                          ›
+                        </button>
+                        <button onClick={() => setItensPage(totalPages)} disabled={curPage === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
+                          »
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()
           )}
 
           {tab === "nf" && (
