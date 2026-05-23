@@ -9,6 +9,7 @@ import { parseXLSXFile } from "../utils/xlsx.js";
 
 export default function App() {
   const firebaseOk = isFirebaseConfigured();
+  const isProd = import.meta.env.PROD;
   const [logado, setLogado] = useState(null);
   const [tab, setTab] = useState("inventario");
   const [unidades, setUnidades] = useState([]);
@@ -154,7 +155,11 @@ export default function App() {
 
   const handleLogin = async (email, senha) => {
     if (!firebaseOk) {
-      setLoginError("Firebase não configurado. Crie um arquivo .env e reinicie o servidor.");
+      setLoginError(
+        isProd
+          ? "Firebase não configurado no deploy. Configure os secrets do GitHub Actions e faça um redeploy."
+          : "Firebase não configurado. Crie um arquivo .env e reinicie o servidor.",
+      );
       return;
     }
     if (!email?.trim() || !senha?.trim()) {
@@ -375,7 +380,15 @@ export default function App() {
             <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: 12, marginBottom: 12 }}>
               <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#9a3412" }}>Configuração do Firebase ausente</p>
               <p style={{ margin: "6px 0 0", fontSize: 11, color: "#9a3412", lineHeight: 1.3 }}>
-                Crie um arquivo <span style={{ fontWeight: 700 }}>.env</span> na raiz do projeto com <span style={{ fontWeight: 700 }}>VITE_FB_API_KEY</span>, <span style={{ fontWeight: 700 }}>VITE_FB_PROJECT_ID</span> e <span style={{ fontWeight: 700 }}>VITE_FB_STORAGE_BUCKET</span>, e reinicie o <span style={{ fontWeight: 700 }}>npm run dev</span>.
+                {isProd ? (
+                  <>
+                    Configure os secrets do GitHub Actions: <span style={{ fontWeight: 700 }}>VITE_FB_API_KEY</span>, <span style={{ fontWeight: 700 }}>VITE_FB_PROJECT_ID</span> e <span style={{ fontWeight: 700 }}>VITE_FB_STORAGE_BUCKET</span>, e faça um redeploy no GitHub Pages.
+                  </>
+                ) : (
+                  <>
+                    Crie um arquivo <span style={{ fontWeight: 700 }}>.env</span> na raiz do projeto com <span style={{ fontWeight: 700 }}>VITE_FB_API_KEY</span>, <span style={{ fontWeight: 700 }}>VITE_FB_PROJECT_ID</span> e <span style={{ fontWeight: 700 }}>VITE_FB_STORAGE_BUCKET</span>, e reinicie o <span style={{ fontWeight: 700 }}>npm run dev</span>.
+                  </>
+                )}
               </p>
             </div>
           )}

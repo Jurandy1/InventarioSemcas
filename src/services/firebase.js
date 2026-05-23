@@ -10,8 +10,11 @@ export function isFirebaseConfigured() {
 
 function assertFirebaseConfigured() {
   if (!isFirebaseConfigured()) {
+    const msg = import.meta.env.PROD
+      ? "Firebase não configurado no deploy. Configure os secrets do GitHub Actions: VITE_FB_API_KEY, VITE_FB_PROJECT_ID e VITE_FB_STORAGE_BUCKET e faça um redeploy."
+      : "Firebase não configurado. Crie um arquivo .env na raiz com VITE_FB_API_KEY, VITE_FB_PROJECT_ID e VITE_FB_STORAGE_BUCKET e reinicie o servidor.";
     throw new Error(
-      "Firebase não configurado. Crie um arquivo .env na raiz com VITE_FB_API_KEY, VITE_FB_PROJECT_ID e VITE_FB_STORAGE_BUCKET e reinicie o servidor.",
+      msg,
     );
   }
 }
