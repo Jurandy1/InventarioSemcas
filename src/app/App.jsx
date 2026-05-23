@@ -184,12 +184,12 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      setUploadStatus("📊 Lendo arquivo...");
+      setUploadStatus("Lendo arquivo...");
       const data = await file.arrayBuffer();
       const wb = XLSX.read(data);
       const parsed = parseXLSXFile(wb);
       if (!parsed.length) {
-        setUploadStatus("❌ Nenhuma unidade encontrada");
+        setUploadStatus("Nenhuma unidade encontrada");
         return;
       }
       parsed.forEach((u) => {
@@ -201,7 +201,7 @@ export default function App() {
       setModal(null);
       showT(`✓ ${parsed.length} unidade(s), ${parsed.reduce((s, u) => s + u.itens.length, 0)} itens!`);
     } catch (err) {
-      setUploadStatus("❌ " + err.message);
+      setUploadStatus(err.message);
     }
     e.target.value = "";
   };
@@ -347,39 +347,89 @@ export default function App() {
     return m;
   }, {});
 
+  const THEME = {
+    bg: "#f4f6f9",
+    surface: "#ffffff",
+    border: "#d5dde8",
+    text: "#0b1220",
+    muted: "#526173",
+    primary: "#0b2e59",
+    primaryHover: "#0a396d",
+    danger: "#b42318",
+    dangerHover: "#8a1c12",
+    success: "#067647",
+    warningBg: "#fffaeb",
+    warningBorder: "#fedf89",
+    warningText: "#7a2e0e",
+    radius: 10,
+    radiusSm: 8,
+    shadow: "0 1px 2px rgba(16,24,40,.06), 0 2px 8px rgba(16,24,40,.08)",
+  };
+
   const inp = {
     width: "100%",
-    border: "1.5px solid #d1d5db",
-    borderRadius: 9,
-    padding: "10px 13px",
+    border: `1px solid ${THEME.border}`,
+    borderRadius: THEME.radiusSm,
+    padding: "10px 12px",
     fontSize: 14,
-    fontFamily: "inherit",
+    fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
     boxSizing: "border-box",
     outline: "none",
+    color: THEME.text,
+    background: THEME.surface,
   };
-  const bp = { background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
-  const bs = { background: "#f1f5f9", color: "#334155", border: "1px solid #cbd5e1", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" };
-  const cd = { background: "#fff", borderRadius: 12, padding: 16, boxShadow: "0 1px 3px rgba(0,0,0,.06)" };
+  const bp = {
+    background: THEME.primary,
+    color: "#fff",
+    border: "1px solid transparent",
+    borderRadius: THEME.radiusSm,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+  const bs = {
+    background: THEME.surface,
+    color: THEME.text,
+    border: `1px solid ${THEME.border}`,
+    borderRadius: THEME.radiusSm,
+    padding: "10px 14px",
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: "pointer",
+  };
+  const cd = {
+    background: THEME.surface,
+    borderRadius: THEME.radius,
+    padding: 16,
+    boxShadow: THEME.shadow,
+    border: `1px solid ${THEME.border}`,
+  };
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f1f5f9" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: THEME.bg }}>
         <style>{`@keyframes sp{to{transform:rotate(360deg)}}`}</style>
-        <div style={{ width: 40, height: 40, border: "4px solid #e2e8f0", borderTopColor: "#1e3a8a", borderRadius: "50%", animation: "sp .8s linear infinite" }} />
+        <div style={{ width: 40, height: 40, border: `4px solid ${THEME.border}`, borderTopColor: THEME.primary, borderRadius: "50%", animation: "sp .8s linear infinite" }} />
       </div>
     );
   }
 
   if (!logado) {
     return (
-      <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#1e3a8a,#1e40af)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-        <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 400 }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700 }}>📋 Inventário SEMCAS</h1>
-          <p style={{ color: "#94a3b8", fontSize: 13, margin: "6px 0 24px" }}>{loginMode === "login" ? "Acesse sua conta" : "Criar nova conta"}</p>
+      <div style={{ minHeight: "100vh", background: THEME.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ width: "100%", maxWidth: 420 }}>
+          <div style={{ background: THEME.surface, borderRadius: THEME.radius, border: `1px solid ${THEME.border}`, boxShadow: THEME.shadow, overflow: "hidden" }}>
+            <div style={{ background: THEME.primary, color: "#fff", padding: "16px 18px" }}>
+              <p style={{ margin: 0, fontSize: 14, fontWeight: 800, letterSpacing: 0.2 }}>INVENTÁRIO SEMCAS</p>
+              <p style={{ margin: "4px 0 0", fontSize: 12, opacity: 0.9 }}>Sistema de Inventário Patrimonial</p>
+            </div>
+            <div style={{ padding: 18 }}>
+              <p style={{ color: THEME.muted, fontSize: 13, margin: "2px 0 16px", fontWeight: 600 }}>{loginMode === "login" ? "Acesso ao sistema" : "Criar nova conta"}</p>
           {!firebaseOk && (
-            <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 12, padding: 12, marginBottom: 12 }}>
-              <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#9a3412" }}>Configuração do Firebase ausente</p>
-              <p style={{ margin: "6px 0 0", fontSize: 11, color: "#9a3412", lineHeight: 1.3 }}>
+            <div style={{ background: THEME.warningBg, border: `1px solid ${THEME.warningBorder}`, borderRadius: THEME.radiusSm, padding: 12, marginBottom: 12 }}>
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: THEME.warningText }}>Configuração do Firebase ausente</p>
+              <p style={{ margin: "6px 0 0", fontSize: 11, color: THEME.warningText, lineHeight: 1.35 }}>
                 {isProd ? (
                   <>
                     Configure os secrets do GitHub Actions: <span style={{ fontWeight: 700 }}>VITE_FB_API_KEY</span>, <span style={{ fontWeight: 700 }}>VITE_FB_PROJECT_ID</span> e <span style={{ fontWeight: 700 }}>VITE_FB_STORAGE_BUCKET</span>, e faça um redeploy no GitHub Pages.
@@ -396,7 +446,7 @@ export default function App() {
           <TInput initial="" onVal={(v) => uf("senha", v)} type="password" placeholder="Senha (mín. 6 caracteres)" style={{ ...inp, marginBottom: 8 }} />
           {loginError && <p style={{ color: "#dc2626", fontSize: 12, fontWeight: 600, margin: "8px 0" }}>{loginError}</p>}
           <button disabled={!firebaseOk} onClick={() => handleLogin(gf("email"), gf("senha"))} style={{ ...bp, width: "100%", marginTop: 8, opacity: firebaseOk ? 1 : 0.6, cursor: firebaseOk ? "pointer" : "not-allowed" }}>
-            {loginMode === "login" ? "🔐 Entrar" : "📝 Criar conta"}
+            {loginMode === "login" ? "Entrar" : "Criar conta"}
           </button>
           <button
             disabled={!firebaseOk}
@@ -404,10 +454,13 @@ export default function App() {
               setLoginMode(loginMode === "login" ? "register" : "login");
               setLoginError("");
             }}
-            style={{ width: "100%", background: "none", border: "none", color: "#1e3a8a", fontSize: 13, cursor: firebaseOk ? "pointer" : "not-allowed", marginTop: 12, fontWeight: 600, opacity: firebaseOk ? 1 : 0.6 }}
+            style={{ width: "100%", background: "none", border: "none", color: THEME.primary, fontSize: 13, cursor: firebaseOk ? "pointer" : "not-allowed", marginTop: 12, fontWeight: 700, opacity: firebaseOk ? 1 : 0.6 }}
           >
             {loginMode === "login" ? "Não tem conta? Criar agora" : "Já tem conta? Fazer login"}
           </button>
+            </div>
+          </div>
+          <p style={{ margin: "12px 2px 0", fontSize: 11, color: THEME.muted }}>Uso restrito a usuários autorizados.</p>
         </div>
       </div>
     );
@@ -450,20 +503,20 @@ export default function App() {
   );
 
   const navs = [
-    { id: "inventario", icon: "📦", l: "Inventário" },
-    { id: "itens", icon: "🪑", l: "Itens" },
-    { id: "nf", icon: "🧾", l: "Notas Fiscais" },
-    { id: "tombos", icon: "🔖", l: "Tombos" },
-    { id: "dash", icon: "📊", l: "Dashboard" },
-    { id: "locais", icon: "📍", l: "Locais" },
+    { id: "inventario", l: "Inventário" },
+    { id: "itens", l: "Itens" },
+    { id: "nf", l: "Notas Fiscais" },
+    { id: "tombos", l: "Tombos" },
+    { id: "dash", l: "Painel" },
+    { id: "locais", l: "Locais" },
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
-      <div style={{ background: "#1e3a8a", color: "#fff", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 200 }}>
+    <div style={{ minHeight: "100vh", background: THEME.bg }}>
+      <div style={{ background: THEME.primary, color: "#fff", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 200 }}>
         <div>
-          <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>📋 Inventário SEMCAS</p>
-          <p style={{ margin: 0, fontSize: 11, opacity: 0.7 }}>{logado.nome}{unidadeAtiva ? ` · ${unidadeAtiva.nome}` : ""}</p>
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 800, letterSpacing: 0.2 }}>INVENTÁRIO SEMCAS</p>
+          <p style={{ margin: 0, fontSize: 11, opacity: 0.85 }}>{logado.nome}{unidadeAtiva ? ` · ${unidadeAtiva.nome}` : ""}</p>
         </div>
         <button
           onClick={() => {
@@ -473,7 +526,7 @@ export default function App() {
               localStorage.removeItem("inv-session");
             } catch {}
           }}
-          style={{ background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}
+          style={{ background: "rgba(255,255,255,.12)", color: "#fff", border: "1px solid rgba(255,255,255,.22)", borderRadius: THEME.radiusSm, padding: "7px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}
         >
           Sair
         </button>
@@ -481,14 +534,28 @@ export default function App() {
 
       <div style={{ display: "flex", maxWidth: 1400, margin: "0 auto" }}>
         {!isMob && (
-          <div style={{ width: 210, background: "#fff", borderRight: "1px solid #e2e8f0", padding: 16, flexShrink: 0 }}>
+          <div style={{ width: 230, background: THEME.surface, borderRight: `1px solid ${THEME.border}`, padding: 16, flexShrink: 0 }}>
             {navs.map((n) => (
               <button
                 key={n.id}
                 onClick={() => setTab(n.id)}
-                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: tab === n.id ? "#1e3a8a" : "transparent", color: tab === n.id ? "#fff" : "#374151", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", marginBottom: 4, textAlign: "left" }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  width: "100%",
+                  background: tab === n.id ? "#eef3fb" : "transparent",
+                  color: tab === n.id ? THEME.primary : THEME.text,
+                  border: `1px solid ${tab === n.id ? "#dbe7fb" : "transparent"}`,
+                  borderRadius: THEME.radiusSm,
+                  padding: "10px 12px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  marginBottom: 6,
+                  textAlign: "left",
+                }}
               >
-                {n.icon} {n.l}
+                {n.l}
               </button>
             ))}
           </div>
@@ -498,7 +565,7 @@ export default function App() {
           {tab === "inventario" && !unidadeAtiva && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>📦 Selecionar Unidade</h2>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: THEME.text }}>Selecionar Unidade</h2>
                 <button
                   onClick={() => {
                     setUploadStatus("");
@@ -506,14 +573,14 @@ export default function App() {
                   }}
                   style={{ ...bp, fontSize: 12 }}
                 >
-                  📎 Importar XLSX
+                  Importar XLSX
                 </button>
               </div>
-              <TInput initial="" onVal={(v) => setUnidadeSearch(v)} placeholder="🔍 Buscar unidade..." style={{ ...inp, marginBottom: 12 }} />
+              <TInput initial="" onVal={(v) => setUnidadeSearch(v)} placeholder="Buscar unidade..." style={{ ...inp, marginBottom: 12 }} />
               {unidades.length === 0 ? (
                 <div style={{ ...cd, textAlign: "center", padding: 40 }}>
-                  <p style={{ fontSize: 48 }}>📎</p>
-                  <p style={{ color: "#94a3b8" }}>Importe o arquivo XLSX com os dados patrimoniais</p>
+                  <p style={{ margin: 0, fontSize: 13, color: THEME.muted, fontWeight: 700 }}>Nenhuma unidade carregada</p>
+                  <p style={{ margin: "8px 0 0", fontSize: 12, color: THEME.muted }}>Importe um arquivo XLSX com os dados patrimoniais.</p>
                 </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))", gap: 10 }}>
@@ -550,13 +617,13 @@ export default function App() {
                       setFt((t) => t + 1);
                       setModal("manual");
                     }}
-                    style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#10b981" }}
+                    style={{ ...bp, fontSize: 11, padding: "6px 12px", background: THEME.success }}
                   >
                     + Manual
                   </button>
                   {totalFound > 0 && (
-                    <button onClick={() => setModal("finalizar")} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#dc2626" }}>
-                      ✓ Finalizar
+                    <button onClick={() => setModal("finalizar")} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: THEME.danger }}>
+                      Finalizar
                     </button>
                   )}
                   <button
@@ -573,14 +640,14 @@ export default function App() {
               <div style={{ ...cd, marginBottom: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                   <span style={{ fontSize: 12, fontWeight: 600 }}>Progresso</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#1e3a8a" }}>{totalFound}/{totalBens}</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: THEME.primary }}>{totalFound}/{totalBens}</span>
                 </div>
-                <div style={{ height: 6, borderRadius: 3, background: "#e2e8f0" }}>
-                  <div style={{ height: "100%", background: progresso === 100 ? "#16a34a" : "#1e3a8a", borderRadius: 3, width: `${progresso}%` }} />
+                <div style={{ height: 6, borderRadius: 4, background: THEME.border }}>
+                  <div style={{ height: "100%", background: progresso === 100 ? THEME.success : THEME.primary, borderRadius: 4, width: `${progresso}%` }} />
                 </div>
               </div>
 
-              <TInput initial="" onVal={(v) => { setSearch(v); setPage(1); }} placeholder="🔍 Buscar Nº, espécie, descrição..." style={{ ...inp, marginBottom: 8 }} />
+              <TInput initial="" onVal={(v) => { setSearch(v); setPage(1); }} placeholder="Buscar nº, espécie, descrição..." style={{ ...inp, marginBottom: 8 }} />
 
               <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px, 1fr))", gap: 10 }}>
                 {paged.map((item) => {
@@ -596,13 +663,13 @@ export default function App() {
                         setFt((t) => t + 1);
                         setModal("detalhe");
                       }}
-                      style={{ ...cd, cursor: "pointer", border: `1.5px solid ${isF ? "#bbf7d0" : "#e2e8f0"}`, display: "flex", gap: 12 }}
+                      style={{ ...cd, cursor: "pointer", borderColor: isF ? "#b7e4c7" : THEME.border, display: "flex", gap: 12 }}
                     >
                       {ph ? (
                         <img src={ph} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
                       ) : (
-                        <div style={{ width: 56, height: 56, borderRadius: 8, background: isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
-                          {isF ? "✅" : "📷"}
+                        <div style={{ width: 56, height: 56, borderRadius: 8, background: isF ? "#ecfdf3" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, letterSpacing: 0.6, flexShrink: 0, color: isF ? THEME.success : THEME.muted }}>
+                          {isF ? "OK" : "FOTO"}
                         </div>
                       )}
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -647,13 +714,13 @@ export default function App() {
 
           {tab === "itens" && (
             <div>
-              <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>🪑 Itens</h2>
+              <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 800, color: THEME.text }}>Itens</h2>
               {(() => {
                 const categorias = ["Todas", ...Array.from(new Set(allItens.map((i) => i.especie || "OUTROS"))).sort()];
                 return (
                   <>
                     <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "2fr 1fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
-                      <TInput initial="" onVal={(v) => { setItensSearch(v); setItensPage(1); }} placeholder="🔍 Buscar item..." style={inp} />
+                      <TInput initial="" onVal={(v) => { setItensSearch(v); setItensPage(1); }} placeholder="Buscar item..." style={inp} />
                       <select value={itensFilterCat} onChange={(e) => { setItensFilterCat(e.target.value); setItensPage(1); }} style={inp}>
                         {categorias.map((c) => (
                           <option key={c}>{c}</option>
@@ -712,9 +779,8 @@ export default function App() {
                                   {ph ? (
                                     <img src={ph} alt="" style={{ width: "100%", height: 140, objectFit: "cover", display: "block" }} />
                                   ) : (
-                                    <div style={{ width: "100%", height: 140, background: "#f1f5f9", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, color: "#94a3b8" }}>
-                                      <span style={{ fontSize: 32 }}>📷</span>
-                                      <span style={{ fontSize: 10, fontWeight: 600 }}>SEM FOTO</span>
+                                    <div style={{ width: "100%", height: 140, background: THEME.bg, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, color: THEME.muted }}>
+                                      <span style={{ fontSize: 10, fontWeight: 900, letterSpacing: 0.8 }}>SEM IMAGEM</span>
                                     </div>
                                   )}
                                   <div style={{ padding: 12 }}>
@@ -758,7 +824,7 @@ export default function App() {
 
           {tab === "nf" && (
             <div>
-              <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>🧾 Notas Fiscais</h2>
+              <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 800, color: THEME.text }}>Notas Fiscais</h2>
               <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(360px, 1fr))", gap: 10 }}>
                 {Object.values(nfMap)
                   .sort((a, b) => b.total - a.total)
@@ -767,17 +833,17 @@ export default function App() {
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
                         <div>
                           <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>NF {n.nf}</p>
-                          <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>{n.fornecedor}</p>
+                          <p style={{ margin: "2px 0 0", fontSize: 12, color: THEME.muted }}>{n.fornecedor}</p>
                         </div>
-                        <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#16a34a" }}>R$ {n.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                        <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: THEME.success }}>R$ {n.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                       </div>
-                      <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: 6 }}>
+                      <div style={{ borderTop: `1px solid ${THEME.border}`, paddingTop: 8 }}>
                         {n.itens.slice(0, 5).map((i) => (
                           <p key={i.id} style={{ margin: "2px 0", fontSize: 11, color: "#374151" }}>
                             {i.id} — {i.descricao || i.especie}
                           </p>
                         ))}
-                        {n.itens.length > 5 && <p style={{ margin: "4px 0 0", fontSize: 11, color: "#94a3b8" }}>+{n.itens.length - 5} mais</p>}
+                        {n.itens.length > 5 && <p style={{ margin: "6px 0 0", fontSize: 11, color: THEME.muted }}>+{n.itens.length - 5} mais</p>}
                       </div>
                     </div>
                   ))}
@@ -787,27 +853,26 @@ export default function App() {
 
           {tab === "tombos" && (
             <div>
-              <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>🔖 Tombos</h2>
+              <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 800, color: THEME.text }}>Tombos</h2>
               <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
                 <button onClick={() => setTombosTab("ne")} style={{ ...(tombosTab === "ne" ? bp : bs), fontSize: 12 }}>
-                  ❌ Não Encontrados ({tombosNE.length})
+                  Não encontrados ({tombosNE.length})
                 </button>
                 <button onClick={() => setTombosTab("dup")} style={{ ...(tombosTab === "dup" ? bp : bs), fontSize: 12 }}>
-                  🔄 Duplicados ({tombosDup.length})
+                  Duplicados ({tombosDup.length})
                 </button>
               </div>
               {tombosTab === "ne" &&
                 (tombosNE.length === 0 ? (
                   <div style={{ ...cd, textAlign: "center", padding: 40 }}>
-                    <p style={{ fontSize: 48 }}>✅</p>
-                    <p style={{ color: "#94a3b8" }}>Nenhum</p>
+                    <p style={{ margin: 0, fontSize: 13, color: THEME.muted, fontWeight: 800 }}>Nenhum registro</p>
                   </div>
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(360px, 1fr))", gap: 10 }}>
                     {tombosNE.map((i, idx) => (
-                      <div key={idx} style={{ ...cd, border: "1.5px solid #fca5a5" }}>
-                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#dc2626" }}>{i.descricao || i.especie}</p>
-                        <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Nº {i.id} · {i.unidade}</p>
+                      <div key={idx} style={{ ...cd, borderColor: "#f3b8b8" }}>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: THEME.danger }}>{i.descricao || i.especie}</p>
+                        <p style={{ margin: "4px 0 0", fontSize: 11, color: THEME.muted }}>Nº {i.id} · {i.unidade}</p>
                       </div>
                     ))}
                   </div>
@@ -815,16 +880,16 @@ export default function App() {
               {tombosTab === "dup" &&
                 (tombosDup.length === 0 ? (
                   <div style={{ ...cd, textAlign: "center", padding: 40 }}>
-                    <p style={{ fontSize: 48 }}>🔄</p>
-                    <p style={{ color: "#94a3b8" }}>Detecção automática ao importar relatórios</p>
+                    <p style={{ margin: 0, fontSize: 13, color: THEME.muted, fontWeight: 800 }}>Nenhum registro</p>
+                    <p style={{ margin: "8px 0 0", fontSize: 12, color: THEME.muted }}>Aparece quando há duplicidade ao importar relatórios.</p>
                   </div>
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(360px, 1fr))", gap: 10 }}>
                     {tombosDup.map((i, idx) => (
-                      <div key={idx} style={{ ...cd, border: "1.5px solid #c084fc" }}>
-                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#7c3aed" }}>{i.descricao || i.especie}</p>
-                        <p style={{ fontSize: 11, color: "#dc2626" }}>Pertence: {i.unidadeOrigem}</p>
-                        <p style={{ fontSize: 11, color: "#16a34a" }}>Encontrado: {i.unidadeEncontrada}</p>
+                      <div key={idx} style={{ ...cd, borderColor: "#c7d2fe" }}>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: THEME.primary }}>{i.descricao || i.especie}</p>
+                        <p style={{ margin: "6px 0 0", fontSize: 11, color: THEME.danger }}>Pertence: {i.unidadeOrigem}</p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: THEME.success }}>Encontrado: {i.unidadeEncontrada}</p>
                       </div>
                     ))}
                   </div>
@@ -834,12 +899,12 @@ export default function App() {
 
           {tab === "dash" && (
             <div>
-              <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>📊 Dashboard</h2>
+              <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 800, color: THEME.text }}>Painel</h2>
               <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
-                {[{ l: "Total", v: totalBens, c: "#1e3a8a" }, { l: "Encontrados", v: totalFound, c: "#16a34a" }, { l: "Pendentes", v: totalBens - totalFound, c: "#dc2626" }, { l: "Progresso", v: `${progresso}%`, c: "#7c3aed" }].map((s) => (
+                {[{ l: "Total", v: totalBens, c: THEME.primary }, { l: "Encontrados", v: totalFound, c: THEME.success }, { l: "Pendentes", v: totalBens - totalFound, c: THEME.danger }, { l: "Progresso", v: `${progresso}%`, c: THEME.primary }].map((s) => (
                   <div key={s.l} style={cd}>
                     <p style={{ margin: 0, fontSize: isMob ? 20 : 28, fontWeight: 700, color: s.c }}>{s.v}</p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>{s.l}</p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: THEME.muted }}>{s.l}</p>
                   </div>
                 ))}
               </div>
@@ -856,7 +921,7 @@ export default function App() {
                     Object.entries(ec).map(([e, c]) => (
                       <div key={e} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0" }}>
                         <Badge label={e} c={EC[e]} />
-                        <div style={{ flex: 1, height: 5, borderRadius: 3, background: "#e2e8f0" }}>
+                        <div style={{ flex: 1, height: 5, borderRadius: 4, background: THEME.border }}>
                           <div style={{ height: "100%", background: EC[e].tx, borderRadius: 3, width: `${(c / found.length) * 100}%` }} />
                         </div>
                         <span style={{ fontSize: 12, color: "#64748b" }}>{c}</span>
@@ -871,7 +936,7 @@ export default function App() {
           {tab === "locais" && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>📍 Locais</h2>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: THEME.text }}>Locais</h2>
                 <button
                   onClick={() => {
                     form.current = {};
@@ -884,8 +949,8 @@ export default function App() {
               </div>
               {locais.length === 0 ? (
                 <div style={{ ...cd, textAlign: "center", padding: 40 }}>
-                  <p style={{ fontSize: 48 }}>📍</p>
-                  <p style={{ color: "#94a3b8" }}>Cadastre locais</p>
+                  <p style={{ margin: 0, fontSize: 13, color: THEME.muted, fontWeight: 700 }}>Nenhum local cadastrado</p>
+                  <p style={{ margin: "8px 0 0", fontSize: 12, color: THEME.muted }}>Crie locais para registrar a localização dos bens.</p>
                 </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
@@ -894,9 +959,9 @@ export default function App() {
                     return (
                       <div key={l.id} style={{ ...cd, display: "flex", justifyContent: "space-between" }}>
                         <div>
-                          <p style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>📍 {l.nome}</p>
-                          {l.desc && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#94a3b8" }}>{l.desc}</p>}
-                          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>{c} item(s)</p>
+                          <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: THEME.text }}>{l.nome}</p>
+                          {l.desc && <p style={{ margin: "2px 0 0", fontSize: 12, color: THEME.muted }}>{l.desc}</p>}
+                          <p style={{ margin: "4px 0 0", fontSize: 12, color: THEME.muted }}>{c} item(s)</p>
                         </div>
                         <button
                           onClick={() => {
@@ -906,9 +971,9 @@ export default function App() {
                             }
                             saveLocais(locais.filter((x) => x.id !== l.id));
                           }}
-                          style={{ border: "none", background: "#fff0f0", color: "#dc2626", borderRadius: 7, padding: "6px 10px", cursor: "pointer" }}
+                          style={{ border: `1px solid ${THEME.border}`, background: THEME.surface, color: THEME.danger, borderRadius: THEME.radiusSm, padding: "7px 10px", cursor: "pointer", fontWeight: 800, fontSize: 12 }}
                         >
-                          🗑
+                          Excluir
                         </button>
                       </div>
                     );
@@ -921,11 +986,11 @@ export default function App() {
       </div>
 
       {isMob && (
-        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#fff", borderTop: "1.5px solid #e2e8f0", display: "flex", zIndex: 200 }}>
+        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: THEME.surface, borderTop: `1px solid ${THEME.border}`, display: "flex", zIndex: 200 }}>
           {navs.map((n) => (
-            <button key={n.id} onClick={() => setTab(n.id)} style={{ flex: 1, padding: "8px 2px 6px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-              <span style={{ fontSize: 18 }}>{n.icon}</span>
-              <span style={{ fontSize: 9, fontWeight: tab === n.id ? 700 : 400, color: tab === n.id ? "#1e3a8a" : "#94a3b8" }}>{n.l}</span>
+            <button key={n.id} onClick={() => setTab(n.id)} style={{ flex: 1, padding: "10px 6px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+              <span style={{ height: 3, width: 28, borderRadius: 2, background: tab === n.id ? THEME.primary : "transparent" }} />
+              <span style={{ fontSize: 10, fontWeight: tab === n.id ? 800 : 600, color: tab === n.id ? THEME.primary : THEME.muted }}>{n.l}</span>
             </button>
           ))}
         </div>
@@ -946,13 +1011,13 @@ export default function App() {
 
       {modal === "upload" && (
         <Overlay onClose={() => setModal(null)}>
-          <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>Importar Relatório</h2>
-          <button onClick={() => fileRef.current?.click()} style={{ width: "100%", border: "2px dashed #cbd5e1", background: "#f8fafc", borderRadius: 10, padding: 24, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 36 }}>📎</span>
-            <span style={{ fontSize: 14, color: "#64748b", fontWeight: 600 }}>Enviar arquivo XLSX</span>
-            <span style={{ fontSize: 11, color: "#94a3b8" }}>O sistema reconhece todas as unidades automaticamente</span>
+          <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 800, color: THEME.text }}>Importar Relatório</h2>
+          <button onClick={() => fileRef.current?.click()} style={{ width: "100%", border: `2px dashed ${THEME.border}`, background: THEME.bg, borderRadius: THEME.radius, padding: 24, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 900, letterSpacing: 0.6, color: THEME.muted }}>ARQUIVO XLSX</span>
+            <span style={{ fontSize: 13, color: THEME.text, fontWeight: 700 }}>Selecionar arquivo</span>
+            <span style={{ fontSize: 11, color: THEME.muted }}>O sistema identifica unidades automaticamente.</span>
           </button>
-          {uploadStatus && <p style={{ fontSize: 13, color: "#c2410c", margin: "12px 0", fontWeight: 600 }}>{uploadStatus}</p>}
+          {uploadStatus && <p style={{ fontSize: 13, color: THEME.warningText, margin: "12px 0", fontWeight: 700 }}>{uploadStatus}</p>}
           <button onClick={() => setModal(null)} style={{ ...bs, width: "100%", marginTop: 16 }}>
             Cancelar
           </button>
@@ -979,21 +1044,20 @@ export default function App() {
                         </div>
                       ))}
                     </div>
-                    <button onClick={() => openCamera(form.current.detItem.id)} style={{ width: "100%", border: "1.5px dashed #93c5fd", background: "#eff6ff", borderRadius: 8, padding: "10px", cursor: "pointer", fontSize: 13, color: "#1d4ed8", fontWeight: 600, marginTop: 4 }}>
-                      📷 Adicionar mais fotos ({photoList.length} salva{photoList.length > 1 ? "s" : ""})
+                    <button onClick={() => openCamera(form.current.detItem.id)} style={{ width: "100%", border: `1px dashed ${THEME.border}`, background: THEME.bg, borderRadius: THEME.radiusSm, padding: "10px", cursor: "pointer", fontSize: 13, color: THEME.primary, fontWeight: 800, marginTop: 6 }}>
+                      Adicionar fotos ({photoList.length} salva{photoList.length > 1 ? "s" : ""})
                     </button>
                   </div>
                 ) : (
-                  <button onClick={() => openCamera(form.current.detItem.id)} style={{ width: "100%", border: "2px dashed #cbd5e1", background: "#f8fafc", borderRadius: 12, padding: 24, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 36 }}>📷</span>
-                    <span style={{ fontSize: 14, color: "#64748b", fontWeight: 600 }}>Tirar fotos do patrimônio</span>
-                    <span style={{ fontSize: 11, color: "#94a3b8" }}>Item, plaqueta, estado de conservação</span>
+                  <button onClick={() => openCamera(form.current.detItem.id)} style={{ width: "100%", border: `2px dashed ${THEME.border}`, background: THEME.bg, borderRadius: THEME.radius, padding: 24, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 13, color: THEME.text, fontWeight: 800 }}>Adicionar fotos</span>
+                    <span style={{ fontSize: 11, color: THEME.muted }}>Item, plaqueta, estado de conservação</span>
                   </button>
                 )}
               </div>
             );
           })()}
-          <Lbl>📍 Local</Lbl>
+          <Lbl>Local</Lbl>
           <select defaultValue={form.current.detLocal} onChange={(e) => uf("detLocal", e.target.value)} style={inp}>
             <option value="">— Sem local —</option>
             {locais.map((l) => (
@@ -1005,8 +1069,8 @@ export default function App() {
           <Lbl>Origem</Lbl>
           <div style={{ display: "flex", gap: 8 }}>
             {["Próprio", "Doação", "Permuta"].map((o) => (
-              <button key={o} onClick={() => { form.current.detOrigem = o; setFt((t) => t + 1); }} style={{ flex: 1, padding: "10px", borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: "pointer", border: `2px solid ${(form.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#e2e8f0"}`, background: (form.current.detOrigem || "Próprio") === o ? "#dbeafe" : "#fff", color: (form.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#6b7280" }}>
-                {o === "Próprio" ? "🏛️ Próprio" : o === "Doação" ? "🎁 Doação" : "🔄 Permuta"}
+              <button key={o} onClick={() => { form.current.detOrigem = o; setFt((t) => t + 1); }} style={{ flex: 1, padding: "10px", borderRadius: THEME.radiusSm, fontSize: 12, fontWeight: 800, cursor: "pointer", border: `1px solid ${(form.current.detOrigem || "Próprio") === o ? "#b7cef5" : THEME.border}`, background: (form.current.detOrigem || "Próprio") === o ? "#eef3fb" : THEME.surface, color: (form.current.detOrigem || "Próprio") === o ? THEME.primary : THEME.muted }}>
+                {o}
               </button>
             ))}
           </div>
@@ -1030,9 +1094,9 @@ export default function App() {
                   setModal(null);
                   showT("Removido");
                 }}
-                style={{ ...bs, flex: 1, color: "#dc2626" }}
+                style={{ ...bs, flex: 1, color: THEME.danger, fontWeight: 800 }}
               >
-                🗑
+                Excluir
               </button>
             )}
             <button onClick={saveDetail} style={{ ...bp, flex: 1 }}>
@@ -1094,8 +1158,8 @@ export default function App() {
           <Lbl>Origem</Lbl>
           <div style={{ display: "flex", gap: 8 }}>
             {["Próprio", "Doação", "Permuta"].map((o) => (
-              <button key={o} onClick={() => { form.current.manOrigem = o; setFt((t) => t + 1); }} style={{ flex: 1, padding: "10px", borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: "pointer", border: `2px solid ${(form.current.manOrigem || "Próprio") === o ? "#1e3a8a" : "#e2e8f0"}`, background: (form.current.manOrigem || "Próprio") === o ? "#dbeafe" : "#fff", color: (form.current.manOrigem || "Próprio") === o ? "#1e3a8a" : "#6b7280" }}>
-                {o === "Próprio" ? "🏛️ Próprio" : o === "Doação" ? "🎁 Doação" : "🔄 Permuta"}
+              <button key={o} onClick={() => { form.current.manOrigem = o; setFt((t) => t + 1); }} style={{ flex: 1, padding: "10px", borderRadius: THEME.radiusSm, fontSize: 12, fontWeight: 800, cursor: "pointer", border: `1px solid ${(form.current.manOrigem || "Próprio") === o ? "#b7cef5" : THEME.border}`, background: (form.current.manOrigem || "Próprio") === o ? "#eef3fb" : THEME.surface, color: (form.current.manOrigem || "Próprio") === o ? THEME.primary : THEME.muted }}>
+                {o}
               </button>
             ))}
           </div>
@@ -1120,14 +1184,14 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <button onClick={() => { setCameraTarget("manual"); setModal("camera"); }} style={{ width: "100%", border: "1.5px dashed #93c5fd", background: "#eff6ff", borderRadius: 8, padding: 8, cursor: "pointer", fontSize: 12, color: "#1d4ed8", fontWeight: 600 }}>
-                + Mais fotos
+              <button onClick={() => { setCameraTarget("manual"); setModal("camera"); }} style={{ width: "100%", border: `1px dashed ${THEME.border}`, background: THEME.bg, borderRadius: THEME.radiusSm, padding: 10, cursor: "pointer", fontSize: 12, color: THEME.primary, fontWeight: 800 }}>
+                Adicionar fotos
               </button>
             </div>
           ) : (
-            <button onClick={() => { setCameraTarget("manual"); setModal("camera"); }} style={{ width: "100%", border: "2px dashed #cbd5e1", background: "#f8fafc", borderRadius: 10, padding: 16, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 28 }}>📷</span>
-              <span style={{ fontSize: 12, color: "#64748b" }}>Abrir câmera</span>
+            <button onClick={() => { setCameraTarget("manual"); setModal("camera"); }} style={{ width: "100%", border: `2px dashed ${THEME.border}`, background: THEME.bg, borderRadius: THEME.radius, padding: 18, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 12, color: THEME.text, fontWeight: 800 }}>Adicionar fotos</span>
+              <span style={{ fontSize: 11, color: THEME.muted }}>Abrir câmera</span>
             </button>
           )}
           <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
@@ -1162,32 +1226,32 @@ export default function App() {
       {modal === "finalizar" && (
         <Overlay onClose={() => setModal(null)}>
           <div style={{ textAlign: "center" }}>
-            <p style={{ fontSize: 48, margin: "0 0 16px" }}>⚠️</p>
-            <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700 }}>Finalizar?</h2>
-            <p style={{ color: "#64748b", margin: "0 0 16px" }}>{unidadeAtiva?.nome}</p>
+            <p style={{ margin: 0, fontSize: 12, color: THEME.muted, fontWeight: 900, letterSpacing: 0.8 }}>CONFIRMAÇÃO</p>
+            <h2 style={{ margin: "10px 0 8px", fontSize: 20, fontWeight: 900, color: THEME.text }}>Finalizar inventário</h2>
+            <p style={{ color: THEME.muted, margin: "0 0 16px", fontSize: 12, fontWeight: 700 }}>{unidadeAtiva?.nome}</p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-              <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 12 }}>
-                <p style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "#16a34a" }}>{totalFound}</p>
-                <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Encontrados</p>
+              <div style={{ background: "#ecfdf3", borderRadius: THEME.radius, padding: 12, border: "1px solid #abefc6" }}>
+                <p style={{ margin: 0, fontSize: 24, fontWeight: 900, color: THEME.success }}>{totalFound}</p>
+                <p style={{ margin: 0, fontSize: 12, color: THEME.muted, fontWeight: 700 }}>Encontrados</p>
               </div>
-              <div style={{ background: "#fef2f2", borderRadius: 10, padding: 12 }}>
-                <p style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "#dc2626" }}>{totalBens - totalFound}</p>
-                <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Não encontrados</p>
+              <div style={{ background: "#fff1f3", borderRadius: THEME.radius, padding: 12, border: "1px solid #fda4af" }}>
+                <p style={{ margin: 0, fontSize: 24, fontWeight: 900, color: THEME.danger }}>{totalBens - totalFound}</p>
+                <p style={{ margin: 0, fontSize: 12, color: THEME.muted, fontWeight: 700 }}>Não encontrados</p>
               </div>
             </div>
             <div style={{ display: "flex", gap: 9 }}>
               <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
                 Cancelar
               </button>
-              <button onClick={finalizarInv} style={{ ...bp, flex: 1, background: "#dc2626" }}>
-                ✓ Finalizar
+              <button onClick={finalizarInv} style={{ ...bp, flex: 1, background: THEME.danger }}>
+                Finalizar
               </button>
             </div>
           </div>
         </Overlay>
       )}
 
-      {toast && <div style={{ position: "fixed", bottom: isMob ? 82 : 24, left: "50%", transform: "translateX(-50%)", background: "#1e3a8a", color: "#fff", padding: "11px 24px", borderRadius: 24, fontSize: 13, fontWeight: 600, zIndex: 400, boxShadow: "0 4px 16px rgba(0,0,0,.25)" }}>{toast}</div>}
+      {toast && <div style={{ position: "fixed", bottom: isMob ? 82 : 24, left: "50%", transform: "translateX(-50%)", background: THEME.text, color: "#fff", padding: "10px 16px", borderRadius: THEME.radius, fontSize: 13, fontWeight: 700, zIndex: 400, boxShadow: THEME.shadow }}>{toast}</div>}
     </div>
   );
 }
