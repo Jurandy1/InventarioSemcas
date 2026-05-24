@@ -4,7 +4,7 @@ import { CameraModal } from "../components/CameraModal.jsx";
 import { TArea, TInput } from "../components/FormFields.jsx";
 import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js";
 import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken } from "../services/firebase.js";
-import { uploadPhotos, isStorageOk as isCloudinaryOk, deletePhoto } from "../services/storage.js";
+import { getDisplayPhotoUrl, uploadPhotos, isStorageOk as isCloudinaryOk, deletePhoto } from "../services/storage.js";
 import { generateCoordinadorLink, generateCoordinadorToken, generateQRCode } from "../services/qr-service.js";
 import { criarBackupManual, logAuditoria, setupRealtimeSync } from "../services/audit.js";
 import { EVENTOS, gerarRelatorioExcel, gerarRelatorioPDF, notificationService, offlineManager } from "../services/features.js";
@@ -31,6 +31,23 @@ function buildManualPatrimonio(rawValue) {
     id: raw.replaceAll("/", "-"),
     patrimonioLabel: raw,
   };
+}
+
+function SmartImg({ src, alt = "", style, ...rest }) {
+  const [resolved, setResolved] = useState(src || "");
+  useEffect(() => {
+    let alive = true;
+    setResolved(src || "");
+    (async () => {
+      const next = await getDisplayPhotoUrl(src);
+      if (!alive) return;
+      setResolved(next || src || "");
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [src]);
+  return <img src={resolved} alt={alt} style={style} {...rest} />;
 }
 
 function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, setFt, setModal, isMob, inp, cd, bs }) {
@@ -231,7 +248,7 @@ function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, s
           }}
         >
           {foto ? (
-            <img src={foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <SmartImg src={foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
               <span style={{ fontSize: 32, opacity: isF ? 0.5 : 0.2 }}>{catDef.icon}</span>
@@ -1566,7 +1583,7 @@ export default function App() {
                       }}
                       style={{ ...cd, cursor: "pointer", border: `1.5px solid ${isF ? "#bbf7d0" : "#e2e8f0"}`, display: "flex", gap: 12 }}
                     >
-                      {foto ? <img src={foto} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} /> : <div style={{ width: 56, height: 56, borderRadius: 8, background: isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{isF ? "✅" : "📷"}</div>}
+                      {foto ? <SmartImg src={foto} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} /> : <div style={{ width: 56, height: 56, borderRadius: 8, background: isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{isF ? "✅" : "📷"}</div>}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{item.descricao || item.especie || "—"}</p>
                     <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
@@ -2121,7 +2138,7 @@ export default function App() {
                     <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
                       {photoList.map((ph, i) => (
                         <div key={i} style={{ position: "relative", flexShrink: 0 }}>
-                          <img
+                          <SmartImg
                             src={ph}
                             alt=""
                             style={{
@@ -2340,7 +2357,7 @@ export default function App() {
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                 {form.current.manPhotos.map((ph, i) => (
                   <div key={i} style={{ position: "relative" }}>
-                    <img src={ph} alt="" style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6 }} />
+                    <SmartImg src={ph} alt="" style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6 }} />
                     <button onClick={() => { form.current.manPhotos = form.current.manPhotos.filter((_, j) => j !== i); setFt((t) => t + 1); }} style={{ position: "absolute", top: -4, right: -4, background: "#dc2626", color: "#fff", border: "none", borderRadius: "50%", width: 16, height: 16, fontSize: 9, cursor: "pointer" }}>
                       ×
                     </button>

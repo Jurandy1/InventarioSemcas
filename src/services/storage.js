@@ -5,12 +5,25 @@ const BASE = `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o`;
 
 export const isStorageOk = () => isFirebaseConfigured() && !!BUCKET;
 
+const displayUrlCache = new Map();
+const displayUrlOrder = [];
+
 function makeDownloadToken() {
   try {
     return globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   } catch {
     return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   }
+}
+
+function pickDownloadToken(uploadJson) {
+  const fromTop = typeof uploadJson?.downloadTokens === "string" ? uploadJson.downloadTokens : "";
+  if (fromTop) return fromTop.split(",")[0];
+  const fromMeta = typeof uploadJson?.metadata?.firebaseStorageDownloadTokens === "string" ? uploadJson.metadata.firebaseStorageDownloadTokens : "";
+  if (fromMeta) return fromMeta.split(",")[0];
+  const altTop = typeof uploadJson?.downloadtokens === "string" ? uploadJson.downloadtokens : "";
+  if (altTop) return altTop.split(",")[0];
+  return "";
 }
 
 async function ensureDownloadToken(encodedPath, token, authToken) {
@@ -37,6 +50,51 @@ function dataURLtoBlob(dataurl) {
     u8arr[n] = bstr.charCodeAt(n);
   }
   return new Blob([u8arr], { type: mime });
+}
+
+function toMediaUrl(src) {
+  const s = String(src || "");
+  if (!s) return "";
+  if (s.startsWith("data:") || s.startsWith("blob:")) return s;
+  if (s.startsWith("gs://")) {
+    const m = s.match(/^gs:\/\/[^/]+\/(.+)$/);
+    if (!m) return s;
+    const objectPath = m[1];
+    const encodedPath = encodeURIComponent(objectPath);
+    return `${BASE}/${encodedPath}?alt=media`;
+  }
+  return s;
+}
+
+export async function getDisplayPhotoUrl(src) {
+  const mediaUrl = toMediaUrl(src);
+  if (!mediaUrl) return "";
+  if (mediaUrl.startsWith("data:") || mediaUrl.startsWith("blob:")) return mediaUrl;
+  if (mediaUrl.includes("token=")) return mediaUrl;
+
+  const cached = displayUrlCache.get(mediaUrl);
+  if (cached) return cached;
+
+  const { token } = getFirebaseSession();
+  if (!token) return mediaUrl;
+
+  try {
+    const r = await fetch(mediaUrl, { headers: { Authorization: `Bearer ${token}` } });
+    if (!r.ok) return mediaUrl;
+    const blob = await r.blob();
+    const objUrl = URL.createObjectURL(blob);
+    displayUrlCache.set(mediaUrl, objUrl);
+    displayUrlOrder.push(mediaUrl);
+    if (displayUrlOrder.length > 200) {
+      const oldest = displayUrlOrder.shift();
+      const oldUrl = oldest ? displayUrlCache.get(oldest) : null;
+      if (oldest) displayUrlCache.delete(oldest);
+      if (oldUrl) URL.revokeObjectURL(oldUrl);
+    }
+    return objUrl;
+  } catch {
+    return mediaUrl;
+  }
 }
 
 export async function uploadPhoto(base64, path) {
@@ -75,8 +133,7 @@ export async function uploadPhoto(base64, path) {
     throw new Error(uploadJson?.error?.message || "Erro no upload da foto");
   }
 
-  let downloadToken =
-    typeof uploadJson.downloadTokens === "string" && uploadJson.downloadTokens ? uploadJson.downloadTokens.split(",")[0] : "";
+  let downloadToken = pickDownloadToken(uploadJson);
 
   if (!downloadToken) {
     const nextToken = makeDownloadToken();
