@@ -4,18 +4,22 @@ export class OfflineManager {
   constructor() {
     this.queue = [];
     this.isOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
+    this.isSyncing = false;
+    this.syncInterval = null;
     this.loadQueue();
     if (typeof window !== "undefined") {
       window.addEventListener("online", () => this.onOnline());
       window.addEventListener("offline", () => this.onOffline());
     }
+    this.startPeriodicSync();
   }
 
   loadQueue() {
     try {
       const stored = localStorage.getItem("offline-queue");
       this.queue = stored ? JSON.parse(stored) : [];
-    } catch {
+    } catch (e) {
+      console.error("Erro ao carregar fila offline:", e);
       this.queue = [];
     }
   }
@@ -23,12 +27,30 @@ export class OfflineManager {
   persistQueue() {
     try {
       localStorage.setItem("offline-queue", JSON.stringify(this.queue));
-    } catch {}
+    } catch (e) {
+      console.error("Erro ao salvar fila offline:", e);
+    }
+  }
+
+  startPeriodicSync() {
+    if (this.syncInterval) clearInterval(this.syncInterval);
+    this.syncInterval = setInterval(() => {
+      if (this.isOnline && !this.isSyncing) {
+        this.syncQueue().catch((e) => console.error("Erro na sincronização periódica:", e));
+      }
+    }, 10000); // Sincronizar a cada 10 segundos
+  }
+
+  stopPeriodicSync() {
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+    }
   }
 
   onOnline() {
     this.isOnline = true;
-    this.syncQueue();
+    this.syncQueue().catch((e) => console.error("Erro ao sincronizar online:", e));
   }
 
   onOffline() {
@@ -42,6 +64,7 @@ export class OfflineManager {
       data,
       timestamp: new Date().toISOString(),
       status: "pending",
+      retries: 0,
     };
 
     this.queue.push(op);
@@ -63,7 +86,7 @@ export class OfflineManager {
           await fsSet("coordenadores", op.data.uid, op.data.coordData);
           break;
         default:
-          break;
+          throw new Error(`Tipo de operação desconhecido: ${op.type}`);
       }
 
       op.status = "synced";
@@ -71,17 +94,31 @@ export class OfflineManager {
       this.persistQueue();
       return { success: true };
     } catch (e) {
-      op.status = "failed";
+      op.retries = (op.retries || 0) + 1;
+      if (op.retries >= 5) {
+        op.status = "failed";
+        console.error(`Operação ${op.id} falhou após 5 tentativas:`, e);
+      } else {
+        op.status = "pending";
+      }
       this.persistQueue();
-      console.error("Erro ao sincronizar:", e);
-      return { success: false, error: e.message };
+      return { success: false, error: e.message, retries: op.retries };
     }
   }
 
   async syncQueue() {
-    const pending = this.queue.filter((op) => op.status === "pending" || op.status === "failed");
-    for (const op of pending) {
-      await this.executeOperation(op);
+    if (this.isSyncing) return;
+    this.isSyncing = true;
+
+    try {
+      const pending = this.queue.filter((op) => op.status === "pending" || op.status === "failed");
+      for (const op of pending) {
+        if (!this.isOnline) break; // Parar se desconectar
+        await this.executeOperation(op);
+        await new Promise((r) => setTimeout(r, 500)); // Aguardar 500ms entre operações
+      }
+    } finally {
+      this.isSyncing = false;
     }
   }
 
@@ -91,16 +128,29 @@ export class OfflineManager {
       pending: this.queue.filter((o) => o.status === "pending").length,
       failed: this.queue.filter((o) => o.status === "failed").length,
       isOnline: this.isOnline,
+      isSyncing: this.isSyncing,
     };
+  }
+
+  destroy() {
+    this.stopPeriodicSync();
   }
 }
 
 export const offlineManager = new OfflineManager();
 
+// Cleanup ao descarregar a página
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => {
+    offlineManager.persistQueue();
+  });
+}
+
 export class NotificationService {
   constructor() {
     this.subscribers = {};
     this.history = [];
+    this.maxHistory = 100;
   }
 
   subscribe(event, callback) {
@@ -121,20 +171,26 @@ export class NotificationService {
       timestamp: new Date().toISOString(),
     };
     this.history.push(notification);
-    if (this.history.length > 100) this.history.shift();
+    if (this.history.length > this.maxHistory) {
+      this.history.shift();
+    }
 
     const callbacks = this.subscribers[event] || [];
     callbacks.forEach((cb) => {
       try {
         cb(data);
       } catch (e) {
-        console.error("Erro em callback:", e);
+        console.error("Erro em callback de notificação:", e);
       }
     });
   }
 
   getHistory() {
     return this.history;
+  }
+
+  clearHistory() {
+    this.history = [];
   }
 }
 
@@ -150,85 +206,95 @@ export const EVENTOS = {
 };
 
 export async function gerarRelatorioPDF(unidadeId, unidades, found) {
-  const mod = await import("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
-  const jsPDF = mod.jsPDF || mod.default?.jsPDF;
-  if (!jsPDF) throw new Error("Nao foi possivel carregar jsPDF");
+  try {
+    const mod = await import("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
+    const jsPDF = mod.jsPDF || mod.default?.jsPDF;
+    if (!jsPDF) throw new Error("Não foi possível carregar jsPDF");
 
-  const unidade = unidades.find((u) => u.id === unidadeId);
-  if (!unidade) throw new Error("Unidade nao encontrada");
+    const unidade = unidades.find((u) => u.id === unidadeId);
+    if (!unidade) throw new Error("Unidade não encontrada");
 
-  const doc = new jsPDF();
-  let y = 20;
-  const pendentesItens = unidade.itens.filter((i) => !found.some((f) => f.patrimonioId === i.id));
-  const inventariados = unidade.itens.length - pendentesItens.length;
-  const progresso = unidade.itens.length > 0 ? Math.round((inventariados / unidade.itens.length) * 100) : 0;
+    const doc = new jsPDF();
+    let y = 20;
+    const pendentesItens = unidade.itens.filter((i) => !found.some((f) => f.patrimonioId === i.id));
+    const inventariados = unidade.itens.length - pendentesItens.length;
+    const progresso = unidade.itens.length > 0 ? Math.round((inventariados / unidade.itens.length) * 100) : 0;
 
-  doc.setFontSize(18);
-  doc.text("Relatorio de Inventario", 14, y);
-  y += 10;
-  doc.setFontSize(11);
-  doc.text(`Unidade: ${unidade.nome}`, 14, y);
-  y += 7;
-  doc.text(`Data: ${new Date().toLocaleString("pt-BR")}`, 14, y);
-  y += 7;
-  doc.text(`Total: ${unidade.itens.length}`, 14, y);
-  y += 7;
-  doc.text(`Inventariados: ${inventariados}`, 14, y);
-  y += 7;
-  doc.text(`Pendentes: ${pendentesItens.length}`, 14, y);
-  y += 7;
-  doc.text(`Progresso: ${progresso}%`, 14, y);
-  y += 12;
-  doc.setFontSize(12);
-  doc.text("Pendentes (primeiros 25)", 14, y);
-  y += 8;
-  doc.setFontSize(10);
+    doc.setFontSize(18);
+    doc.text("Relatorio de Inventario", 14, y);
+    y += 10;
+    doc.setFontSize(11);
+    doc.text(`Unidade: ${unidade.nome}`, 14, y);
+    y += 7;
+    doc.text(`Data: ${new Date().toLocaleString("pt-BR")}`, 14, y);
+    y += 7;
+    doc.text(`Total: ${unidade.itens.length}`, 14, y);
+    y += 7;
+    doc.text(`Inventariados: ${inventariados}`, 14, y);
+    y += 7;
+    doc.text(`Pendentes: ${pendentesItens.length}`, 14, y);
+    y += 7;
+    doc.text(`Progresso: ${progresso}%`, 14, y);
+    y += 12;
+    doc.setFontSize(12);
+    doc.text("Pendentes (primeiros 25)", 14, y);
+    y += 8;
+    doc.setFontSize(10);
 
-  for (const item of pendentesItens.slice(0, 25)) {
-    if (y > 280) {
-      doc.addPage();
-      y = 20;
+    for (const item of pendentesItens.slice(0, 25)) {
+      if (y > 280) {
+        doc.addPage();
+        y = 20;
+      }
+      const label = `${item.id} - ${item.descricao || item.especie || "Sem descricao"}`;
+      doc.text(label.slice(0, 100), 14, y);
+      y += 6;
     }
-    const label = `${item.id} - ${item.descricao || item.especie || "Sem descricao"}`;
-    doc.text(label.slice(0, 100), 14, y);
-    y += 6;
-  }
 
-  return doc;
+    return doc;
+  } catch (e) {
+    console.error("Erro ao gerar PDF:", e);
+    throw e;
+  }
 }
 
 export async function gerarRelatorioExcel(unidadeId, unidades, found) {
-  const XLSX = await import("xlsx/xlsx.mjs");
-  const unidade = unidades.find((u) => u.id === unidadeId);
-  if (!unidade) throw new Error("Unidade nao encontrada");
+  try {
+    const XLSX = await import("xlsx/xlsx.mjs");
+    const unidade = unidades.find((u) => u.id === unidadeId);
+    if (!unidade) throw new Error("Unidade não encontrada");
 
-  const worksheetData = [
-    ["RELATORIO DE INVENTARIO"],
-    [`Unidade: ${unidade.nome}`],
-    [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
-    [],
-    ["N Patrimonio", "Descricao", "Especie", "Marca", "Fornecedor", "Valor", "Status", "Estado", "Observacoes"],
-  ];
+    const worksheetData = [
+      ["RELATORIO DE INVENTARIO"],
+      [`Unidade: ${unidade.nome}`],
+      [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
+      [],
+      ["N Patrimonio", "Descricao", "Especie", "Marca", "Fornecedor", "Valor", "Status", "Estado", "Observacoes"],
+    ];
 
-  for (const item of unidade.itens) {
-    const foundItem = found.find((f) => f.patrimonioId === item.id);
-    worksheetData.push([
-      item.id,
-      item.descricao || "",
-      item.especie || "",
-      item.marca || "",
-      item.fornecedor || "",
-      item.valor || 0,
-      foundItem ? "Encontrado" : "Pendente",
-      foundItem?.estado || "-",
-      foundItem?.obs || "",
-    ]);
+    for (const item of unidade.itens) {
+      const foundItem = found.find((f) => f.patrimonioId === item.id);
+      worksheetData.push([
+        item.id,
+        item.descricao || "",
+        item.especie || "",
+        item.marca || "",
+        item.fornecedor || "",
+        item.valor || 0,
+        foundItem ? "Encontrado" : "Pendente",
+        foundItem?.estado || "-",
+        foundItem?.obs || "",
+      ]);
+    }
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Inventario");
+    return { workbook, XLSX };
+  } catch (e) {
+    console.error("Erro ao gerar Excel:", e);
+    throw e;
   }
-
-  const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Inventario");
-  return { workbook, XLSX };
 }
 
 export async function enviarParaAprovacao(itemId, coordenadoras) {
