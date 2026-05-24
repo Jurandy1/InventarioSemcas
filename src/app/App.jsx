@@ -14,6 +14,25 @@ import { loadUnidades } from "../utils/xlsx.js";
 import { gerarTodasSugestoes } from "../utils/suggestions.js";
 import { CoordenadoresTab } from "./CoordenadoresTab.jsx";
 
+function getItemCode(item) {
+  return item?.patrimonioLabel || item?.id || "—";
+}
+
+function buildManualPatrimonio(rawValue) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return { id: `MAN_${Date.now()}`, patrimonioLabel: null };
+
+  const upper = raw.toUpperCase();
+  if (upper === "S/T" || upper === "ST" || upper === "SEM TOMBAMENTO") {
+    return { id: `ST_${Date.now()}`, patrimonioLabel: "S/T" };
+  }
+
+  return {
+    id: raw.replaceAll("/", "-"),
+    patrimonioLabel: raw,
+  };
+}
+
 function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, setFt, setModal, isMob, inp, cd, bs }) {
   const [localCat, setLocalCat] = useState("Todas");
   const [localSub, setLocalSub] = useState(null);
@@ -160,23 +179,6 @@ function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, s
         <span style={{ fontSize: 10, fontWeight: 700, flexShrink: 0, color: active ? "#1d4ed8" : "#94a3b8" }}>{count}</span>
       </button>
     );
-  };
-
-  const getItemCode = (item) => item?.patrimonioLabel || item?.id || "—";
-
-  const buildManualPatrimonio = (rawValue) => {
-    const raw = String(rawValue || "").trim();
-    if (!raw) return { id: `MAN_${Date.now()}`, patrimonioLabel: null };
-
-    const upper = raw.toUpperCase();
-    if (upper === "S/T" || upper === "ST" || upper === "SEM TOMBAMENTO") {
-      return { id: `ST_${Date.now()}`, patrimonioLabel: "S/T" };
-    }
-
-    return {
-      id: raw.replaceAll("/", "-"),
-      patrimonioLabel: raw,
-    };
   };
 
   const ItemCard = ({ item }) => {
