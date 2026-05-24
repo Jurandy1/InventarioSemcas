@@ -6,6 +6,7 @@ import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js"
 import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken } from "../services/firebase.js";
 import { uploadPhotos, isStorageOk as isCloudinaryOk, deletePhoto } from "../services/storage.js";
 import { loadUnidades } from "../utils/xlsx.js";
+import { gerarTodasSugestoes } from "../utils/suggestions.js";
 
 const CATEGORY_TREE = [
   {
@@ -388,7 +389,14 @@ function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, s
             {(item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 36)}
           </p>
           <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 3 }}>
-            {isF ? <Badge label={f.estado} c={EC[f.estado]} /> : <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />}
+            {isF ? (
+              <>
+                <Badge label={f.estado} c={EC[f.estado]} />
+                {(f.usuario || f.user) && <Badge label={`${f.usuario || f.user}${f.hora ? ` ${f.hora}` : ""}`} c={{ bg: "#e0e7ff", tx: "#3730a3" }} />}
+              </>
+            ) : (
+              <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
+            )}
             {item.tipoEntrada && item.tipoEntrada !== "Próprio" && (
               <Badge label={item.tipoEntrada} c={item.tipoEntrada === "Doação" ? { bg: "#fef3c7", tx: "#92400e" } : { bg: "#d1fae5", tx: "#065f46" }} />
             )}
@@ -841,6 +849,7 @@ export default function App() {
   };
 
   const markFound = async (itemId, estado, situacao, localId, obs, marca, origem, fotoUrls = []) => {
+    const now = new Date();
     const entry = {
       patrimonioId: itemId,
       estado,
@@ -850,9 +859,24 @@ export default function App() {
       marca: marca || "",
       origem: origem || "Próprio",
       fotoUrls,
-      data: new Date().toLocaleDateString("pt-BR"),
+      data: now.toLocaleDateString("pt-BR"),
+      hora: now.toLocaleTimeString("pt-BR"),
+      usuario: logado?.nome || "",
+      email: logado?.email || "",
+      ultimaAtualizacao: now.toISOString(),
+      ultimoUsuarioAnterior: undefined,
       user: logado?.nome || "",
     };
+    const existing = found.find((f) => f.patrimonioId === itemId);
+    if (existing) {
+      const prevUser = existing.usuario || existing.user || "";
+      const prevEmail = existing.email || "";
+      const prevHora = existing.hora || "";
+      entry.ultimoUsuarioAnterior = prevUser || undefined;
+      if (prevEmail && prevEmail !== (logado?.email || "")) {
+        showT(`⚠️ Item já inventariado por ${prevUser || "outro usuário"}${prevHora ? ` em ${prevHora}` : ""}`);
+      }
+    }
     await fsSet("inventario", itemId, entry);
     setFound((prev) => [...prev.filter((f) => f.patrimonioId !== itemId), { ...entry, _id: itemId }]);
   };
@@ -987,6 +1011,7 @@ export default function App() {
   const progresso = totalBens > 0 ? Math.round((totalFound / totalBens) * 100) : 0;
 
   const todosItens = unidades.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeNome: u.nome, unidadeId: u.id })));
+  const sugestoes = React.useMemo(() => gerarTodasSugestoes(todosItens), [todosItens]);
 
   const parseNFDate = (s) => {
     if (!s) return new Date(0);
@@ -1320,6 +1345,7 @@ export default function App() {
                             <>
                               <Badge label={f.estado} c={EC[f.estado]} />
                               <Badge label={f.situacao} c={SC[f.situacao]} />
+                              {(f.usuario || f.user) && <Badge label={`${f.usuario || f.user}${f.hora ? ` ${f.hora}` : ""}`} c={{ bg: "#e0e7ff", tx: "#3730a3" }} />}
                             </>
                           ) : (
                             <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
@@ -1636,6 +1662,36 @@ export default function App() {
                   </div>
                 ))}
               </div>
+              <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, marginTop: 20 }}>👥 Últimos a inventariar</h3>
+              <div style={{ ...cd, marginBottom: 16 }}>
+                {(() => {
+                  const userMap = {};
+                  for (const f of found) {
+                    const usuario = f.usuario || f.user;
+                    if (!usuario) continue;
+                    const ts = f.ultimaAtualizacao ? new Date(f.ultimaAtualizacao).getTime() : 0;
+                    if (!userMap[usuario]) userMap[usuario] = { count: 0, lastTime: ts };
+                    userMap[usuario].count += 1;
+                    if (ts > userMap[usuario].lastTime) userMap[usuario].lastTime = ts;
+                  }
+                  return Object.entries(userMap).length === 0 ? (
+                    <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>Sem dados</p>
+                  ) : (
+                    Object.entries(userMap)
+                      .sort((a, b) => b[1].lastTime - a[1].lastTime)
+                      .slice(0, 5)
+                      .map(([usuario, data], idx, arr) => (
+                        <div key={usuario} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: idx === arr.length - 1 ? "none" : "1px solid #e2e8f0" }}>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{usuario}</span>
+                          <span style={{ fontSize: 12, color: "#64748b" }}>
+                            {data.count} item(ns)
+                            {data.lastTime ? ` · ${new Date(data.lastTime).toLocaleString("pt-BR")}` : ""}
+                          </span>
+                        </div>
+                      ))
+                  );
+                })()}
+              </div>
               {xlsxCorrompidos.length > 0 && (
                 <div style={{ ...cd, border: "1.5px solid #fed7aa", background: "#fff7ed", marginBottom: 16 }}>
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#9a3412" }}>Registros incompletos na planilha (XLSX): {xlsxCorrompidos.length}</p>
@@ -1755,6 +1811,16 @@ export default function App() {
           <h2 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700 }}>{form.current.detItem.descricao || form.current.detItem.especie || "—"}</h2>
           <p style={{ margin: "0 0 4px", fontSize: 12, color: "#64748b" }}>Nº {form.current.detItem.id} · {form.current.detItem.data} · R$ {(form.current.detItem.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
           <p style={{ margin: "0 0 12px", fontSize: 12, color: "#94a3b8" }}>Fornecedor: {form.current.detItem.fornecedor || "—"} · Marca: {form.current.detItem.marca || "—"} · NF: {form.current.detItem.nf || "—"} · Empenho: {form.current.detItem.empenho || "—"}</p>
+          {foundMap[form.current.detItem.id] && (
+            <p style={{ margin: "4px 0 12px", fontSize: 11, color: "#10b981", fontWeight: 600 }}>
+              ✅ Inventariado por: {foundMap[form.current.detItem.id].usuario || foundMap[form.current.detItem.id].user || "—"} em {foundMap[form.current.detItem.id].data || "—"}
+              {foundMap[form.current.detItem.id].hora ? ` às ${foundMap[form.current.detItem.id].hora}` : ""}
+              {foundMap[form.current.detItem.id].ultimoUsuarioAnterior &&
+                foundMap[form.current.detItem.id].ultimoUsuarioAnterior !== (foundMap[form.current.detItem.id].usuario || foundMap[form.current.detItem.id].user) && (
+                  <span style={{ display: "block", color: "#64748b", fontWeight: 400 }}>(Anterior: {foundMap[form.current.detItem.id].ultimoUsuarioAnterior})</span>
+                )}
+            </p>
+          )}
 
           {(() => {
             const photoList = [...(form.current.detExistingUrls || []), ...(form.current.detNewBase64 || [])];
@@ -1894,11 +1960,11 @@ export default function App() {
           <Lbl>Descrição *</Lbl>
           <TArea key="manDesc" initial={gf("manDesc")} onVal={(v) => uf("manDesc", v)} rows={3} placeholder="Descreva o item..." style={{ ...inp, resize: "none" }} />
           <Lbl>Espécie</Lbl>
-          <TInput key={"manEsp_" + ft} initial={gf("manEspecie")} onVal={(v) => uf("manEspecie", v)} placeholder="Ex: CADEIRA" style={inp} />
+          <TInput key={"manEsp_" + ft} initial={gf("manEspecie")} onVal={(v) => uf("manEspecie", v)} placeholder="Ex: CADEIRA, MESA..." suggestions={sugestoes.especies} style={inp} />
           <Lbl>Marca</Lbl>
-          <TInput key="manMarca" initial={gf("manMarca")} onVal={(v) => uf("manMarca", v)} placeholder="Marca..." style={inp} />
+          <TInput key="manMarca" initial={gf("manMarca")} onVal={(v) => uf("manMarca", v)} placeholder="Marca..." suggestions={sugestoes.marcas} style={inp} />
           <Lbl>Fornecedor</Lbl>
-          <TInput key="manForn" initial={gf("manFornecedor")} onVal={(v) => uf("manFornecedor", v)} placeholder="Fornecedor..." style={inp} />
+          <TInput key="manForn" initial={gf("manFornecedor")} onVal={(v) => uf("manFornecedor", v)} placeholder="Fornecedor..." suggestions={sugestoes.fornecedores} style={inp} />
           <Lbl>Valor</Lbl>
           <TInput key="manVal" initial={gf("manValor")} onVal={(v) => uf("manValor", v)} type="number" placeholder="0.00" style={inp} />
           <Lbl>Origem</Lbl>
