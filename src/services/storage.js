@@ -57,11 +57,12 @@ function toMediaUrl(src) {
   if (!s) return "";
   if (s.startsWith("data:") || s.startsWith("blob:")) return s;
   if (s.startsWith("gs://")) {
-    const m = s.match(/^gs:\/\/[^/]+\/(.+)$/);
+    const m = s.match(/^gs:\/\/([^/]+)\/(.+)$/);
     if (!m) return s;
-    const objectPath = m[1];
+    const bucket = m[1];
+    const objectPath = m[2];
     const encodedPath = encodeURIComponent(objectPath);
-    return `${BASE}/${encodedPath}?alt=media`;
+    return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media`;
   }
   return s;
 }
@@ -145,6 +146,10 @@ export async function uploadPhoto(base64, path) {
 }
 
 export async function uploadPhotos(arr, prefix, onProgress) {
+  if (!isStorageOk()) {
+    console.warn("Firebase Storage não configurado");
+    return [];
+  }
   const urls = [];
   for (let i = 0; i < arr.length; i++) {
     try {
@@ -165,13 +170,24 @@ export async function deletePhoto(downloadUrl) {
     const { token } = getFirebaseSession();
     if (!token) return;
 
-    const match = downloadUrl.match(/\/o\/(.+?)\?/);
-    if (!match) return;
+    const s = String(downloadUrl || "");
+    if (s.startsWith("gs://")) {
+      const m = s.match(/^gs:\/\/([^/]+)\/(.+)$/);
+      if (!m) return;
+      const bucket = m[1];
+      const objectPath = m[2];
+      const encodedPath = encodeURIComponent(objectPath);
+      await fetch(`https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      return;
+    }
 
-    await fetch(`${BASE}/${match[1]}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const match = s.match(/\/o\/(.+?)(\?|$)/);
+    if (!match) return;
+    const encodedPath = match[1];
+    await fetch(`${BASE}/${encodedPath}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
   } catch (e) {
     console.error("Erro ao deletar foto:", e);
   }

@@ -31,7 +31,7 @@ export async function paginarItens(unidadeId, pageSize = 50, cursor = null) {
 }
 
 const CACHE_PREFIX = "inv-cache-v2";
-const CACHE_TTL = 30 * 60 * 1000;
+const CACHE_TTL = 5 * 60 * 1000;
 
 export async function getCachedData(key) {
   try {

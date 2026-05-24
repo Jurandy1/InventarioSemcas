@@ -4,7 +4,7 @@ import { CameraModal } from "../components/CameraModal.jsx";
 import { TArea, TInput } from "../components/FormFields.jsx";
 import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js";
 import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken } from "../services/firebase.js";
-import { getDisplayPhotoUrl, uploadPhotos, isStorageOk as isCloudinaryOk, deletePhoto } from "../services/storage.js";
+import { getDisplayPhotoUrl, uploadPhotos, isStorageOk, deletePhoto } from "../services/storage.js";
 import { generateCoordinadorLink, generateCoordinadorToken, generateQRCode } from "../services/qr-service.js";
 import { criarBackupManual, logAuditoria, setupRealtimeSync } from "../services/audit.js";
 import { EVENTOS, gerarRelatorioExcel, gerarRelatorioPDF, notificationService, offlineManager } from "../services/features.js";
@@ -908,7 +908,8 @@ export default function App() {
       ultimoUsuarioAnterior: undefined,
       user: logado?.nome || "",
     };
-    const existing = found.find((f) => f.patrimonioId === itemId);
+    const currentFound = foundRef.current || found || [];
+    const existing = currentFound.find((f) => f.patrimonioId === itemId);
     if (existing) {
       const prevUser = existing.usuario || existing.user || "";
       const prevEmail = existing.email || "";
@@ -919,8 +920,10 @@ export default function App() {
       }
     }
     await fsSet("inventario", itemId, entry);
-    setFound((prev) => [...prev.filter((f) => f.patrimonioId !== itemId), { ...entry, _id: itemId }]);
-    await setCachedData("inventario", [...found.filter((f) => f.patrimonioId !== itemId), { ...entry, _id: itemId }]);
+    const nextFound = [...currentFound.filter((f) => f.patrimonioId !== itemId), { ...entry, _id: itemId }];
+    foundRef.current = nextFound;
+    setFound(nextFound);
+    await setCachedData("inventario", nextFound);
     return entry;
   };
 
@@ -943,8 +946,6 @@ export default function App() {
         compressedBase64 = await compressPhotoArray(newBase64, (done, total) => {
           setUploadMsg(`Comprimindo foto ${done}/${total}...`);
         });
-      } else {
-        compressedBase64 = [];
       }
 
       const offlineEntry = {
@@ -970,35 +971,47 @@ export default function App() {
           docId: item.id,
           content: offlineEntry,
         });
-        setFound((prev) => [...prev.filter((f) => f.patrimonioId !== item.id), { ...offlineEntry, _id: item.id }]);
+        const base = foundRef.current || found || [];
+        const newFound = [...base.filter((f) => f.patrimonioId !== item.id), { ...offlineEntry, _id: item.id }];
+        foundRef.current = newFound;
+        setFound(newFound);
         updateQueueStatus();
-        await setCachedData("inventario", [...found.filter((f) => f.patrimonioId !== item.id), { ...offlineEntry, _id: item.id }]);
+        await setCachedData("inventario", newFound);
         await logAuditoria("queue-save", "inventario", item.id, before, offlineEntry);
         setModal(null);
-        showT(compressedBase64.length > 0 ? "✓ Salvo offline (fotos novas entram quando voltar online)" : "✓ Salvo offline");
+        showT("✓ Salvo offline (sincronizará quando voltar online)");
         return;
       }
 
-      if (compressedBase64.length > 0) {
-        if (isCloudinaryOk()) {
-          setUploadMsg("Enviando fotos...");
+      if (compressedBase64.length > 0 && isStorageOk()) {
+        setUploadMsg("Enviando fotos...");
+        try {
           const newUrls = await uploadPhotos(compressedBase64, item.id, (done, total) => {
             setUploadMsg(`Enviando foto ${done}/${total}...`);
           });
           allUrls = [...allUrls, ...newUrls];
-        } else {
-          showT("⚠️ Firebase Storage não configurado — fotos não salvas");
+          offlineEntry.fotoUrls = allUrls;
+        } catch (uploadErr) {
+          console.error("Erro ao enviar fotos:", uploadErr);
+          showT("⚠️ Fotos não foram salvas, mas o item foi registrado");
         }
+      } else if (compressedBase64.length > 0) {
+        showT("⚠️ Firebase Storage não configurado — fotos não salvas");
       }
 
       const after = await markFound(item.id, gf("detEstado") || "Bom", gf("detSituacao") || "Em uso", gf("detLocal"), gf("detObs"), gf("detMarca"), gf("detOrigem") || "Próprio", allUrls);
+      const base = foundRef.current || found || [];
+      const newFound = [...base.filter((f) => f.patrimonioId !== item.id), { ...after, _id: item.id }];
+      foundRef.current = newFound;
+      setFound(newFound);
+      await setCachedData("inventario", newFound);
       await logAuditoria("update", "inventario", item.id, before, after);
       notificationService.notify(EVENTOS.ITEM_ENCONTRADO, {
         message: `Item ${item.id} salvo com sucesso`,
         type: "success",
       });
       setModal(null);
-      showT("✓ Salvo com auditoria!");
+      showT("✓ Salvo com " + (allUrls.length > existingUrls.length ? "fotos" : "sucesso") + "!");
     } catch (e) {
       console.error(e);
       showT("⚠️ " + (e.message || "Erro ao salvar"));
@@ -1060,7 +1073,7 @@ export default function App() {
     await fsSet("manuais", id, { ...item, unidadeId: unidadeAtiva?.id });
 
     let fotoUrls = [];
-    if (form.current.manPhotos?.length && isCloudinaryOk()) {
+    if (form.current.manPhotos?.length && isStorageOk()) {
       setUploading(true);
       setUploadMsg("Comprimindo fotos...");
       try {
@@ -1487,7 +1500,7 @@ export default function App() {
               </button>
             ))}
             <hr style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "12px 0" }} />
-            <p style={{ fontSize: 10, color: "#94a3b8", margin: 0 }}>{isCloudinaryOk() ? "☁️ Fotos: Firebase Storage ✅" : "☁️ Fotos: Storage não configurado"}</p>
+            <p style={{ fontSize: 10, color: "#94a3b8", margin: 0 }}>{isStorageOk() ? "☁️ Fotos: Firebase Storage ✅" : "☁️ Fotos: Storage não configurado"}</p>
           </div>
         )}
 
