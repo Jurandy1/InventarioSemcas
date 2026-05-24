@@ -162,6 +162,23 @@ function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, s
     );
   };
 
+  const getItemCode = (item) => item?.patrimonioLabel || item?.id || "—";
+
+  const buildManualPatrimonio = (rawValue) => {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return { id: `MAN_${Date.now()}`, patrimonioLabel: null };
+
+    const upper = raw.toUpperCase();
+    if (upper === "S/T" || upper === "ST" || upper === "SEM TOMBAMENTO") {
+      return { id: `ST_${Date.now()}`, patrimonioLabel: "S/T" };
+    }
+
+    return {
+      id: raw.replaceAll("/", "-"),
+      patrimonioLabel: raw,
+    };
+  };
+
   const ItemCard = ({ item }) => {
     const f = foundMap[item.id];
     const foto = f?.fotoUrls?.[0];
@@ -244,7 +261,7 @@ function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, s
           >
             {item.descricao || item.especie || "—"}
           </p>
-          <p style={{ margin: 0, fontSize: 9, color: "#64748b", fontWeight: 600 }}>Nº {item.id}</p>
+          <p style={{ margin: 0, fontSize: 9, color: "#64748b", fontWeight: 600 }}>Nº {getItemCode(item)}</p>
           <p style={{ margin: "1px 0 0", fontSize: 9, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {(item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 36)}
           </p>
@@ -914,9 +931,17 @@ export default function App() {
       showT("Descrição obrigatória");
       return;
     }
-    const id = `MAN_${Date.now()}`;
+    const manualPatrimonio = buildManualPatrimonio(gf("manPatrimonio"));
+    const id = manualPatrimonio.id;
+
+    if ((unidadeAtiva?.itens || []).some((i) => i.id === id)) {
+      showT("Já existe um item com esse patrimônio nesta unidade");
+      return;
+    }
+
     const item = {
       id,
+      patrimonioLabel: manualPatrimonio.patrimonioLabel,
       data: new Date().toLocaleDateString("pt-BR"),
       especie: gf("manEspecie") || desc.split(" ")[0].toUpperCase(),
       descricao: desc.trim(),
@@ -1094,11 +1119,13 @@ export default function App() {
   const onCameraCapture = (photoArray) => {
     if (cameraTarget === "manual") {
       form.current.manPhotos = photoArray;
+      setCameraTarget(null);
+      setModal("manual");
     } else {
       form.current.detNewBase64 = [...(form.current.detNewBase64 || []), ...photoArray];
+      setCameraTarget(null);
+      setModal("detalhe");
     }
-    setCameraTarget(null);
-    setModal("detalhe");
     setFt((t) => t + 1);
   };
 
@@ -1125,7 +1152,7 @@ export default function App() {
 
   const filtered = allItens.filter((i) => {
     const s = search.toLowerCase();
-    return !s || i.id.toLowerCase().includes(s) || (i.especie || "").toLowerCase().includes(s) || (i.descricao || "").toLowerCase().includes(s) || (i.fornecedor || "").toLowerCase().includes(s);
+    return !s || getItemCode(i).toLowerCase().includes(s) || (i.id || "").toLowerCase().includes(s) || (i.especie || "").toLowerCase().includes(s) || (i.descricao || "").toLowerCase().includes(s) || (i.fornecedor || "").toLowerCase().includes(s);
   });
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -1453,7 +1480,7 @@ export default function App() {
                       {foto ? <img src={foto} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} /> : <div style={{ width: 56, height: 56, borderRadius: 8, background: isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{isF ? "✅" : "📷"}</div>}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{item.descricao || item.especie || "—"}</p>
-                        <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Nº {item.id} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                         <p style={{ margin: "0 0 4px", fontSize: 11, color: "#94a3b8" }}>{item.fornecedor || "—"}{item.marca ? ` · ${item.marca}` : ""}{item.nf ? ` · NF ${item.nf}` : ""}</p>
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                           {isF ? (
@@ -1534,7 +1561,7 @@ export default function App() {
                     style={{ ...cd, cursor: "pointer" }}
                   >
                     <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{item.descricao || item.especie || "—"}</p>
-                    <p style={{ margin: "4px 0 0", fontSize: 11, color: "#64748b" }}>Nº {item.id} · {item.unidadeNome}</p>
+                    <p style={{ margin: "4px 0 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(item)} · {item.unidadeNome}</p>
                   </div>
                 ))}
               </div>
@@ -1960,7 +1987,7 @@ export default function App() {
         </div>
       )}
 
-      {modal === "camera" && <CameraModal existingPhotos={cameraTarget === "manual" ? form.current.manPhotos || [] : form.current.detNewBase64 || []} onCapture={onCameraCapture} onClose={() => { setCameraTarget(null); setModal(form.current.detItem ? "detalhe" : null); }} />}
+      {modal === "camera" && <CameraModal existingPhotos={cameraTarget === "manual" ? form.current.manPhotos || [] : form.current.detNewBase64 || []} onCapture={onCameraCapture} onClose={() => { setCameraTarget(null); setModal(cameraTarget === "manual" ? "manual" : form.current.detItem ? "detalhe" : null); }} />}
 
       {modal === "detalhe" && form.current.detItem && (
         <Overlay onClose={() => setModal(null)}>
@@ -1981,7 +2008,7 @@ export default function App() {
               ✕
             </button>
           </div>
-          <p style={{ margin: "0 0 4px", fontSize: 12, color: "#64748b" }}>Nº {form.current.detItem.id} · {form.current.detItem.data} · R$ {(form.current.detItem.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+          <p style={{ margin: "0 0 4px", fontSize: 12, color: "#64748b" }}>Nº {getItemCode(form.current.detItem)} · {form.current.detItem.data} · R$ {(form.current.detItem.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
           <p style={{ margin: "0 0 12px", fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>
             Fornecedor: {form.current.detItem.fornecedor || "—"} · Marca: {form.current.detItem.marca || "—"} · NF: {form.current.detItem.nf || "—"} · Empenho: {form.current.detItem.empenho || "—"}
           </p>
@@ -2164,6 +2191,22 @@ export default function App() {
           </div>
           <Lbl>Descrição *</Lbl>
           <TArea key="manDesc" initial={gf("manDesc")} onVal={(v) => uf("manDesc", v)} rows={3} placeholder="Descreva o item..." style={{ ...inp, resize: "none" }} />
+          <Lbl>Nº do Patrimônio</Lbl>
+          <TInput key={"manPat_" + ft} initial={gf("manPatrimonio")} onVal={(v) => uf("manPatrimonio", v)} placeholder="Digite o patrimônio ou S/T" style={inp} />
+          <div style={{ display: "flex", gap: 8, marginTop: 8, marginBottom: 2 }}>
+            <button
+              onClick={() => {
+                form.current.manPatrimonio = "S/T";
+                setFt((t) => t + 1);
+              }}
+              style={{ ...bs, fontSize: 12, padding: "8px 12px" }}
+            >
+              Marcar S/T
+            </button>
+            <span style={{ fontSize: 11, color: "#64748b", alignSelf: "center" }}>
+              Se deixar em branco, o sistema gera um código automático.
+            </span>
+          </div>
           <Lbl>Espécie</Lbl>
           <TInput key={"manEsp_" + ft} initial={gf("manEspecie")} onVal={(v) => uf("manEspecie", v)} placeholder="Ex: CADEIRA, MESA..." suggestions={sugestoes.especies} style={inp} />
           <Lbl>Marca</Lbl>
