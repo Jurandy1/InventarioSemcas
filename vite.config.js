@@ -11,10 +11,21 @@ export default defineConfig(({ command }) => {
   return {
     envDir: projectRoot,
     base: command === "build" ? `/${repoName}/` : "/",
-    plugins: [react()],
+    plugins: [react({ jsxRuntime: "classic" })],
+    resolve: {
+      alias: [
+        { find: /^react$/, replacement: path.join(projectRoot, "src/vendor/react-shim.js") },
+        { find: /^react-dom\/client$/, replacement: path.join(projectRoot, "src/vendor/react-dom-client-shim.js") },
+      ],
+    },
     build: command === "build"
       ? { minify: false, cssMinify: false, reportCompressedSize: false, sourcemap: false }
       : undefined,
+    optimizeDeps: {
+      noDiscovery: true,
+      include: ["react/jsx-runtime", "react/jsx-dev-runtime"],
+      exclude: ["xlsx", "xlsx/xlsx.mjs"],
+    },
     server: {
       host: true,
       port: 5173,

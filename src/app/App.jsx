@@ -9,6 +9,7 @@ import { generateCoordinadorLink, generateCoordinadorToken, generateQRCode } fro
 import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "./categories.js";
 import { loadUnidades } from "../utils/xlsx.js";
 import { gerarTodasSugestoes } from "../utils/suggestions.js";
+import { CoordenadoresTab } from "./CoordenadoresTab.jsx";
 
 function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, setFt, setModal, isMob, inp, cd, bs }) {
   const [localCat, setLocalCat] = useState("Todas");
@@ -1093,6 +1094,7 @@ export default function App() {
     { id: "nf", icon: "🧾", l: "Notas" },
     { id: "tombos", icon: "🔖", l: "Tombos" },
     { id: "dash", icon: "📊", l: "Dashboard" },
+    { id: "coordenadores", icon: "👩‍💼", l: "Coordenadores" },
     { id: "locais", icon: "📍", l: "Locais" },
   ];
 
@@ -1678,6 +1680,8 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {tab === "coordenadores" && <CoordenadoresTab unidades={unidades} showT={showT} isMob={isMob} />}
 
           {tab === "locais" && (
             <div>

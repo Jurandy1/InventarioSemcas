@@ -33,6 +33,29 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
   };
 
   useEffect(() => {
+    if (!coordData?.uid) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const { obterCoordPorUid } = await import("../services/firebase.js");
+        const coord = await obterCoordPorUid(coordData?.uid);
+
+        if (!coord || coord.status === "rejeitada" || coord.status === "desativada") {
+          try {
+            localStorage.removeItem("inv-coord-session");
+          } catch {}
+          onLogout();
+          showT("Seu acesso foi revogado pelo administrador");
+        }
+      } catch (e) {
+        console.error("Erro ao verificar status:", e);
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [coordData?.uid, onLogout]);
+
+  useEffect(() => {
     async function load() {
       try {
         const unidades = await loadUnidades(false);

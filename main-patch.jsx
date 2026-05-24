@@ -1,5 +1,7 @@
-import * as React from "react";
-import { createRoot } from "react-dom/client";
+// SUBSTITUIR o conteúdo de src/main.jsx POR ISSO:
+
+import React from "react";
+import ReactDOM from "react-dom/client";
 
 const path = String(window.location.pathname || "");
 const hash = String(window.location.hash || "");
@@ -24,17 +26,29 @@ window.addEventListener("unhandledrejection", (e) => renderFatal(e.reason));
 async function boot() {
   const el = document.getElementById("root");
   if (!el) return;
-  const root = createRoot(el);
+  const root = ReactDOM.createRoot(el);
 
   if (isCoordRegistro) {
     const mod = await import("./app/CoordinadorRegistro.jsx");
-    root.render(React.createElement(React.StrictMode, null, React.createElement(mod.CoordinadorRegistro)));
+    root.render(
+      <React.StrictMode>
+        <mod.CoordinadorRegistro />
+      </React.StrictMode>,
+    );
   } else if (isCoordPage) {
     const mod = await import("./app/CoordinadorLogin.jsx");
-    root.render(React.createElement(React.StrictMode, null, React.createElement(mod.CoordinadorLogin)));
+    root.render(
+      <React.StrictMode>
+        <mod.CoordinadorLogin />
+      </React.StrictMode>,
+    );
   } else {
     const mod = await import("./app/App.jsx");
-    root.render(React.createElement(React.StrictMode, null, React.createElement(mod.default)));
+    root.render(
+      <React.StrictMode>
+        <mod.default />
+      </React.StrictMode>,
+    );
   }
 }
 

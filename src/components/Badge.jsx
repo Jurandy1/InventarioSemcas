@@ -1,4 +1,4 @@
-import React from "react";
+import * as React from "react";
 
 export function Badge({ label, c }) {
   if (!c) c = { bg: "#f1f5f9", tx: "#475569" };
@@ -19,4 +19,3 @@ export function Badge({ label, c }) {
     </span>
   );
 }
-

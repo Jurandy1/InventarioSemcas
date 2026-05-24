@@ -1,4 +1,3 @@
-import * as XLSX from "xlsx/xlsx.mjs";
 import { idbGet, idbSet } from "./db.js";
 
 const XLSX_PATH = `${import.meta.env.BASE_URL}patrimonio_por_unidade.xlsx`;
@@ -9,15 +8,26 @@ export async function loadUnidades(forceRefresh = false) {
   if (!forceRefresh) {
     try {
       const cached = await idbGet(CACHE_KEY);
-      if (cached && Date.now() - cached.ts < TTL) return cached.data;
+      if (
+        cached &&
+        Array.isArray(cached.data) &&
+        cached.data.length > 0 &&
+        Date.now() - cached.ts < TTL
+      ) {
+        return cached.data;
+      }
     } catch {}
   }
 
   const res = await fetch(XLSX_PATH);
   if (!res.ok) throw new Error("Não foi possível carregar o arquivo de patrimônio");
   const buf = await res.arrayBuffer();
+  const XLSX = await import("xlsx/xlsx.mjs");
   const wb = XLSX.read(buf);
-  const data = parseXLSX(wb);
+  const data = parseXLSX(wb, XLSX);
+  if (!Array.isArray(data) || data.length === 0) {
+    throw new Error("O arquivo de patrimônio foi lido, mas não gerou unidades.");
+  }
   await idbSet(CACHE_KEY, { data, ts: Date.now() });
   return data;
 }
@@ -50,7 +60,7 @@ function parseValPair(valorRaw, valorAtualRaw) {
   return [valor, 0];
 }
 
-export function parseXLSX(wb) {
+export function parseXLSX(wb, XLSX) {
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
 
