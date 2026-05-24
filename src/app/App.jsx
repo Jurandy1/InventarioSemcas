@@ -6,7 +6,10 @@ import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js"
 import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken } from "../services/firebase.js";
 import { uploadPhotos, isStorageOk as isCloudinaryOk, deletePhoto } from "../services/storage.js";
 import { generateCoordinadorLink, generateCoordinadorToken, generateQRCode } from "../services/qr-service.js";
+import { criarBackupManual, logAuditoria, setupRealtimeSync } from "../services/audit.js";
+import { EVENTOS, gerarRelatorioExcel, gerarRelatorioPDF, notificationService, offlineManager } from "../services/features.js";
 import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "./categories.js";
+import { compressPhotoArray, getCachedData, perfMonitor, setCachedData } from "../utils/performance.js";
 import { loadUnidades } from "../utils/xlsx.js";
 import { gerarTodasSugestoes } from "../utils/suggestions.js";
 import { CoordenadoresTab } from "./CoordenadoresTab.jsx";
@@ -576,6 +579,7 @@ export default function App() {
   const [nfPage, setNfPage] = useState(1);
   const [loginMode, setLoginMode] = useState("login");
   const [ft, setFt] = useState(0);
+  const [queueStatus, setQueueStatus] = useState(() => offlineManager.getQueueStatus());
 
   const form = useRef({});
   const showT = (msg) => {
@@ -667,10 +671,35 @@ export default function App() {
 
   async function _loadFirebase() {
     try {
+      const [cachedFound, cachedLocais, cachedTombos] = await Promise.all([
+        getCachedData("inventario"),
+        getCachedData("locais"),
+        getCachedData("tombosNE"),
+      ]);
+      if (Array.isArray(cachedFound) && cachedFound.length > 0) {
+        setFound(cachedFound);
+      }
+      if (Array.isArray(cachedLocais) && cachedLocais.length > 0) {
+        setLocais(cachedLocais);
+      }
+      if (Array.isArray(cachedTombos) && cachedTombos.length > 0) {
+        setTombosNE(cachedTombos);
+      }
+
       const [foundDocs, localDocs, neDocs] = await Promise.all([fsGetAll("inventario"), fsGetAll("locais"), fsGetAll("tombosNE")]);
-      setFound(foundDocs.map((d) => ({ ...d, patrimonioId: d.patrimonioId || d._id })));
-      setLocais(localDocs.map((d) => ({ ...d, id: d._id })));
-      setTombosNE(neDocs.map((d) => ({ ...d, id: d._id })));
+      const nextFound = foundDocs.map((d) => ({ ...d, patrimonioId: d.patrimonioId || d._id }));
+      const nextLocais = localDocs.map((d) => ({ ...d, id: d._id }));
+      const nextTombos = neDocs.map((d) => ({ ...d, id: d._id }));
+
+      setFound(nextFound);
+      setLocais(nextLocais);
+      setTombosNE(nextTombos);
+
+      await Promise.all([
+        setCachedData("inventario", nextFound),
+        setCachedData("locais", nextLocais),
+        setCachedData("tombosNE", nextTombos),
+      ]);
     } catch (e) {
       console.error("Firebase load:", e);
     }
@@ -678,9 +707,35 @@ export default function App() {
 
   useEffect(() => {
     if (!logado) return;
-    const id = setInterval(_loadFirebase, 30000);
-    return () => clearInterval(id);
-  }, [logado]);
+    const refreshQueue = () => setQueueStatus(offlineManager.getQueueStatus());
+    refreshQueue();
+
+    const unsub = setupRealtimeSync(
+      unidadeAtiva?.id,
+      async (docs) => {
+        const nextFound = docs.map((d) => ({ ...d, patrimonioId: d.patrimonioId || d._id }));
+        setFound(nextFound);
+        await setCachedData("inventario", nextFound);
+      },
+      async (docs) => {
+        const nextLocais = docs.map((d) => ({ ...d, id: d._id }));
+        setLocais(nextLocais);
+        await setCachedData("locais", nextLocais);
+      },
+      null,
+    );
+
+    window.addEventListener("online", refreshQueue);
+    window.addEventListener("offline", refreshQueue);
+    const queueTimer = setInterval(refreshQueue, 2000);
+
+    return () => {
+      unsub?.();
+      clearInterval(queueTimer);
+      window.removeEventListener("online", refreshQueue);
+      window.removeEventListener("offline", refreshQueue);
+    };
+  }, [logado, unidadeAtiva?.id]);
 
   const handleLogin = async (email, senha) => {
     if (!firebaseOk) {
@@ -746,38 +801,94 @@ export default function App() {
     }
     await fsSet("inventario", itemId, entry);
     setFound((prev) => [...prev.filter((f) => f.patrimonioId !== itemId), { ...entry, _id: itemId }]);
+    await setCachedData("inventario", [...found.filter((f) => f.patrimonioId !== itemId), { ...entry, _id: itemId }]);
+    return entry;
   };
 
   const saveDetail = async () => {
     const item = form.current.detItem;
     if (!item) return;
 
+    perfMonitor.start("saveDetail");
+
+    const before = foundMap[item.id] || null;
     const existingUrls = form.current.detExistingUrls || [];
     const newBase64 = form.current.detNewBase64 || [];
     let allUrls = [...existingUrls];
+    try {
+      let compressedBase64 = [];
 
-    if (newBase64.length > 0) {
-      if (isCloudinaryOk()) {
+      if (newBase64.length > 0) {
         setUploading(true);
-        try {
-          const newUrls = await uploadPhotos(newBase64, item.id, (done, total) => {
+        setUploadMsg("Comprimindo fotos...");
+        compressedBase64 = await compressPhotoArray(newBase64, (done, total) => {
+          setUploadMsg(`Comprimindo foto ${done}/${total}...`);
+        });
+      } else {
+        compressedBase64 = [];
+      }
+
+      const offlineEntry = {
+        patrimonioId: item.id,
+        estado: gf("detEstado") || "Bom",
+        situacao: gf("detSituacao") || "Em uso",
+        localId: gf("detLocal"),
+        obs: gf("detObs"),
+        marca: gf("detMarca") || "",
+        origem: gf("detOrigem") || "Próprio",
+        fotoUrls: allUrls,
+        data: new Date().toLocaleDateString("pt-BR"),
+        hora: new Date().toLocaleTimeString("pt-BR"),
+        usuario: logado?.nome || "",
+        email: logado?.email || "",
+        ultimaAtualizacao: new Date().toISOString(),
+        user: logado?.nome || "",
+      };
+
+      if (!navigator.onLine) {
+        await offlineManager.queueOperation("save", {
+          collection: "inventario",
+          docId: item.id,
+          content: offlineEntry,
+        });
+        setFound((prev) => [...prev.filter((f) => f.patrimonioId !== item.id), { ...offlineEntry, _id: item.id }]);
+        setQueueStatus(offlineManager.getQueueStatus());
+        await setCachedData("inventario", [...found.filter((f) => f.patrimonioId !== item.id), { ...offlineEntry, _id: item.id }]);
+        await logAuditoria("queue-save", "inventario", item.id, before, offlineEntry);
+        setModal(null);
+        showT(compressedBase64.length > 0 ? "✓ Salvo offline (fotos novas entram quando voltar online)" : "✓ Salvo offline");
+        return;
+      }
+
+      if (compressedBase64.length > 0) {
+        if (isCloudinaryOk()) {
+          setUploadMsg("Enviando fotos...");
+          const newUrls = await uploadPhotos(compressedBase64, item.id, (done, total) => {
             setUploadMsg(`Enviando foto ${done}/${total}...`);
           });
           allUrls = [...allUrls, ...newUrls];
-        } catch {
-          showT("⚠️ Erro no upload das fotos");
-        } finally {
-          setUploading(false);
-          setUploadMsg("");
+        } else {
+          showT("⚠️ Firebase Storage não configurado — fotos não salvas");
         }
-      } else {
-        showT("⚠️ Firebase Storage não configurado — fotos não salvas");
       }
-    }
 
-    await markFound(item.id, gf("detEstado") || "Bom", gf("detSituacao") || "Em uso", gf("detLocal"), gf("detObs"), gf("detMarca"), gf("detOrigem") || "Próprio", allUrls);
-    setModal(null);
-    showT("✓ Salvo!");
+      const after = await markFound(item.id, gf("detEstado") || "Bom", gf("detSituacao") || "Em uso", gf("detLocal"), gf("detObs"), gf("detMarca"), gf("detOrigem") || "Próprio", allUrls);
+      await logAuditoria("update", "inventario", item.id, before, after);
+      notificationService.notify(EVENTOS.ITEM_ENCONTRADO, {
+        message: `Item ${item.id} salvo com sucesso`,
+        type: "success",
+      });
+      setModal(null);
+      showT("✓ Salvo com auditoria!");
+    } catch (e) {
+      console.error(e);
+      showT("⚠️ " + (e.message || "Erro ao salvar"));
+    } finally {
+      setUploading(false);
+      setUploadMsg("");
+      setQueueStatus(offlineManager.getQueueStatus());
+      perfMonitor.end("saveDetail");
+    }
   };
 
   const addLocal = async () => {
@@ -824,10 +935,16 @@ export default function App() {
     let fotoUrls = [];
     if (form.current.manPhotos?.length && isCloudinaryOk()) {
       setUploading(true);
+      setUploadMsg("Comprimindo fotos...");
       try {
-        fotoUrls = await uploadPhotos(form.current.manPhotos, id);
+        const compressed = await compressPhotoArray(form.current.manPhotos, (done, total) => {
+          setUploadMsg(`Comprimindo foto ${done}/${total}...`);
+        });
+        setUploadMsg("Enviando fotos...");
+        fotoUrls = await uploadPhotos(compressed, id);
       } catch {} finally {
         setUploading(false);
+        setUploadMsg("");
       }
     }
 
@@ -835,9 +952,72 @@ export default function App() {
     saveAtiva(novaAtiva);
     setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
 
-    await markFound(id, gf("manEstado") || "Bom", gf("manSituacao") || "Em uso", locais[0]?.id || "", desc.trim(), gf("manMarca"), gf("manOrigem") || "Próprio", fotoUrls);
+    const created = await markFound(id, gf("manEstado") || "Bom", gf("manSituacao") || "Em uso", locais[0]?.id || "", desc.trim(), gf("manMarca"), gf("manOrigem") || "Próprio", fotoUrls);
+    await logAuditoria("create", "manuais", id, null, { ...item, unidadeId: unidadeAtiva?.id, fotoUrls, inventario: created });
     setModal(null);
     showT("✓ Item adicionado!");
+  };
+
+  const gerarRelatorio = async (formato = "pdf") => {
+    if (!unidadeAtiva?.id) {
+      showT("Selecione uma unidade");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      if (formato === "pdf") {
+        const doc = await gerarRelatorioPDF(unidadeAtiva.id, unidades, found);
+        doc.save(`relatorio_${unidadeAtiva.id}_${Date.now()}.pdf`);
+      } else {
+        const { workbook, XLSX } = await gerarRelatorioExcel(unidadeAtiva.id, unidades, found);
+        XLSX.writeFile(workbook, `relatorio_${unidadeAtiva.id}_${Date.now()}.xlsx`);
+      }
+      await logAuditoria("export", "relatorio", unidadeAtiva.id, null, { formato });
+      showT(`✓ Relatório em ${formato.toUpperCase()} gerado`);
+    } catch (e) {
+      console.error(e);
+      showT("⚠️ Erro ao gerar relatório");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fazerBackup = async () => {
+    try {
+      setLoading(true);
+      const backup = await criarBackupManual();
+      notificationService.notify(EVENTOS.BACKUP_CRIADO, {
+        message: `Backup ${backup.id} criado`,
+        type: "success",
+      });
+      showT(`✓ Backup criado (${(backup.tamanho / 1024).toFixed(0)}KB)`);
+    } catch (e) {
+      console.error(e);
+      showT("⚠️ Erro ao criar backup");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderOfflineStatus = () => {
+    if (queueStatus.isOnline && queueStatus.pending === 0 && queueStatus.failed === 0) {
+      return <span style={{ fontSize: 12, color: "#dcfce7", fontWeight: 700 }}>📡 Online</span>;
+    }
+
+    if (!queueStatus.isOnline) {
+      return (
+        <span style={{ fontSize: 12, color: "#fef3c7", fontWeight: 700 }}>
+          📴 Offline · {queueStatus.pending} pendente{queueStatus.pending !== 1 ? "s" : ""}
+        </span>
+      );
+    }
+
+    return (
+      <span style={{ fontSize: 12, color: "#fde68a", fontWeight: 700 }}>
+        ⏳ Fila {queueStatus.pending} pendente{queueStatus.pending !== 1 ? "s" : ""}{queueStatus.failed ? ` · ${queueStatus.failed} falha(s)` : ""}
+      </span>
+    );
   };
 
   const finalizarInv = async () => {
@@ -1132,6 +1312,7 @@ export default function App() {
         <div>
           <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>📋 Inventário SEMCAS</p>
           <p style={{ margin: 0, fontSize: 11, opacity: 0.7 }}>{logado.nome}{unidadeAtiva ? ` · ${unidadeAtiva.nome}` : ""}</p>
+          <div style={{ marginTop: 3 }}>{renderOfflineStatus()}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {logado && (
@@ -1595,6 +1776,17 @@ export default function App() {
                     <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>{s.l}</p>
                   </div>
                 ))}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+                <button onClick={() => gerarRelatorio("pdf")} style={{ ...bp, fontSize: 12 }}>
+                  📄 PDF
+                </button>
+                <button onClick={() => gerarRelatorio("excel")} style={{ ...bp, fontSize: 12, background: "#0f766e" }}>
+                  📊 Excel
+                </button>
+                <button onClick={fazerBackup} style={{ ...bs, fontSize: 12 }}>
+                  💾 Backup
+                </button>
               </div>
               <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, marginTop: 20 }}>👥 Últimos a inventariar</h3>
               <div style={{ ...cd, marginBottom: 16 }}>
