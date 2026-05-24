@@ -88,7 +88,7 @@ export function setupRealtimeSync(unidadeId, onInventarioChange, onLocaisChange,
   const unsubscribers = [];
   const filterInventario = (docs) => {
     if (!unidadeId) return docs;
-    return docs.filter((d) => d.unidadeId === unidadeId || String(d.patrimonioId || "").includes(unidadeId));
+    return docs.filter((d) => !d.unidadeId || d.unidadeId === unidadeId);
   };
 
   if (onInventarioChange) {

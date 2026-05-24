@@ -891,8 +891,12 @@ export default function App() {
 
   const markFound = async (itemId, estado, situacao, localId, obs, marca, origem, fotoUrls = []) => {
     const now = new Date();
+    const entryUnidadeId = unidadeAtiva?.id || form.current?.detItem?.unidadeId || "";
+    const entryUnidadeNome = unidadeAtiva?.nome || form.current?.detItem?.unidadeNome || "";
     const entry = {
       patrimonioId: itemId,
+      unidadeId: entryUnidadeId,
+      unidadeNome: entryUnidadeNome,
       estado,
       situacao,
       localId,
@@ -950,6 +954,8 @@ export default function App() {
 
       const offlineEntry = {
         patrimonioId: item.id,
+        unidadeId: unidadeAtiva?.id || item?.unidadeId || "",
+        unidadeNome: unidadeAtiva?.nome || item?.unidadeNome || "",
         estado: gf("detEstado") || "Bom",
         situacao: gf("detSituacao") || "Em uso",
         localId: gf("detLocal"),

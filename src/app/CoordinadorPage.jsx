@@ -189,6 +189,8 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       const now = new Date();
       const entry = {
         patrimonioId: detItem.id,
+        unidadeId: coordData?.unidadeId || detItem?.unidadeId || "",
+        unidadeNome: coordData?.unidadeNome || detItem?.unidadeNome || "",
         estado: detEstado,
         situacao: detSituacao,
         localId: detLocal || "",
