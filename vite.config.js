@@ -12,6 +12,9 @@ export default defineConfig(({ command }) => {
     envDir: projectRoot,
     base: command === "build" ? `/${repoName}/` : "/",
     plugins: [react()],
+    build: command === "build"
+      ? { minify: false, cssMinify: false, reportCompressedSize: false, sourcemap: false }
+      : undefined,
     server: {
       host: true,
       port: 5173,

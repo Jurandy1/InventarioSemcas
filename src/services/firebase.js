@@ -24,6 +24,16 @@ const AUTH_URL = `https://identitytoolkit.googleapis.com/v1/accounts`;
 let authToken = null;
 let authUid = null;
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 export function setFirebaseSession({ token, uid }) {
   authToken = token || null;
   authUid = uid || null;
@@ -40,11 +50,11 @@ export function getFirebaseSession() {
 
 export async function refreshAuthToken(storedRefreshToken) {
   assertFirebaseConfigured();
-  const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB.apiKey}`, {
+  const r = await fetchWithTimeout(`https://securetoken.googleapis.com/v1/token?key=${FB.apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: `grant_type=refresh_token&refresh_token=${storedRefreshToken}`,
-  });
+  }, 12000);
   const d = await r.json();
   if (d.error) throw new Error(d.error.message || "Falha ao renovar sessão");
   authToken = d.id_token;
@@ -54,11 +64,11 @@ export async function refreshAuthToken(storedRefreshToken) {
 
 export async function fbLogin(email, password) {
   assertFirebaseConfigured();
-  const r = await fetch(`${AUTH_URL}:signInWithPassword?key=${FB.apiKey}`, {
+  const r = await fetchWithTimeout(`${AUTH_URL}:signInWithPassword?key=${FB.apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, returnSecureToken: true }),
-  });
+  }, 12000);
   const d = await r.json();
   if (d.error) {
     throw new Error(
@@ -82,13 +92,27 @@ export async function fbLogin(email, password) {
   };
 }
 
+export async function fbAnonymousLogin() {
+  assertFirebaseConfigured();
+  const r = await fetchWithTimeout(`${AUTH_URL}:signUp?key=${FB.apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ returnSecureToken: true }),
+  }, 12000);
+  const d = await r.json();
+  if (d.error) throw new Error(d.error.message);
+  authToken = d.idToken;
+  authUid = d.localId;
+  return { uid: d.localId, token: d.idToken, refreshToken: d.refreshToken };
+}
+
 export async function fbRegister(email, password) {
   assertFirebaseConfigured();
-  const r = await fetch(`${AUTH_URL}:signUp?key=${FB.apiKey}`, {
+  const r = await fetchWithTimeout(`${AUTH_URL}:signUp?key=${FB.apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, returnSecureToken: true }),
-  });
+  }, 12000);
   const d = await r.json();
   if (d.error) {
     throw new Error(d.error.message === "EMAIL_EXISTS" ? "Email já cadastrado" : d.error.message);

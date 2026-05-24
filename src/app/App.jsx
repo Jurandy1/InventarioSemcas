@@ -5,154 +5,10 @@ import { TArea, TInput } from "../components/FormFields.jsx";
 import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js";
 import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken } from "../services/firebase.js";
 import { uploadPhotos, isStorageOk as isCloudinaryOk, deletePhoto } from "../services/storage.js";
+import { generateCoordinadorLink, generateCoordinadorToken, generateQRCode } from "../services/qr-service.js";
+import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "./categories.js";
 import { loadUnidades } from "../utils/xlsx.js";
 import { gerarTodasSugestoes } from "../utils/suggestions.js";
-
-const CATEGORY_TREE = [
-  {
-    name: "Cadeiras",
-    icon: "🪑",
-    re: /CADEIRA|POLTRONA|LONGARINA|ASSENTO/,
-    subs: [
-      { label: "Cadeira Giratória", match: (e) => /GIRAT|SECRETÁRI/.test(e) },
-      { label: "Cadeira Plástica", match: (e) => /PLÁST|PLASTIC/.test(e) },
-      { label: "Cadeira Presidente", match: (e) => /PRESIDENT/.test(e) },
-      { label: "Longarina", match: (e) => /LONGARINA/.test(e) },
-      { label: "Conjunto c/ Mesa", match: (e) => /CONJUNTO/.test(e) },
-      { label: "Cadeira de Rodas", match: (e) => /RODAS/.test(e) },
-      { label: "Cadeira Fixa / Geral", match: () => true },
-    ],
-  },
-  {
-    name: "Mesas",
-    icon: "🪞",
-    re: /^MESA|BANCADA|BALCÃO/,
-    subs: [
-      { label: "Mesa de Trabalho", match: (e) => /TRABALHO|EM L|ESCRITÓRIO|ESCRITORIO/.test(e) || /^MESA$/.test(e) },
-      { label: "Mesa Plástica", match: (e) => /PLÁST|PLASTIC/.test(e) },
-      { label: "Mesa p/ Computador", match: (e) => /COMPUTADOR/.test(e) },
-      { label: "Mesa p/ Impressora", match: (e) => /IMPRESSORA/.test(e) },
-      { label: "Mesa de Reunião", match: (e) => /REUNI|CIRCULAR|RETANGUL/.test(e) },
-      { label: "Outras Mesas", match: () => true },
-    ],
-  },
-  {
-    name: "Armários",
-    icon: "🗄️",
-    re: /ARMÁRI|ARMARIO|ARQUIVO|ESTANTE|GAVETEIRO|RACK|PRATELEIRA|ROUPEIRO/,
-    subs: [
-      { label: "Arquivo", match: (e) => /ARQUIVO/.test(e) },
-      { label: "Armário em Aço", match: (e) => /(ARMÁRI|ARMARIO)/.test(e) && /AÇO|ACO/.test(e) },
-      { label: "Armário em MDF/Madeira", match: (e) => /ARMÁRI|ARMARIO/.test(e) },
-      { label: "Estante em Aço", match: (e) => /ESTANTE/.test(e) && /AÇO|ACO/.test(e) },
-      { label: "Estante", match: (e) => /ESTANTE/.test(e) },
-      { label: "Gaveteiro", match: (e) => /GAVETEIRO/.test(e) },
-      { label: "Rack / Suporte", match: () => true },
-    ],
-  },
-  {
-    name: "Informática",
-    icon: "💻",
-    re: /NOTEBOOK|COMPUTADOR|MICROCOMPUTADOR|CPU|LAPTOP|TABLET|DESKTOP|SCANNER|IMPRESSORA|MULTIFUNCIONAL|MONITOR|FRAGMENTADORA|ESTAÇÃO DE TRABALHO|MICRO COMPUTADOR/,
-    subs: [
-      { label: "Notebook / Laptop", match: (e) => /NOTEBOOK|LAPTOP/.test(e) },
-      { label: "Tablet", match: (e) => /TABLET/.test(e) },
-      { label: "Computador (Desktop)", match: (e) => /COMPUTADOR|MICROCOMPUTADOR|CPU|DESKTOP|ESTAÇÃO|MICRO COMPUTADOR/.test(e) },
-      { label: "Monitor", match: (e) => /MONITOR/.test(e) },
-      { label: "Impressora", match: (e) => /IMPRESSORA|MULTIFUNCIONAL/.test(e) },
-      { label: "Scanner", match: (e) => /SCANNER/.test(e) },
-      { label: "Fragmentadora", match: (e) => /FRAGMENTADORA/.test(e) },
-      { label: "Acessórios", match: () => true },
-    ],
-  },
-  {
-    name: "TV / AV",
-    icon: "📺",
-    re: /TELEVISOR|TV |PROJETOR|TELÃO|DISPLAY|TELA|DATA SHOW/,
-    subs: [
-      { label: "Televisor", match: (e) => /TELEVISOR|^TV /.test(e) },
-      { label: "Projetor", match: (e) => /PROJETOR|DATA SHOW/.test(e) },
-      { label: "Tela de Projeção", match: (e) => /TELA/.test(e) },
-      { label: "Outros", match: () => true },
-    ],
-  },
-  {
-    name: "Climatização",
-    icon: "❄️",
-    re: /AR CONDICIONADO|VENTILADOR|CLIMATIZADOR|EXAUSTOR|SPLIT|PURIFICADOR/,
-    subs: [
-      { label: "Ar-Condicionado", match: (e) => /AR CONDICIONADO|SPLIT/.test(e) },
-      { label: "Ventilador de Parede", match: (e) => /VENTILADOR/.test(e) && /PAREDE/.test(e) },
-      { label: "Ventilador de Coluna", match: (e) => /VENTILADOR/.test(e) && /COLUNA/.test(e) },
-      { label: "Ventilador Geral", match: (e) => /VENTILADOR|CLIMATIZADOR|EXAUSTOR/.test(e) },
-      { label: "Purificador", match: () => true },
-    ],
-  },
-  {
-    name: "Rede / TI",
-    icon: "🔌",
-    re: /CÂMERA|CAMERA|ROTEADOR|SWITCH|NOBREAK|ESTABILIZADOR|SERVIDOR|HUB|MICROFONE|CAIXA AMPLIF|DVR|KIT DE SEGUR|MINI SYSTEM/,
-    subs: [
-      { label: "Câmera de Segurança", match: (e) => /CÂMERA|CAMERA|DVR|KIT DE SEGUR/.test(e) },
-      { label: "Switch / Roteador", match: (e) => /SWITCH|ROTEADOR|HUB|SERVIDOR/.test(e) },
-      { label: "Nobreak", match: (e) => /NOBREAK/.test(e) },
-      { label: "Estabilizador", match: (e) => /ESTABILIZADOR/.test(e) },
-      { label: "Caixa de Som / Microfone", match: () => true },
-    ],
-  },
-  {
-    name: "Cozinha",
-    icon: "🍳",
-    re: /LIQUIDIFICADOR|GELADEIRA|FOGÃO|MICROONDAS|CAFETEIRA|BEBEDOURO|FREEZER|FORNO|FILTRO|REFRIGERADOR|FOGAO|FRIGOBAR|BATEDEIRA|MAQUINA DE LAVAR/,
-    subs: [
-      { label: "Bebedouro", match: (e) => /BEBEDOURO/.test(e) },
-      { label: "Geladeira / Refrigerador", match: (e) => /GELADEIRA|REFRIGERADOR|FRIGOBAR|FREEZER/.test(e) },
-      { label: "Fogão", match: (e) => /FOGÃO|FOGAO/.test(e) },
-      { label: "Liquidificador", match: (e) => /LIQUIDIFICADOR/.test(e) },
-      { label: "Eletrodomésticos Diversos", match: () => true },
-    ],
-  },
-  {
-    name: "Saúde / Repouso",
-    icon: "🏥",
-    re: /\bCAMA\b|MACA|COLCHÃO|BERÇO|BERCE/,
-    subs: [
-      { label: "Cama / Colchão", match: (e) => /CAMA|COLCHÃO/.test(e) },
-      { label: "Berço", match: (e) => /BERÇO|BERCE/.test(e) },
-      { label: "Maca", match: () => true },
-    ],
-  },
-  {
-    name: "Outros",
-    icon: "📦",
-    re: null,
-    subs: [
-      { label: "Veículos", match: (e) => /AUTOMÓVEL|MICROÔNIBUS|ÔNIBUS|CAMINHÃO/.test(e) },
-      { label: "Mobiliário Diverso", match: (e) => /SOFÁ|SOFA|ESCRIVANINHA|CONJUNTO REFEIT/.test(e) },
-      { label: "Sinalização / Expo", match: (e) => /QUADRO|CAVALETE|MURAL|BANNER/.test(e) },
-      { label: "Relógio de Ponto", match: (e) => /RELÓGIO/.test(e) },
-      { label: "Equipamentos Diversos", match: () => true },
-    ],
-  },
-];
-
-function getCategoryGroup(especie) {
-  const e = String(especie || "").toUpperCase();
-  for (const c of CATEGORY_TREE) {
-    if (c.re && c.re.test(e)) return c.name;
-  }
-  return "Outros";
-}
-
-function getSubcategoryLabel(especie, catName) {
-  const e = String(especie || "").toUpperCase();
-  const cat = CATEGORY_TREE.find((c) => c.name === catName);
-  if (!cat) return null;
-  for (const s of cat.subs || []) {
-    if (s.match(e)) return s.label;
-  }
-  return null;
-}
 
 function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, setFt, setModal, isMob, inp, cd, bs }) {
   const [localCat, setLocalCat] = useState("Todas");
@@ -704,6 +560,7 @@ export default function App() {
   const [isMob, setIsMob] = useState(window.innerWidth < 768);
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
+  const [qrCodeUrl, setQrCodeUrl] = useState(null);
   const [cameraTarget, setCameraTarget] = useState(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -741,6 +598,7 @@ export default function App() {
         setLoading(false);
         return;
       }
+      const hard = setTimeout(() => setLoading(false), 15000);
       try {
         const saved = localStorage.getItem("inv-session");
         if (saved) {
@@ -767,7 +625,10 @@ export default function App() {
             setFirebaseSession({ token: s.token, uid: s.uid });
             setLogado(s);
           }
-          const [unids] = await Promise.all([_loadXlsx(), _loadFirebase()]);
+          const [unids] = await Promise.race([
+            Promise.all([_loadXlsx(), _loadFirebase()]),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("Timeout ao carregar dados")), 15000)),
+          ]);
           try {
             const ativaId = localStorage.getItem("inv-ativa-id");
             if (ativaId && unids?.length) {
@@ -778,6 +639,11 @@ export default function App() {
         }
       } catch (e) {
         console.error(e);
+        try {
+          showT(`⚠️ ${e.message || "Erro ao iniciar"}`);
+        } catch {}
+      } finally {
+        clearTimeout(hard);
       }
       setLoading(false);
     }
@@ -982,6 +848,61 @@ export default function App() {
     setTombosNE((prev) => [...prev, ...pendentes.map((i) => ({ ...i, unidade: unidadeAtiva?.nome, dataFin: new Date().toLocaleDateString("pt-BR") }))]);
     setModal(null);
     showT(`Finalizado! ${pendentes.length} não encontrado(s)`);
+  };
+
+  const finalizarComCoordenadora = async () => {
+    const nome = String(gf("coordNome") || "").trim();
+    const matricula = String(gf("coordMatricula") || "").trim();
+    if (!nome || !matricula) {
+      showT("Preencha nome e matrícula da coordenadora");
+      return;
+    }
+    if (!unidadeAtiva?.id) return;
+
+    const token = generateCoordinadorToken(unidadeAtiva.id);
+    const link = generateCoordinadorLink(token);
+    const qrUrl = await generateQRCode(link);
+    setQrCodeUrl(qrUrl);
+
+    const coordDoc = {
+      token,
+      unidadeId: unidadeAtiva.id,
+      unidadeNome: unidadeAtiva.nome,
+      coordenadoraNome: nome,
+      coordenadoraMatricula: matricula,
+      criadoEm: new Date().toISOString(),
+      ativa: true,
+      link,
+    };
+    await fsSet("coordenadores", token, coordDoc);
+
+    const pendentes = (unidadeAtiva?.itens || []).filter((i) => !foundSet.has(i.id));
+    const dataFin = new Date().toLocaleDateString("pt-BR");
+    for (const item of pendentes) {
+      const ne = {
+        patrimonioId: item.id,
+        descricao: item.descricao,
+        especie: item.especie,
+        unidade: unidadeAtiva?.nome,
+        dataFin,
+        coordenadora: nome,
+        matricula,
+      };
+      await fsSet("tombosNE", item.id, ne);
+    }
+    setTombosNE((prev) => [
+      ...prev,
+      ...pendentes.map((i) => ({
+        ...i,
+        unidade: unidadeAtiva?.nome,
+        dataFin,
+        coordenadora: nome,
+        matricula,
+      })),
+    ]);
+
+    setModal("qrcode-resultado");
+    showT("✓ Coordenadora cadastrada! QR Code gerado");
   };
 
   const openCamera = (target) => {
@@ -1956,7 +1877,25 @@ export default function App() {
 
       {modal === "manual" && (
         <Overlay onClose={() => setModal(null)}>
-          <h2 style={{ margin: "0 0 16px", fontSize: 17, fontWeight: 700 }}>Adicionar Manual</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Adicionar Manual</h2>
+            <button
+              onClick={() => setModal(null)}
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: 20,
+                color: "#64748b",
+                cursor: "pointer",
+                padding: "4px 8px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              ✕
+            </button>
+          </div>
           <Lbl>Descrição *</Lbl>
           <TArea key="manDesc" initial={gf("manDesc")} onVal={(v) => uf("manDesc", v)} rows={3} placeholder="Descreva o item..." style={{ ...inp, resize: "none" }} />
           <Lbl>Espécie</Lbl>
@@ -2039,9 +1978,9 @@ export default function App() {
         <Overlay onClose={() => setModal(null)}>
           <div style={{ textAlign: "center" }}>
             <p style={{ fontSize: 48, margin: "0 0 16px" }}>⚠️</p>
-            <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700 }}>Finalizar?</h2>
-            <p style={{ color: "#64748b", margin: "0 0 16px" }}>{unidadeAtiva?.nome}</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+            <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700 }}>Finalizar Inventário</h2>
+            <p style={{ color: "#64748b", margin: "0 0 20px" }}>{unidadeAtiva?.nome}</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
               <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 12 }}>
                 <p style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "#16a34a" }}>{totalFound}</p>
                 <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Encontrados</p>
@@ -2051,12 +1990,68 @@ export default function App() {
                 <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Não encontrados</p>
               </div>
             </div>
+
+            <div style={{ background: "#f9f3ff", border: "1.5px solid #e9d5ff", borderRadius: 12, padding: 16, marginBottom: 16, textAlign: "left" }}>
+              <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, color: "#6b21a8" }}>📋 Dados da Coordenadora</p>
+              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Nome completo *</p>
+              <TInput initial={gf("coordNome")} onVal={(v) => uf("coordNome", v)} placeholder="Ex: Maria Silva..." style={{ ...inp, marginBottom: 10 }} />
+              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Matrícula *</p>
+              <TInput initial={gf("coordMatricula")} onVal={(v) => uf("coordMatricula", v)} placeholder="Ex: 123456..." style={inp} />
+            </div>
+
             <div style={{ display: "flex", gap: 9 }}>
               <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
                 Cancelar
               </button>
-              <button onClick={finalizarInv} style={{ ...bp, flex: 1, background: "#dc2626" }}>
-                ✓ Finalizar
+              <button onClick={finalizarComCoordenadora} style={{ ...bp, flex: 1, background: "#16a34a" }}>
+                ✓ Gerar QR Code
+              </button>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {modal === "qrcode-resultado" && qrCodeUrl && (
+        <Overlay
+          onClose={() => {
+            setModal(null);
+            setQrCodeUrl(null);
+          }}
+        >
+          <div style={{ textAlign: "center" }}>
+            <p style={{ fontSize: 40, margin: "0 0 16px" }}>📱</p>
+            <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 700 }}>QR Code Gerado</h2>
+            <p style={{ color: "#64748b", margin: "0 0 16px", fontSize: 13 }}>
+              {gf("coordNome")} • {gf("coordMatricula")}
+            </p>
+
+            <img src={qrCodeUrl} alt="QR Code" style={{ width: 280, height: 280, margin: "16px auto", border: "2px solid #e2e8f0", borderRadius: 12 }} />
+
+            <p style={{ color: "#64748b", margin: "16px 0 0", fontSize: 12 }}>
+              A coordenadora pode escanear este código com o celular para acessar e gerenciar a unidade.
+            </p>
+
+            <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
+              <button
+                onClick={() => {
+                  const a = document.createElement("a");
+                  a.href = qrCodeUrl;
+                  a.download = `qr_${unidadeAtiva?.id || "unidade"}.png`;
+                  a.click();
+                }}
+                style={{ ...bs, flex: 1 }}
+              >
+                ⬇️ Baixar
+              </button>
+              <button
+                onClick={() => {
+                  setModal(null);
+                  setQrCodeUrl(null);
+                  saveAtiva(null);
+                }}
+                style={{ ...bp, flex: 1 }}
+              >
+                ✓ Feito
               </button>
             </div>
           </div>
