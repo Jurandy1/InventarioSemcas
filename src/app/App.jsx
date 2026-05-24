@@ -1041,7 +1041,18 @@ export default function App() {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: isMob ? "20px 20px 0 0" : 16, width: isMob ? "100%" : "520px", maxHeight: isMob ? "90vh" : "85vh", overflowY: "auto", padding: 24 }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff",
+          borderRadius: isMob ? "20px 20px 0 0" : 16,
+          width: isMob ? "100%" : "520px",
+          maxHeight: isMob ? "90dvh" : "85vh",
+          overflowY: "auto",
+          padding: 24,
+          paddingBottom: isMob ? "calc(24px + env(safe-area-inset-bottom, 0px))" : 24,
+        }}
+      >
         {children}
       </div>
     </div>
@@ -1164,7 +1175,7 @@ export default function App() {
           </div>
         )}
 
-        <div style={{ flex: 1, padding: isMob ? 12 : 24, paddingBottom: isMob ? 80 : 24 }}>
+        <div style={{ flex: 1, padding: isMob ? 12 : 24, paddingBottom: isMob ? "calc(78px + env(safe-area-inset-bottom, 0px))" : 24 }}>
           {tab === "inventario" && !unidadeAtiva && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -1715,11 +1726,39 @@ export default function App() {
       </div>
 
       {isMob && (
-        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: "#fff", borderTop: "1.5px solid #e2e8f0", display: "flex", zIndex: 200 }}>
+        <div
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: "#fff",
+            borderTop: "1.5px solid #e2e8f0",
+            display: "flex",
+            zIndex: 200,
+            paddingBottom: "env(safe-area-inset-bottom, 0px)",
+            boxShadow: "0 -6px 16px rgba(15,23,42,.08)",
+          }}
+        >
           {navs.map((n) => (
-            <button key={n.id} onClick={() => setTab(n.id)} style={{ flex: 1, padding: "8px 2px 6px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+            <button
+              key={n.id}
+              onClick={() => setTab(n.id)}
+              style={{
+                flex: 1,
+                minHeight: 56,
+                padding: "10px 2px 8px",
+                border: "none",
+                background: "none",
+                cursor: "pointer",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 2,
+              }}
+            >
               <span style={{ fontSize: 18 }}>{n.icon}</span>
-              <span style={{ fontSize: 9, fontWeight: tab === n.id ? 700 : 400, color: tab === n.id ? "#1e3a8a" : "#94a3b8" }}>{n.l}</span>
+              <span style={{ fontSize: 10, fontWeight: tab === n.id ? 800 : 500, color: tab === n.id ? "#1e3a8a" : "#94a3b8" }}>{n.l}</span>
             </button>
           ))}
         </div>
@@ -1729,9 +1768,27 @@ export default function App() {
 
       {modal === "detalhe" && form.current.detItem && (
         <Overlay onClose={() => setModal(null)}>
-          <h2 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700 }}>{form.current.detItem.descricao || form.current.detItem.especie || "—"}</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, flex: 1, minWidth: 0 }}>{form.current.detItem.descricao || form.current.detItem.especie || "—"}</h2>
+            <button
+              onClick={() => setModal(null)}
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: 22,
+                color: "#64748b",
+                cursor: "pointer",
+                padding: "4px 8px",
+                lineHeight: 1,
+              }}
+            >
+              ✕
+            </button>
+          </div>
           <p style={{ margin: "0 0 4px", fontSize: 12, color: "#64748b" }}>Nº {form.current.detItem.id} · {form.current.detItem.data} · R$ {(form.current.detItem.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-          <p style={{ margin: "0 0 12px", fontSize: 12, color: "#94a3b8" }}>Fornecedor: {form.current.detItem.fornecedor || "—"} · Marca: {form.current.detItem.marca || "—"} · NF: {form.current.detItem.nf || "—"} · Empenho: {form.current.detItem.empenho || "—"}</p>
+          <p style={{ margin: "0 0 12px", fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>
+            Fornecedor: {form.current.detItem.fornecedor || "—"} · Marca: {form.current.detItem.marca || "—"} · NF: {form.current.detItem.nf || "—"} · Empenho: {form.current.detItem.empenho || "—"}
+          </p>
           {foundMap[form.current.detItem.id] && (
             <p style={{ margin: "4px 0 12px", fontSize: 11, color: "#10b981", fontWeight: 600 }}>
               ✅ Inventariado por: {foundMap[form.current.detItem.id].usuario || foundMap[form.current.detItem.id].user || "—"} em {foundMap[form.current.detItem.id].data || "—"}
@@ -1752,7 +1809,17 @@ export default function App() {
                     <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
                       {photoList.map((ph, i) => (
                         <div key={i} style={{ position: "relative", flexShrink: 0 }}>
-                          <img src={ph} alt="" style={{ width: photoList.length === 1 ? "100%" : 200, height: photoList.length === 1 ? 180 : 140, objectFit: "cover", borderRadius: 10, border: "1px solid #e2e8f0" }} />
+                          <img
+                            src={ph}
+                            alt=""
+                            style={{
+                              width: photoList.length === 1 ? "100%" : isMob ? 160 : 200,
+                              height: photoList.length === 1 ? 180 : isMob ? 120 : 140,
+                              objectFit: "cover",
+                              borderRadius: 10,
+                              border: "1px solid #e2e8f0",
+                            }}
+                          />
                           <button
                             onClick={() => {
                               const existing = form.current.detExistingUrls || [];
@@ -1854,7 +1921,10 @@ export default function App() {
           </select>
           <Lbl>Observações</Lbl>
           <TArea initial={form.current.detObs} onVal={(v) => uf("detObs", v)} rows={2} placeholder="Anotações..." style={{ ...inp, resize: "none" }} />
-          <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
+          <div style={{ display: "flex", gap: 9, marginTop: 16, flexDirection: isMob ? "column" : "row" }}>
+            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
+              Cancelar
+            </button>
             {foundSet.has(form.current.detItem.id) && (
               <button
                 onClick={async () => {
@@ -2058,7 +2128,27 @@ export default function App() {
         </Overlay>
       )}
 
-      {toast && <div style={{ position: "fixed", bottom: isMob ? 82 : 24, left: "50%", transform: "translateX(-50%)", background: "#1e3a8a", color: "#fff", padding: "11px 24px", borderRadius: 24, fontSize: 13, fontWeight: 600, zIndex: 400, boxShadow: "0 4px 16px rgba(0,0,0,.25)" }}>{toast}</div>}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: isMob ? "calc(78px + env(safe-area-inset-bottom, 0px) + 10px)" : 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#1e3a8a",
+            color: "#fff",
+            padding: "11px 24px",
+            borderRadius: 24,
+            fontSize: 13,
+            fontWeight: 600,
+            zIndex: 400,
+            boxShadow: "0 4px 16px rgba(0,0,0,.25)",
+            maxWidth: "92vw",
+          }}
+        >
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
