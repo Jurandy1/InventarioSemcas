@@ -13,9 +13,7 @@ function assertFirebaseConfigured() {
     const msg = import.meta.env.PROD
       ? "Firebase não configurado no deploy. Configure os secrets do GitHub Actions: VITE_FB_API_KEY, VITE_FB_PROJECT_ID e VITE_FB_STORAGE_BUCKET e faça um redeploy."
       : "Firebase não configurado. Crie um arquivo .env na raiz com VITE_FB_API_KEY, VITE_FB_PROJECT_ID e VITE_FB_STORAGE_BUCKET e reinicie o servidor.";
-    throw new Error(
-      msg,
-    );
+    throw new Error(msg);
   }
 }
 
@@ -217,7 +215,7 @@ export async function criarConviteCoordinador(unidadeId, unidadeNome, matricula 
     dataCriacao: agora.toISOString(),
     dataExpiracao: dataExpiracao.toISOString(),
     dataUso: null,
-    criadoPor,
+    criadoPor: criadoPor || authUid,
   };
 
   await fsSet("convites", token, convite);
@@ -245,8 +243,8 @@ export async function cancelarConvite(token) {
   assertFirebaseConfigured();
   if (!authToken) throw new Error("Usuário não autenticado");
 
-  const convite = await fsGetAll("convites");
-  const found = convite.find((c) => c._id === token || c.token === token);
+  const convites = await fsGetAll("convites");
+  const found = convites.find((c) => c._id === token || c.token === token);
   if (!found) throw new Error("Convite não encontrado");
 
   found.status = "cancelado";
@@ -330,4 +328,3 @@ export async function gerarLinkConviteCoordinador(unidadeId, unidadeNome, matric
   const link = `${window.location.origin}${prefix}#/coordregistro/${convite.token}`;
   return { convite, link };
 }
-
