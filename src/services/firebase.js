@@ -38,6 +38,20 @@ export function getFirebaseSession() {
   return { token: authToken, uid: authUid };
 }
 
+export async function refreshAuthToken(storedRefreshToken) {
+  assertFirebaseConfigured();
+  const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB.apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=refresh_token&refresh_token=${storedRefreshToken}`,
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error.message || "Falha ao renovar sessão");
+  authToken = d.id_token;
+  authUid = d.user_id;
+  return { token: d.id_token, refreshToken: d.refresh_token, uid: d.user_id };
+}
+
 export async function fbLogin(email, password) {
   assertFirebaseConfigured();
   const r = await fetch(`${AUTH_URL}:signInWithPassword?key=${FB.apiKey}`, {
@@ -81,7 +95,13 @@ export async function fbRegister(email, password) {
   }
   authToken = d.idToken;
   authUid = d.localId;
-  return { uid: d.localId, email: d.email, nome: d.email.split("@")[0].toUpperCase(), token: d.idToken };
+  return {
+    uid: d.localId,
+    email: d.email,
+    nome: d.email.split("@")[0].toUpperCase(),
+    token: d.idToken,
+    refreshToken: d.refreshToken,
+  };
 }
 
 function toFsValue(val) {
@@ -132,17 +152,6 @@ export async function fsSet(collection, docId, data) {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
     body: JSON.stringify({ fields }),
   });
-}
-
-export async function fsGet(collection, docId) {
-  assertFirebaseConfigured();
-  if (!authToken) return null;
-  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
-  const r = await fetch(`${FS_URL}/${collection}/${docId}?key=${FB.apiKey}`, {
-    headers: { Authorization: `Bearer ${authToken}` },
-  });
-  if (!r.ok) return null;
-  return fromFsDoc(await r.json());
 }
 
 export async function fsGetAll(collection) {

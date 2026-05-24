@@ -3,7 +3,7 @@ import { Badge } from "../components/Badge.jsx";
 import { CameraModal } from "../components/CameraModal.jsx";
 import { TArea, TInput } from "../components/FormFields.jsx";
 import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js";
-import { clearFirebaseSession, fsDel, fsGet, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister } from "../services/firebase.js";
+import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken } from "../services/firebase.js";
 import { uploadPhotos, isStorageOk as isCloudinaryOk, deletePhoto } from "../services/storage.js";
 import { loadUnidades } from "../utils/xlsx.js";
 
@@ -737,8 +737,28 @@ export default function App() {
         const saved = localStorage.getItem("inv-session");
         if (saved) {
           const s = JSON.parse(saved);
-          setFirebaseSession({ token: s.token, uid: s.uid });
-          setLogado(s);
+          if (s.refreshToken) {
+            try {
+              const r = await refreshAuthToken(s.refreshToken);
+              const next = { ...s, token: r.token, uid: r.uid, refreshToken: r.refreshToken || s.refreshToken };
+              setFirebaseSession({ token: next.token, uid: next.uid });
+              setLogado(next);
+              try {
+                localStorage.setItem("inv-session", JSON.stringify(next));
+              } catch {}
+            } catch {
+              setLogado(null);
+              clearFirebaseSession();
+              try {
+                localStorage.removeItem("inv-session");
+              } catch {}
+              setLoading(false);
+              return;
+            }
+          } else {
+            setFirebaseSession({ token: s.token, uid: s.uid });
+            setLogado(s);
+          }
           const [unids] = await Promise.all([_loadXlsx(), _loadFirebase()]);
           try {
             const ativaId = localStorage.getItem("inv-ativa-id");
