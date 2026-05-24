@@ -44,7 +44,8 @@ export async function getCachedData(key) {
       return null;
     }
     return data;
-  } catch {
+  } catch (e) {
+    console.warn("Cache read error:", e);
     return null;
   }
 }
@@ -69,47 +70,86 @@ export async function clearCache(pattern = null) {
   }
 }
 
-export async function compressPhoto(base64, maxWidth = 800, maxHeight = 600, quality = 0.65) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let w = img.width;
-      let h = img.height;
+function compressPhotoWithTimeout(base64, maxWidth = 800, maxHeight = 600, quality = 0.65, timeoutMs = 5000) {
+  return Promise.race([
+    new Promise((resolve) => {
+      const img = new Image();
+      let resolved = false;
 
-      if (w > maxWidth) {
-        h *= maxWidth / w;
-        w = maxWidth;
-      }
-      if (h > maxHeight) {
-        w *= maxHeight / h;
-        h = maxHeight;
-      }
+      img.onload = () => {
+        if (resolved) return;
+        resolved = true;
 
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(w));
-      canvas.height = Math.max(1, Math.round(h));
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
+        try {
+          let w = img.width;
+          let h = img.height;
+
+          if (w > maxWidth) {
+            h *= maxWidth / w;
+            w = maxWidth;
+          }
+          if (h > maxHeight) {
+            w *= maxHeight / h;
+            h = maxHeight;
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(w));
+          canvas.height = Math.max(1, Math.round(h));
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(base64);
+            return;
+          }
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        } catch (err) {
+          console.error("Erro ao comprimir:", err);
+          resolve(base64);
+        }
+      };
+
+      img.onerror = () => {
+        if (resolved) return;
+        resolved = true;
+        console.warn("Erro ao carregar imagem");
         resolve(base64);
-        return;
-      }
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", quality));
-    };
-    img.onerror = () => resolve(base64);
-    img.src = base64;
-  });
+      };
+
+      img.src = base64;
+    }),
+    new Promise((resolve) => {
+      setTimeout(() => {
+        console.warn(`Timeout ao comprimir imagem (>${timeoutMs}ms)`);
+        resolve(base64);
+      }, timeoutMs);
+    }),
+  ]);
+}
+
+export async function compressPhoto(base64, maxWidth = 800, maxHeight = 600, quality = 0.65) {
+  return compressPhotoWithTimeout(base64, maxWidth, maxHeight, quality, 5000);
 }
 
 export async function compressPhotoArray(base64Array, onProgress) {
   const results = [];
-  for (let i = 0; i < base64Array.length; i++) {
-    const compressed = await compressPhoto(base64Array[i], 800, 600, 0.65);
-    results.push(compressed);
-    onProgress?.(i + 1, base64Array.length);
+  const BATCH_SIZE = 2; // Processar 2 fotos por vez para evitar travamento
+
+  for (let i = 0; i < base64Array.length; i += BATCH_SIZE) {
+    const batch = base64Array.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map((b) => compressPhoto(b, 800, 600, 0.65))
+    );
+
+    results.push(...batchResults);
+    onProgress?.(Math.min(i + BATCH_SIZE, base64Array.length), base64Array.length);
+
+    // Dar tempo para a UI responder
+    await new Promise((r) => setTimeout(r, 100));
   }
+
   return results;
 }
 
