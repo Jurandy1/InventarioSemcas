@@ -5,6 +5,28 @@ const BASE = `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o`;
 
 export const isStorageOk = () => isFirebaseConfigured() && !!BUCKET;
 
+function makeDownloadToken() {
+  try {
+    return globalThis.crypto?.randomUUID?.() || `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  } catch {
+    return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
+async function ensureDownloadToken(encodedPath, token, authToken) {
+  try {
+    const r = await fetch(`${BASE}/${encodedPath}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ metadata: { firebaseStorageDownloadTokens: token } }),
+    });
+    if (!r.ok) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function dataURLtoBlob(dataurl) {
   const arr = dataurl.split(',');
   const mime = arr[0].match(/:(.*?);/)[1];
@@ -53,13 +75,16 @@ export async function uploadPhoto(base64, path) {
     throw new Error(uploadJson?.error?.message || "Erro no upload da foto");
   }
 
-  const downloadToken =
-    typeof uploadJson.downloadTokens === "string" && uploadJson.downloadTokens
-      ? uploadJson.downloadTokens.split(",")[0]
-      : "";
+  let downloadToken =
+    typeof uploadJson.downloadTokens === "string" && uploadJson.downloadTokens ? uploadJson.downloadTokens.split(",")[0] : "";
 
-  const downloadUrl = downloadToken ? `${BASE}/${encodedPath}?alt=media&token=${downloadToken}` : `${BASE}/${encodedPath}?alt=media`;
-  return downloadUrl;
+  if (!downloadToken) {
+    const nextToken = makeDownloadToken();
+    const ok = await ensureDownloadToken(encodedPath, nextToken, token);
+    if (ok) downloadToken = nextToken;
+  }
+
+  return downloadToken ? `${BASE}/${encodedPath}?alt=media&token=${downloadToken}` : `${BASE}/${encodedPath}?alt=media`;
 }
 
 export async function uploadPhotos(arr, prefix, onProgress) {

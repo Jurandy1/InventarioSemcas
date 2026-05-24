@@ -602,9 +602,27 @@ export default function App() {
 
   const form = useRef({});
   const manualPatrimonioRef = useRef(null);
+  const foundRef = useRef([]);
+  const locaisRef = useRef([]);
   const showT = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2500);
+  };
+  const updateQueueStatus = () => {
+    const next = offlineManager.getQueueStatus();
+    setQueueStatus((prev) => {
+      if (
+        prev &&
+        prev.total === next.total &&
+        prev.pending === next.pending &&
+        prev.failed === next.failed &&
+        prev.isOnline === next.isOnline &&
+        prev.isSyncing === next.isSyncing
+      ) {
+        return prev;
+      }
+      return next;
+    });
   };
   const uf = (k, v) => {
     form.current[k] = v;
@@ -612,10 +630,40 @@ export default function App() {
   const gf = (k) => form.current[k] || "";
 
   useEffect(() => {
+    foundRef.current = found;
+  }, [found]);
+
+  useEffect(() => {
+    locaisRef.current = locais;
+  }, [locais]);
+
+  useEffect(() => {
     const h = () => setIsMob(window.innerWidth < 768);
     window.addEventListener("resize", h);
     return () => window.removeEventListener("resize", h);
   }, []);
+
+  useEffect(() => {
+    if (!modal) return;
+    const scrollY = window.scrollY || 0;
+    const prev = {
+      overflow: document.body.style.overflow,
+      position: document.body.style.position,
+      top: document.body.style.top,
+      width: document.body.style.width,
+    };
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = "100%";
+    return () => {
+      document.body.style.overflow = prev.overflow;
+      document.body.style.position = prev.position;
+      document.body.style.top = prev.top;
+      document.body.style.width = prev.width;
+      window.scrollTo(0, scrollY);
+    };
+  }, [modal]);
 
   useEffect(() => {
     async function boot() {
@@ -727,33 +775,67 @@ export default function App() {
 
   useEffect(() => {
     if (!logado) return;
-    const refreshQueue = () => setQueueStatus(offlineManager.getQueueStatus());
-    refreshQueue();
+    updateQueueStatus();
 
     const unsub = setupRealtimeSync(
       unidadeAtiva?.id,
       async (docs) => {
         const nextFound = docs.map((d) => ({ ...d, patrimonioId: d.patrimonioId || d._id }));
-        setFound(nextFound);
-        await setCachedData("inventario", nextFound);
+        const prev = foundRef.current || [];
+        let same = prev.length === nextFound.length;
+        if (same) {
+          const prevMap = new Map(prev.map((p) => [p.patrimonioId || p._id, `${p.ultimaAtualizacao || ""}|${(p.fotoUrls || []).length}`]));
+          same = prevMap.size === nextFound.length;
+          if (same) {
+            for (const n of nextFound) {
+              const id = n.patrimonioId || n._id;
+              const sig = `${n.ultimaAtualizacao || ""}|${(n.fotoUrls || []).length}`;
+              if (prevMap.get(id) !== sig) {
+                same = false;
+                break;
+              }
+            }
+          }
+        }
+        if (!same) {
+          setFound(nextFound);
+          await setCachedData("inventario", nextFound);
+        }
       },
       async (docs) => {
         const nextLocais = docs.map((d) => ({ ...d, id: d._id }));
-        setLocais(nextLocais);
-        await setCachedData("locais", nextLocais);
+        const prev = locaisRef.current || [];
+        let same = prev.length === nextLocais.length;
+        if (same) {
+          const prevMap = new Map(prev.map((p) => [p.id || p._id, String(p.nome || "")]));
+          same = prevMap.size === nextLocais.length;
+          if (same) {
+            for (const n of nextLocais) {
+              const id = n.id || n._id;
+              if (prevMap.get(id) !== String(n.nome || "")) {
+                same = false;
+                break;
+              }
+            }
+          }
+        }
+        if (!same) {
+          setLocais(nextLocais);
+          await setCachedData("locais", nextLocais);
+        }
       },
       null,
     );
 
-    window.addEventListener("online", refreshQueue);
-    window.addEventListener("offline", refreshQueue);
-    const queueTimer = setInterval(refreshQueue, 2000);
+    window.addEventListener("online", updateQueueStatus);
+    window.addEventListener("offline", updateQueueStatus);
+    const queueTimer = setInterval(updateQueueStatus, 3000);
 
     return () => {
       unsub?.();
       clearInterval(queueTimer);
-      window.removeEventListener("online", refreshQueue);
-      window.removeEventListener("offline", refreshQueue);
+      window.removeEventListener("online", updateQueueStatus);
+      window.removeEventListener("offline", updateQueueStatus);
     };
   }, [logado, unidadeAtiva?.id]);
 
@@ -872,7 +954,7 @@ export default function App() {
           content: offlineEntry,
         });
         setFound((prev) => [...prev.filter((f) => f.patrimonioId !== item.id), { ...offlineEntry, _id: item.id }]);
-        setQueueStatus(offlineManager.getQueueStatus());
+        updateQueueStatus();
         await setCachedData("inventario", [...found.filter((f) => f.patrimonioId !== item.id), { ...offlineEntry, _id: item.id }]);
         await logAuditoria("queue-save", "inventario", item.id, before, offlineEntry);
         setModal(null);
@@ -906,7 +988,7 @@ export default function App() {
     } finally {
       setUploading(false);
       setUploadMsg("");
-      setQueueStatus(offlineManager.getQueueStatus());
+      updateQueueStatus();
       perfMonitor.end("saveDetail");
     }
   };
@@ -1132,17 +1214,19 @@ export default function App() {
     setFt((t) => t + 1);
   };
 
-  const foundSet = new Set(found.map((f) => f.patrimonioId));
-  const foundMap = found.reduce((m, f) => {
-    m[f.patrimonioId] = f;
-    return m;
-  }, {});
+  const foundSet = React.useMemo(() => new Set(found.map((f) => f.patrimonioId)), [found]);
+  const foundMap = React.useMemo(() => {
+    return found.reduce((m, f) => {
+      m[f.patrimonioId] = f;
+      return m;
+    }, {});
+  }, [found]);
   const allItens = unidadeAtiva?.itens || [];
   const totalBens = allItens.length;
   const totalFound = allItens.filter((i) => foundSet.has(i.id)).length;
   const progresso = totalBens > 0 ? Math.round((totalFound / totalBens) * 100) : 0;
 
-  const todosItens = unidades.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeNome: u.nome, unidadeId: u.id })));
+  const todosItens = React.useMemo(() => unidades.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeNome: u.nome, unidadeId: u.id }))), [unidades]);
   const sugestoes = React.useMemo(() => gerarTodasSugestoes(todosItens), [todosItens]);
 
   const parseNFDate = (s) => {
@@ -1260,6 +1344,8 @@ export default function App() {
           width: isMob ? "100%" : "520px",
           maxHeight: isMob ? "90dvh" : "85vh",
           overflowY: "auto",
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
           padding: 24,
           paddingBottom: isMob ? "calc(24px + env(safe-area-inset-bottom, 0px))" : 24,
         }}
