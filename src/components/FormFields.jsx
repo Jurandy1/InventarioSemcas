@@ -122,6 +122,13 @@ export function TInput({ initial, onVal, suggestions = [], onSuggestionSelect, .
     );
   };
 
+  const chooseSuggestion = (suggestion) => {
+    setV(suggestion);
+    onVal(suggestion);
+    onSuggestionSelect?.(suggestion);
+    setShowSuggestions(false);
+  };
+
   return (
     <div style={{ position: "relative" }} ref={containerRef}>
       <input
@@ -158,13 +165,20 @@ export function TInput({ initial, onVal, suggestions = [], onSuggestionSelect, .
           {filtered.map((suggestion, i) => (
             <button
               key={`${suggestion}-${i}`}
-              onClick={() => {
-                setV(suggestion);
-                onVal(suggestion);
-                onSuggestionSelect?.(suggestion);
-                setShowSuggestions(false);
+              type="button"
+              onClick={() => chooseSuggestion(suggestion)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                chooseSuggestion(suggestion);
               }}
-              onMouseDown={(e) => e.preventDefault()}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                chooseSuggestion(suggestion);
+              }}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                chooseSuggestion(suggestion);
+              }}
               style={{
                 width: "100%",
                 padding: "10px 13px",

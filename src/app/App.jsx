@@ -601,6 +601,7 @@ export default function App() {
   const [queueStatus, setQueueStatus] = useState(() => offlineManager.getQueueStatus());
 
   const form = useRef({});
+  const manualPatrimonioRef = useRef(null);
   const showT = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2500);
@@ -1427,7 +1428,7 @@ export default function App() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
                 <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{unidadeAtiva.nome}</h2>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <button onClick={() => { form.current = { manEstado: "Bom" }; setFt((t) => t + 1); setModal("manual"); }} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#10b981" }}>
+                  <button onClick={() => { form.current = { manEstado: "Bom", manPatrimonio: "" }; setFt((t) => t + 1); setModal("manual"); }} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#10b981" }}>
                     + Manual
                   </button>
                   {totalFound > 0 && (
@@ -2194,12 +2195,26 @@ export default function App() {
           <Lbl>Descrição *</Lbl>
           <TArea key="manDesc" initial={gf("manDesc")} onVal={(v) => uf("manDesc", v)} rows={3} placeholder="Descreva o item..." style={{ ...inp, resize: "none" }} />
           <Lbl>Nº do Patrimônio</Lbl>
-          <TInput key={"manPat_" + ft} initial={gf("manPatrimonio")} onVal={(v) => uf("manPatrimonio", v)} placeholder="Digite o patrimônio ou S/T" style={inp} />
+          <input
+            ref={manualPatrimonioRef}
+            key={"manPat_" + ft}
+            defaultValue={gf("manPatrimonio")}
+            onChange={(e) => uf("manPatrimonio", e.target.value)}
+            placeholder="Digite o patrimônio ou S/T"
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            style={inp}
+          />
           <div style={{ display: "flex", gap: 8, marginTop: 8, marginBottom: 2 }}>
             <button
               onClick={() => {
                 form.current.manPatrimonio = "S/T";
-                setFt((t) => t + 1);
+                if (manualPatrimonioRef.current) {
+                  manualPatrimonioRef.current.value = "S/T";
+                  manualPatrimonioRef.current.focus();
+                }
               }}
               style={{ ...bs, fontSize: 12, padding: "8px 12px" }}
             >
