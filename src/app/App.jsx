@@ -643,6 +643,7 @@ export default function App() {
   const [loginMode, setLoginMode] = useState("login");
   const [ft, setFt] = useState(0);
   const [invSubTab, setInvSubTab] = useState("inventariar"); // "inventariar" | "andamento"
+  const [localNomeRapido, setLocalNomeRapido] = useState(""); // quick local add in Em Andamento
   const [queueStatus, setQueueStatus] = useState(() => offlineManager.getQueueStatus());
 
   const form = useRef({});
@@ -949,6 +950,7 @@ export default function App() {
   const confirmarAtivas = (units) => {
     setUnidadesAtivas(units);
     setPendingUnids(new Set());
+    setInvSubTab("andamento"); // auto-switch to working view
     try { localStorage.setItem("inv-ativas-ids", JSON.stringify(units.map((x) => x.id))); } catch {}
   };
 
@@ -1704,231 +1706,207 @@ export default function App() {
         )}
 
         <div style={{ flex: 1, padding: isMob ? 12 : 24, paddingBottom: isMob ? "calc(78px + env(safe-area-inset-bottom, 0px))" : 24 }}>
-          {tab === "inventario" && unidadesAtivas.length === 0 && (
+          {tab === "inventario" && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>📦 Selecionar Unidade(s)</h2>
-                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>Selecione uma ou mais unidades para inventariar juntas</p>
-                </div>
-                {loadingXlsx && <span style={{ fontSize: 12, color: "#64748b" }}>Carregando dados...</span>}
-              </div>
-
-              {/* Confirm bar */}
-              {pendingUnids.size > 0 && (
-                <div style={{ position: "sticky", top: 64, zIndex: 100, background: "#1e3a8a", borderRadius: 12, padding: "12px 16px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, boxShadow: "0 4px 16px rgba(30,58,138,.35)" }}>
-                  <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>
-                    📦 {pendingUnids.size} unidade{pendingUnids.size > 1 ? "s" : ""} selecionada{pendingUnids.size > 1 ? "s" : ""}
-                  </span>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button
-                      onClick={() => setPendingUnids(new Set())}
-                      style={{ background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}
-                    >
-                      Limpar
-                    </button>
-                    <button
-                      onClick={() => {
-                        const selected = unidades.filter((u) => pendingUnids.has(u.id));
-                        confirmarAtivas(selected);
-                        setPage(1);
-                      }}
-                      style={{ background: "#fff", color: "#1e3a8a", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 800 }}
-                    >
-                      ✓ Iniciar inventário
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <TInput initial="" onVal={(v) => setUnidadeSearch(v)} placeholder="🔍 Buscar unidade..." style={{ ...inp, marginBottom: 12 }} />
-
-              {unidades.length === 0 ? (
-                <div style={{ ...cd, textAlign: "center", padding: 40 }}>
-                  <p style={{ fontSize: 48 }}>📂</p>
-                  <p style={{ color: "#94a3b8" }}>{loadingXlsx ? "Carregando patrimônios..." : "Nenhuma unidade carregada. Verifique o arquivo XLSX no servidor."}</p>
-                </div>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(300px,1fr))", gap: 10 }}>
-                  {unidades
-                    .filter((u) => !unidadeSearch || u.nome.toLowerCase().includes(unidadeSearch.toLowerCase()))
-                    .map((u) => {
-                      const inv = u.itens.filter((i) => foundSet.has(i.id)).length;
-                      const pct = u.itens.length > 0 ? Math.round((inv / u.itens.length) * 100) : 0;
-                      const selected = pendingUnids.has(u.id);
-                      return (
-                        <button
-                          key={u.id}
-                          onClick={() => {
-                            setPendingUnids((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(u.id)) next.delete(u.id);
-                              else next.add(u.id);
-                              return next;
-                            });
-                          }}
-                          style={{
-                            ...cd,
-                            border: `2px solid ${selected ? "#1e3a8a" : "#e2e8f0"}`,
-                            cursor: "pointer",
-                            textAlign: "left",
-                            position: "relative",
-                            overflow: "hidden",
-                            background: selected ? "#eff6ff" : "#fff",
-                            transition: "border-color .15s, background .15s",
-                          }}
-                        >
-                          {/* Checkbox indicator */}
-                          <div style={{
-                            position: "absolute", top: 10, right: 10,
-                            width: 20, height: 20, borderRadius: 6,
-                            border: `2px solid ${selected ? "#1e3a8a" : "#d1d5db"}`,
-                            background: selected ? "#1e3a8a" : "#fff",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: 11, color: "#fff", fontWeight: 900,
-                          }}>
-                            {selected && "✓"}
-                          </div>
-                          <p style={{ margin: 0, fontSize: 13, fontWeight: selected ? 800 : 700, color: selected ? "#1e3a8a" : "#0f172a", paddingRight: 28 }}>{u.nome}</p>
-                          <p style={{ margin: "4px 0 8px", fontSize: 12, color: "#64748b" }}>{u.itens.length} itens · {inv} inventariados</p>
-                          <div style={{ height: 4, borderRadius: 2, background: "#e2e8f0" }}>
-                            <div style={{ height: "100%", background: pct === 100 ? "#16a34a" : "#1e3a8a", borderRadius: 2, width: `${pct}%`, transition: "width .3s" }} />
-                          </div>
-                        </button>
-                      );
-                    })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {tab === "inventario" && unidadesAtivas.length > 0 && (
-            <div>
-              {/* ── Sub-tabs ── */}
+              {/* ── Sub-tabs (always visible in inventario tab) ── */}
               <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
                 <button
                   onClick={() => setInvSubTab("inventariar")}
                   style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "none", background: invSubTab === "inventariar" ? "#1e3a8a" : "#f1f5f9", color: invSubTab === "inventariar" ? "#fff" : "#374151", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                 >
                   🔍 Inventariar
-                  <span style={{ background: invSubTab === "inventariar" ? "rgba(255,255,255,.25)" : "#e2e8f0", color: invSubTab === "inventariar" ? "#fff" : "#64748b", borderRadius: 99, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
-                    {totalFound}/{totalBens}
-                  </span>
                 </button>
-                <button
-                  onClick={() => setInvSubTab("andamento")}
-                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "none", background: invSubTab === "andamento" ? "#1e3a8a" : "#f1f5f9", color: invSubTab === "andamento" ? "#fff" : "#374151", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-                >
-                  📋 Em Andamento
-                  <span style={{ background: invSubTab === "andamento" ? "rgba(255,255,255,.25)" : "#e2e8f0", color: invSubTab === "andamento" ? "#fff" : "#64748b", borderRadius: 99, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
-                    {unidadesAtivas.length}
-                  </span>
-                </button>
+                {unidadesAtivas.length > 0 && (
+                  <button
+                    onClick={() => setInvSubTab("andamento")}
+                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "none", background: invSubTab === "andamento" ? "#1e3a8a" : "#f1f5f9", color: invSubTab === "andamento" ? "#fff" : "#374151", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                  >
+                    📋 Em Andamento
+                    <span style={{ background: invSubTab === "andamento" ? "rgba(255,255,255,.25)" : "#e2e8f0", color: invSubTab === "andamento" ? "#fff" : "#64748b", borderRadius: 99, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
+                      {unidadesAtivas.length}
+                    </span>
+                  </button>
+                )}
               </div>
 
-              {/* ── SUB-TAB: Em Andamento ── */}
-              {invSubTab === "andamento" && (
+              {/* ════════════════════════════════════════════
+                  SUB-TAB: INVENTARIAR — select units
+              ════════════════════════════════════════════ */}
+              {invSubTab === "inventariar" && (
                 <div>
-                  <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #bfdbfe", background: "#eff6ff" }}>
-                    <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#1e3a8a" }}>
-                      📋 Inventários em andamento
-                    </p>
-                    <p style={{ margin: "0 0 12px", fontSize: 12, color: "#3b82f6" }}>
-                      {totalFound}/{totalBens} itens inventariados ({progresso}%)
-                    </p>
-                    <div style={{ height: 6, borderRadius: 3, background: "#dbeafe", marginBottom: 14 }}>
+                  <div style={{ marginBottom: 8 }}>
+                    <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Selecione uma ou mais unidades para inventariar juntas</p>
+                  </div>
+
+                  {/* Confirm bar */}
+                  {pendingUnids.size > 0 && (
+                    <div style={{ position: "sticky", top: 64, zIndex: 100, background: "#1e3a8a", borderRadius: 12, padding: "12px 16px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, boxShadow: "0 4px 16px rgba(30,58,138,.35)" }}>
+                      <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>
+                        📦 {pendingUnids.size} unidade{pendingUnids.size > 1 ? "s" : ""} selecionada{pendingUnids.size > 1 ? "s" : ""}
+                      </span>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => setPendingUnids(new Set())} style={{ background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Limpar</button>
+                        <button
+                          onClick={() => {
+                            const selected = unidades.filter((u) => pendingUnids.has(u.id));
+                            confirmarAtivas(selected);
+                            setPage(1);
+                          }}
+                          style={{ background: "#fff", color: "#1e3a8a", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 800 }}
+                        >
+                          ✓ Iniciar inventário
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <TInput initial="" onVal={(v) => setUnidadeSearch(v)} placeholder="🔍 Buscar unidade..." style={{ ...inp, marginBottom: 12 }} />
+
+                  {unidades.length === 0 ? (
+                    <div style={{ ...cd, textAlign: "center", padding: 40 }}>
+                      <p style={{ fontSize: 48 }}>📂</p>
+                      <p style={{ color: "#94a3b8" }}>{loadingXlsx ? "Carregando patrimônios..." : "Nenhuma unidade carregada."}</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(300px,1fr))", gap: 10 }}>
+                      {unidades
+                        .filter((u) => !unidadeSearch || u.nome.toLowerCase().includes(unidadeSearch.toLowerCase()))
+                        .map((u) => {
+                          const inv = u.itens.filter((i) => foundSet.has(i.id)).length;
+                          const pct = u.itens.length > 0 ? Math.round((inv / u.itens.length) * 100) : 0;
+                          const isActive = unidadesAtivas.some((x) => x.id === u.id);
+                          const selected = pendingUnids.has(u.id);
+                          return (
+                            <button
+                              key={u.id}
+                              onClick={() => {
+                                if (isActive) return; // already active, do nothing
+                                setPendingUnids((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(u.id)) next.delete(u.id);
+                                  else next.add(u.id);
+                                  return next;
+                                });
+                              }}
+                              style={{ ...cd, border: `2px solid ${isActive ? "#86efac" : selected ? "#1e3a8a" : "#e2e8f0"}`, cursor: isActive ? "default" : "pointer", textAlign: "left", position: "relative", overflow: "hidden", background: isActive ? "#f0fdf4" : selected ? "#eff6ff" : "#fff" }}
+                            >
+                              {/* Status indicator */}
+                              <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderRadius: 6, border: `2px solid ${isActive ? "#16a34a" : selected ? "#1e3a8a" : "#d1d5db"}`, background: isActive ? "#16a34a" : selected ? "#1e3a8a" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#fff", fontWeight: 900 }}>
+                                {isActive ? "✓" : selected ? "✓" : ""}
+                              </div>
+                              <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: isActive ? "#15803d" : selected ? "#1e3a8a" : "#0f172a", paddingRight: 28 }}>{u.nome}</p>
+                              <p style={{ margin: "4px 0 8px", fontSize: 12, color: isActive ? "#16a34a" : "#64748b" }}>
+                                {isActive ? "✅ Em inventário" : `${u.itens.length} itens · ${inv} inventariados`}
+                              </p>
+                              <div style={{ height: 4, borderRadius: 2, background: "#e2e8f0" }}>
+                                <div style={{ height: "100%", background: pct === 100 ? "#16a34a" : isActive ? "#1e3a8a" : "#94a3b8", borderRadius: 2, width: `${pct}%`, transition: "width .3s" }} />
+                              </div>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ════════════════════════════════════════════
+                  SUB-TAB: EM ANDAMENTO — working screen
+              ════════════════════════════════════════════ */}
+              {invSubTab === "andamento" && unidadesAtivas.length > 0 && (
+                <div>
+                  {/* ── Unit progress cards ── */}
+                  <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #bfdbfe", background: "#eff6ff", padding: "12px 16px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#1e3a8a" }}>
+                          📋 {unidadesAtivas.length} unidade{unidadesAtivas.length > 1 ? "s" : ""} em inventário
+                        </p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#3b82f6" }}>{totalFound}/{totalBens} itens · {progresso}%</p>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button onClick={() => { form.current = { manEstado: "Bom", manPatrimonio: "" }; setFt((t) => t + 1); setModal("manual"); }} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#10b981" }}>+ Manual</button>
+                        {totalFound > 0 && <button onClick={() => setModal("finalizar")} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#dc2626" }}>✓ Finalizar</button>}
+                        <button onClick={() => setModal("cancelar-inventario")} style={{ ...bs, fontSize: 11, padding: "6px 12px", color: "#dc2626", borderColor: "#fca5a5" }}>⚠️ Cancelar</button>
+                      </div>
+                    </div>
+
+                    {/* Overall bar */}
+                    <div style={{ height: 5, borderRadius: 3, background: "#dbeafe", marginBottom: 10 }}>
                       <div style={{ height: "100%", background: progresso === 100 ? "#16a34a" : "#1e3a8a", borderRadius: 3, width: `${progresso}%`, transition: "width .3s" }} />
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+
+                    {/* Per-unit chips */}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {unidadesAtivas.map((u) => {
                         const uFound = u.itens.filter((i) => foundSet.has(i.id)).length;
                         const uPct = u.itens.length > 0 ? Math.round((uFound / u.itens.length) * 100) : 0;
                         const done = uPct === 100;
                         return (
-                          <div key={u.id} style={{ background: done ? "#f0fdf4" : "#fff", border: `1.5px solid ${done ? "#86efac" : "#e2e8f0"}`, borderRadius: 10, padding: "12px 14px" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                              <div style={{ minWidth: 0, flex: 1 }}>
-                                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: done ? "#15803d" : "#0f172a" }}>
-                                  {done ? "✅ " : "📦 "}{u.nome.replace(/^\d+[\d.]*\s*-\s*/, "")}
-                                </p>
-                                <p style={{ margin: "3px 0 6px", fontSize: 11, color: done ? "#16a34a" : "#64748b", fontWeight: 600 }}>
-                                  {uFound} de {u.itens.length} itens · {uPct}%
-                                </p>
-                                <div style={{ height: 4, borderRadius: 2, background: done ? "#bbf7d0" : "#e2e8f0" }}>
-                                  <div style={{ height: "100%", background: done ? "#16a34a" : "#1e3a8a", borderRadius: 2, width: `${uPct}%`, transition: "width .3s" }} />
-                                </div>
-                              </div>
+                          <div key={u.id} style={{ background: done ? "#dcfce7" : "#fff", border: `1.5px solid ${done ? "#86efac" : "#cbd5e1"}`, borderRadius: 10, padding: "8px 12px", minWidth: 160, flex: "1 1 160px", maxWidth: 280 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                              <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: done ? "#15803d" : "#0f172a", lineHeight: 1.3, flex: 1 }}>
+                                {done ? "✅ " : "📦 "}{u.nome.replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 48)}
+                              </p>
                               {unidadesAtivas.length > 1 && (
-                                <button
-                                  onClick={() => removeAtiva(u.id)}
-                                  title="Remover desta seleção"
-                                  style={{ background: "#fff0f0", border: "none", color: "#dc2626", borderRadius: 7, padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}
-                                >
-                                  ✕
-                                </button>
+                                <button onClick={() => removeAtiva(u.id)} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: 0 }} title="Remover">✕</button>
                               )}
+                            </div>
+                            <p style={{ margin: "4px 0 5px", fontSize: 10, color: done ? "#16a34a" : "#64748b", fontWeight: 600 }}>{uFound}/{u.itens.length} · {uPct}%</p>
+                            <div style={{ height: 3, borderRadius: 2, background: done ? "#bbf7d0" : "#e2e8f0" }}>
+                              <div style={{ height: "100%", background: done ? "#16a34a" : "#1e3a8a", borderRadius: 2, width: `${uPct}%` }} />
                             </div>
                           </div>
                         );
                       })}
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  </div>
+
+                  {/* ── Locais rápidos ── */}
+                  <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #e0e7ff" }}>
+                    <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 800, color: "#4338ca" }}>📍 Locais / Salas desta sessão</p>
+                    <div style={{ display: "flex", gap: 8, marginBottom: locais.length > 0 ? 10 : 0 }}>
+                      <input
+                        value={localNomeRapido}
+                        onChange={(e) => setLocalNomeRapido(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && localNomeRapido.trim()) {
+                            const id = `loc_${Date.now()}`;
+                            fsSet("locais", id, { nome: localNomeRapido.trim() });
+                            setLocais((prev) => [...prev, { id, _id: id, nome: localNomeRapido.trim() }]);
+                            setLocalNomeRapido("");
+                            showT("✓ Local adicionado!");
+                          }
+                        }}
+                        placeholder="Nome da sala ou local... (Enter para salvar)"
+                        style={{ ...inp, flex: 1 }}
+                      />
                       <button
-                        onClick={() => { form.current = { manEstado: "Bom", manPatrimonio: "" }; setFt((t) => t + 1); setModal("manual"); }}
-                        style={{ ...bp, fontSize: 12, padding: "8px 14px", background: "#10b981", flex: 1 }}
+                        onClick={() => {
+                          const n = localNomeRapido.trim();
+                          if (!n) return;
+                          const id = `loc_${Date.now()}`;
+                          fsSet("locais", id, { nome: n });
+                          setLocais((prev) => [...prev, { id, _id: id, nome: n }]);
+                          setLocalNomeRapido("");
+                          showT("✓ Local adicionado!");
+                        }}
+                        style={{ ...bp, padding: "10px 14px", fontSize: 13, flexShrink: 0 }}
                       >
-                        + Item Manual
-                      </button>
-                      {totalFound > 0 && (
-                        <button onClick={() => setModal("finalizar")} style={{ ...bp, fontSize: 12, padding: "8px 14px", background: "#16a34a", flex: 1 }}>
-                          ✓ Finalizar
-                        </button>
-                      )}
-                      <button
-                        onClick={() => { setPendingUnids(new Set(unidadesAtivas.map((u) => u.id))); clearAtivas(); setInvSubTab("inventariar"); }}
-                        style={{ ...bs, fontSize: 12, padding: "8px 14px", flex: 1 }}
-                      >
-                        ➕ Unidade
+                        + Adicionar
                       </button>
                     </div>
-                  </div>
-
-                  <div style={{ ...cd, border: "1.5px solid #fca5a5", background: "#fff5f5" }}>
-                    <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#dc2626" }}>⚠️ Zona de perigo</p>
-                    <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b" }}>
-                      Cancela a sessão de inventário atual. Os itens já registrados no sistema não serão apagados.
-                    </p>
-                    <button
-                      onClick={() => setModal("cancelar-inventario")}
-                      style={{ width: "100%", background: "#dc2626", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-                    >
-                      🗑️ Cancelar Inventário
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* ── SUB-TAB: Inventariar ── */}
-              {invSubTab === "inventariar" && (
-                <div>
-                  <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #bfdbfe", background: "#eff6ff", padding: "10px 14px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                      <div style={{ flex: 1, minWidth: 80 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: "#1e3a8a" }}>Progresso</span>
-                          <span style={{ fontSize: 11, fontWeight: 800, color: "#1e3a8a" }}>{totalFound}/{totalBens} ({progresso}%)</span>
-                        </div>
-                        <div style={{ height: 5, borderRadius: 3, background: "#dbeafe" }}>
-                          <div style={{ height: "100%", background: progresso === 100 ? "#16a34a" : "#1e3a8a", borderRadius: 3, width: `${progresso}%`, transition: "width .3s" }} />
-                        </div>
+                    {locais.length > 0 && (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {locais.map((l) => (
+                          <span key={l.id} style={{ background: "#e0e7ff", color: "#3730a3", borderRadius: 99, padding: "4px 10px", fontSize: 11, fontWeight: 700 }}>
+                            📍 {l.nome}
+                          </span>
+                        ))}
                       </div>
-                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                        <button onClick={() => { form.current = { manEstado: "Bom", manPatrimonio: "" }; setFt((t) => t + 1); setModal("manual"); }} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#10b981" }}>+ Manual</button>
-                        {totalFound > 0 && <button onClick={() => setModal("finalizar")} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#dc2626" }}>✓ Finalizar</button>}
-                      </div>
-                    </div>
+                    )}
                   </div>
 
+                  {/* ── Items search + list ── */}
                   <TInput initial="" onVal={(v) => { setSearch(v); setPage(1); }} placeholder="🔍 Buscar Nº, espécie, descrição..." style={{ ...inp, marginBottom: 8 }} />
 
                   <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10 }}>
@@ -1953,9 +1931,7 @@ export default function App() {
                             {isPermuta && f?.permutaDesc && (
                               <div style={{ marginTop: 4, padding: "4px 8px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 7 }}>
                                 <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: "#92400e", textTransform: "uppercase", letterSpacing: ".04em" }}>🔄 Real</p>
-                                <p style={{ margin: "1px 0 0", fontSize: 12, fontWeight: 700, color: "#78350f" }}>
-                                  {f.permutaDesc}{f.permutaMarca ? ` · ${f.permutaMarca}` : ""}
-                                </p>
+                                <p style={{ margin: "1px 0 0", fontSize: 12, fontWeight: 700, color: "#78350f" }}>{f.permutaDesc}{f.permutaMarca ? ` · ${f.permutaMarca}` : ""}</p>
                               </div>
                             )}
                             <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
