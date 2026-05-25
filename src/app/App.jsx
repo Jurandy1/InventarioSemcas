@@ -614,6 +614,8 @@ export default function App() {
   const [unidades, setUnidades] = useState([]);
   const [unidadesAtivas, setUnidadesAtivas] = useState([]); // units in active inventory
   const [pendingUnids, setPendingUnids] = useState(new Set()); // IDs being selected (before confirm)
+  // compat: primary active unit — declared here (before effects) to avoid temporal dead zone
+  const unidadeAtiva = unidadesAtivas[0] || null;
   const [locais, setLocais] = useState([]);
   const [found, setFound] = useState([]);
   const [tombosNE, setTombosNE] = useState([]);
@@ -971,8 +973,7 @@ export default function App() {
     try { localStorage.removeItem("inv-ativas-ids"); } catch {}
   };
 
-  // Compat: primary unit (first active) – used by addManual, finalize, etc.
-  const unidadeAtiva = unidadesAtivas[0] || null;
+  // Compat: saveAtiva helper
   const saveAtiva = (u) => { if (u) addAtiva(u); else clearAtivas(); };
 
   // ─── markFound: now accepts extras for description overrides & permuta ──────
