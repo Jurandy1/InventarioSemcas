@@ -642,6 +642,7 @@ export default function App() {
   const [nfPage, setNfPage] = useState(1);
   const [loginMode, setLoginMode] = useState("login");
   const [ft, setFt] = useState(0);
+  const [invSubTab, setInvSubTab] = useState("inventariar"); // "inventariar" | "andamento"
   const [queueStatus, setQueueStatus] = useState(() => offlineManager.getQueueStatus());
 
   const form = useRef({});
@@ -1803,159 +1804,193 @@ export default function App() {
 
           {tab === "inventario" && unidadesAtivas.length > 0 && (
             <div>
-              {/* ── "Em inventário" header with unit chips ── */}
-              <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #bfdbfe", background: "#eff6ff" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#1e3a8a" }}>
-                      📋 Em inventário — {unidadesAtivas.length} unidade{unidadesAtivas.length > 1 ? "s" : ""}
+              {/* ── Sub-tabs ── */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                <button
+                  onClick={() => setInvSubTab("inventariar")}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "none", background: invSubTab === "inventariar" ? "#1e3a8a" : "#f1f5f9", color: invSubTab === "inventariar" ? "#fff" : "#374151", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                >
+                  🔍 Inventariar
+                  <span style={{ background: invSubTab === "inventariar" ? "rgba(255,255,255,.25)" : "#e2e8f0", color: invSubTab === "inventariar" ? "#fff" : "#64748b", borderRadius: 99, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
+                    {totalFound}/{totalBens}
+                  </span>
+                </button>
+                <button
+                  onClick={() => setInvSubTab("andamento")}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "none", background: invSubTab === "andamento" ? "#1e3a8a" : "#f1f5f9", color: invSubTab === "andamento" ? "#fff" : "#374151", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                >
+                  📋 Em Andamento
+                  <span style={{ background: invSubTab === "andamento" ? "rgba(255,255,255,.25)" : "#e2e8f0", color: invSubTab === "andamento" ? "#fff" : "#64748b", borderRadius: 99, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
+                    {unidadesAtivas.length}
+                  </span>
+                </button>
+              </div>
+
+              {/* ── SUB-TAB: Em Andamento ── */}
+              {invSubTab === "andamento" && (
+                <div>
+                  <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #bfdbfe", background: "#eff6ff" }}>
+                    <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#1e3a8a" }}>
+                      📋 Inventários em andamento
                     </p>
-                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#3b82f6" }}>
+                    <p style={{ margin: "0 0 12px", fontSize: 12, color: "#3b82f6" }}>
                       {totalFound}/{totalBens} itens inventariados ({progresso}%)
                     </p>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <button
-                      onClick={() => { form.current = { manEstado: "Bom", manPatrimonio: "" }; setFt((t) => t + 1); setModal("manual"); }}
-                      style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#10b981" }}
-                    >
-                      + Manual
-                    </button>
-                    {totalFound > 0 && (
-                      <button onClick={() => setModal("finalizar")} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#dc2626" }}>
-                        ✓ Finalizar
-                      </button>
-                    )}
-                    <button
-                      onClick={() => { setPendingUnids(new Set()); setUnidadesAtivas([]); try { localStorage.removeItem("inv-ativas-ids"); } catch {} }}
-                      style={{ ...bs, fontSize: 11, padding: "6px 12px" }}
-                    >
-                      🔄 Trocar
-                    </button>
-                    <button
-                      onClick={() => {
-                        // open add-unit modal (reuses selection UI via pendingUnids pre-filled)
-                        setPendingUnids(new Set(unidadesAtivas.map((u) => u.id)));
-                        clearAtivas();
-                      }}
-                      style={{ ...bs, fontSize: 11, padding: "6px 12px" }}
-                    >
-                      ➕ Unidade
-                    </button>
-                  </div>
-                </div>
-
-                {/* Overall progress bar */}
-                <div style={{ height: 6, borderRadius: 3, background: "#dbeafe", marginBottom: 12 }}>
-                  <div style={{ height: "100%", background: progresso === 100 ? "#16a34a" : "#1e3a8a", borderRadius: 3, width: `${progresso}%`, transition: "width .3s" }} />
-                </div>
-
-                {/* Per-unit chips */}
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {unidadesAtivas.map((u) => {
-                    const uFound = u.itens.filter((i) => foundSet.has(i.id)).length;
-                    const uPct = u.itens.length > 0 ? Math.round((uFound / u.itens.length) * 100) : 0;
-                    const done = uPct === 100;
-                    return (
-                      <div
-                        key={u.id}
-                        style={{
-                          background: done ? "#dcfce7" : "#fff",
-                          border: `1.5px solid ${done ? "#86efac" : "#cbd5e1"}`,
-                          borderRadius: 10,
-                          padding: "8px 12px",
-                          minWidth: 160,
-                          flex: "1 1 160px",
-                          maxWidth: 280,
-                        }}
+                    <div style={{ height: 6, borderRadius: 3, background: "#dbeafe", marginBottom: 14 }}>
+                      <div style={{ height: "100%", background: progresso === 100 ? "#16a34a" : "#1e3a8a", borderRadius: 3, width: `${progresso}%`, transition: "width .3s" }} />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                      {unidadesAtivas.map((u) => {
+                        const uFound = u.itens.filter((i) => foundSet.has(i.id)).length;
+                        const uPct = u.itens.length > 0 ? Math.round((uFound / u.itens.length) * 100) : 0;
+                        const done = uPct === 100;
+                        return (
+                          <div key={u.id} style={{ background: done ? "#f0fdf4" : "#fff", border: `1.5px solid ${done ? "#86efac" : "#e2e8f0"}`, borderRadius: 10, padding: "12px 14px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: done ? "#15803d" : "#0f172a" }}>
+                                  {done ? "✅ " : "📦 "}{u.nome.replace(/^\d+[\d.]*\s*-\s*/, "")}
+                                </p>
+                                <p style={{ margin: "3px 0 6px", fontSize: 11, color: done ? "#16a34a" : "#64748b", fontWeight: 600 }}>
+                                  {uFound} de {u.itens.length} itens · {uPct}%
+                                </p>
+                                <div style={{ height: 4, borderRadius: 2, background: done ? "#bbf7d0" : "#e2e8f0" }}>
+                                  <div style={{ height: "100%", background: done ? "#16a34a" : "#1e3a8a", borderRadius: 2, width: `${uPct}%`, transition: "width .3s" }} />
+                                </div>
+                              </div>
+                              {unidadesAtivas.length > 1 && (
+                                <button
+                                  onClick={() => removeAtiva(u.id)}
+                                  title="Remover desta seleção"
+                                  style={{ background: "#fff0f0", border: "none", color: "#dc2626", borderRadius: 7, padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => { form.current = { manEstado: "Bom", manPatrimonio: "" }; setFt((t) => t + 1); setModal("manual"); }}
+                        style={{ ...bp, fontSize: 12, padding: "8px 14px", background: "#10b981", flex: 1 }}
                       >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}>
-                          <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: done ? "#15803d" : "#0f172a", lineHeight: 1.3, flex: 1 }}>
-                            {done ? "✅ " : "📦 "}{u.nome.replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 48)}
-                          </p>
-                          {unidadesAtivas.length > 1 && (
-                            <button
-                              onClick={() => removeAtiva(u.id)}
-                              style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1, flexShrink: 0 }}
-                              title="Remover desta seleção"
-                            >
-                              ✕
-                            </button>
-                          )}
+                        + Item Manual
+                      </button>
+                      {totalFound > 0 && (
+                        <button onClick={() => setModal("finalizar")} style={{ ...bp, fontSize: 12, padding: "8px 14px", background: "#16a34a", flex: 1 }}>
+                          ✓ Finalizar
+                        </button>
+                      )}
+                      <button
+                        onClick={() => { setPendingUnids(new Set(unidadesAtivas.map((u) => u.id))); clearAtivas(); setInvSubTab("inventariar"); }}
+                        style={{ ...bs, fontSize: 12, padding: "8px 14px", flex: 1 }}
+                      >
+                        ➕ Unidade
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ ...cd, border: "1.5px solid #fca5a5", background: "#fff5f5" }}>
+                    <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#dc2626" }}>⚠️ Zona de perigo</p>
+                    <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b" }}>
+                      Cancela a sessão de inventário atual. Os itens já registrados no sistema não serão apagados.
+                    </p>
+                    <button
+                      onClick={() => setModal("cancelar-inventario")}
+                      style={{ width: "100%", background: "#dc2626", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+                    >
+                      🗑️ Cancelar Inventário
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── SUB-TAB: Inventariar ── */}
+              {invSubTab === "inventariar" && (
+                <div>
+                  <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #bfdbfe", background: "#eff6ff", padding: "10px 14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <div style={{ flex: 1, minWidth: 80 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "#1e3a8a" }}>Progresso</span>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: "#1e3a8a" }}>{totalFound}/{totalBens} ({progresso}%)</span>
                         </div>
-                        <p style={{ margin: "4px 0 5px", fontSize: 10, color: done ? "#16a34a" : "#64748b", fontWeight: 600 }}>
-                          {uFound}/{u.itens.length} · {uPct}%
-                        </p>
-                        <div style={{ height: 3, borderRadius: 2, background: done ? "#bbf7d0" : "#e2e8f0" }}>
-                          <div style={{ height: "100%", background: done ? "#16a34a" : "#1e3a8a", borderRadius: 2, width: `${uPct}%` }} />
+                        <div style={{ height: 5, borderRadius: 3, background: "#dbeafe" }}>
+                          <div style={{ height: "100%", background: progresso === 100 ? "#16a34a" : "#1e3a8a", borderRadius: 3, width: `${progresso}%`, transition: "width .3s" }} />
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <TInput initial="" onVal={(v) => { setSearch(v); setPage(1); }} placeholder="🔍 Buscar Nº, espécie, descrição..." style={{ ...inp, marginBottom: 8 }} />
-
-              <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10 }}>
-                {paged.map((item) => {
-                  const f = foundMap[item.id];
-                  const isF = !!f;
-                  const foto = f?.fotoUrls?.[0];
-                  const displayDesc = getDisplayDesc(item, f);
-                  const isPermuta = f?.situacao === "Permuta";
-                  return (
-                    <div
-                      key={`${item.unidadeId}_${item.id}`}
-                      onClick={() => openDetModal(item)}
-                      style={{ ...cd, cursor: "pointer", border: `1.5px solid ${isPermuta ? "#fcd34d" : isF ? "#bbf7d0" : "#e2e8f0"}`, display: "flex", gap: 12 }}
-                    >
-                      {foto
-                        ? <SmartImg src={foto} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
-                        : <div style={{ width: 56, height: 56, borderRadius: 8, background: isPermuta ? "#fef3c7" : isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{isPermuta ? "🔄" : isF ? "✅" : "📷"}</div>
-                      }
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{displayDesc}</p>
-                        {isPermuta && f?.permutaDesc && (
-                          <div style={{ marginTop: 4, padding: "4px 8px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 7 }}>
-                            <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: "#92400e", textTransform: "uppercase", letterSpacing: ".04em" }}>🔄 Real</p>
-                            <p style={{ margin: "1px 0 0", fontSize: 12, fontWeight: 700, color: "#78350f" }}>
-                              {f.permutaDesc}{f.permutaMarca ? ` · ${f.permutaMarca}` : ""}
-                            </p>
-                          </div>
-                        )}
-                        <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-                        {/* Show unit name when multiple units active */}
-                        {unidadesAtivas.length > 1 && (
-                          <p style={{ margin: "1px 0 2px", fontSize: 10, fontWeight: 700, color: "#6366f1" }}>
-                            🏛️ {(item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 40)}
-                          </p>
-                        )}
-                        <p style={{ margin: "0 0 4px", fontSize: 11, color: "#94a3b8" }}>{item.fornecedor || "—"}{item.marca ? ` · ${item.marca}` : ""}{item.nf ? ` · NF ${item.nf}` : ""}</p>
-                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                          {isF ? (
-                            <>
-                              <Badge label={f.estado} c={EC[f.estado]} />
-                              <Badge label={f.situacao} c={SC[f.situacao]} />
-                              {(f.usuario || f.user) && <Badge label={`${f.usuario || f.user}${f.hora ? ` ${f.hora}` : ""}`} c={{ bg: "#e0e7ff", tx: "#3730a3" }} />}
-                            </>
-                          ) : (
-                            <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
-                          )}
-                        </div>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => { form.current = { manEstado: "Bom", manPatrimonio: "" }; setFt((t) => t + 1); setModal("manual"); }} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#10b981" }}>+ Manual</button>
+                        {totalFound > 0 && <button onClick={() => setModal("finalizar")} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#dc2626" }}>✓ Finalizar</button>}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
 
-              {totalPages > 1 && (
-                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 16, flexWrap: "wrap" }}>
-                  <button onClick={() => setPage(1)} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>«</button>
-                  <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>‹</button>
-                  <span style={{ fontSize: 12, color: "#64748b" }}>Pág {page}/{totalPages} · {filtered.length} itens</span>
-                  <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>›</button>
-                  <button onClick={() => setPage(totalPages)} disabled={page === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>»</button>
+                  <TInput initial="" onVal={(v) => { setSearch(v); setPage(1); }} placeholder="🔍 Buscar Nº, espécie, descrição..." style={{ ...inp, marginBottom: 8 }} />
+
+                  <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10 }}>
+                    {paged.map((item) => {
+                      const f = foundMap[item.id];
+                      const isF = !!f;
+                      const foto = f?.fotoUrls?.[0];
+                      const displayDesc = getDisplayDesc(item, f);
+                      const isPermuta = f?.situacao === "Permuta";
+                      return (
+                        <div
+                          key={`${item.unidadeId}_${item.id}`}
+                          onClick={() => openDetModal(item)}
+                          style={{ ...cd, cursor: "pointer", border: `1.5px solid ${isPermuta ? "#fcd34d" : isF ? "#bbf7d0" : "#e2e8f0"}`, display: "flex", gap: 12 }}
+                        >
+                          {foto
+                            ? <SmartImg src={foto} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
+                            : <div style={{ width: 56, height: 56, borderRadius: 8, background: isPermuta ? "#fef3c7" : isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{isPermuta ? "🔄" : isF ? "✅" : "📷"}</div>
+                          }
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{displayDesc}</p>
+                            {isPermuta && f?.permutaDesc && (
+                              <div style={{ marginTop: 4, padding: "4px 8px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 7 }}>
+                                <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: "#92400e", textTransform: "uppercase", letterSpacing: ".04em" }}>🔄 Real</p>
+                                <p style={{ margin: "1px 0 0", fontSize: 12, fontWeight: 700, color: "#78350f" }}>
+                                  {f.permutaDesc}{f.permutaMarca ? ` · ${f.permutaMarca}` : ""}
+                                </p>
+                              </div>
+                            )}
+                            <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                            {unidadesAtivas.length > 1 && (
+                              <p style={{ margin: "1px 0 2px", fontSize: 10, fontWeight: 700, color: "#6366f1" }}>
+                                🏛️ {(item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 40)}
+                              </p>
+                            )}
+                            <p style={{ margin: "0 0 4px", fontSize: 11, color: "#94a3b8" }}>{item.fornecedor || "—"}{item.marca ? ` · ${item.marca}` : ""}{item.nf ? ` · NF ${item.nf}` : ""}</p>
+                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                              {isF ? (
+                                <>
+                                  <Badge label={f.estado} c={EC[f.estado]} />
+                                  <Badge label={f.situacao} c={SC[f.situacao]} />
+                                  {(f.usuario || f.user) && <Badge label={`${f.usuario || f.user}${f.hora ? ` ${f.hora}` : ""}`} c={{ bg: "#e0e7ff", tx: "#3730a3" }} />}
+                                </>
+                              ) : (
+                                <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {totalPages > 1 && (
+                    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 16, flexWrap: "wrap" }}>
+                      <button onClick={() => setPage(1)} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>«</button>
+                      <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>‹</button>
+                      <span style={{ fontSize: 12, color: "#64748b" }}>Pág {page}/{totalPages} · {filtered.length} itens</span>
+                      <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>›</button>
+                      <button onClick={() => setPage(totalPages)} disabled={page === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>»</button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2770,6 +2805,49 @@ export default function App() {
             <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
               <button onClick={() => { const a = document.createElement("a"); a.href = qrCodeUrl; a.download = `qr_${unidadeAtiva?.id || "unidade"}.png`; a.click(); }} style={{ ...bs, flex: 1 }}>⬇️ Baixar</button>
               <button onClick={() => { setModal(null); setQrCodeUrl(null); clearAtivas(); }} style={{ ...bp, flex: 1 }}>✓ Feito</button>
+            </div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* ── Cancel inventory confirmation modal ── */}
+      {modal === "cancelar-inventario" && (
+        <Overlay onClose={() => setModal(null)}>
+          <div style={{ textAlign: "center" }}>
+            <p style={{ fontSize: 52, margin: "0 0 12px" }}>⚠️</p>
+            <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700, color: "#dc2626" }}>Cancelar Inventário?</h2>
+            <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 12, padding: 16, marginBottom: 20, textAlign: "left" }}>
+              <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 800, color: "#991b1b" }}>
+                ⚠️ Atenção! Se confirmar o cancelamento:
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "#991b1b", lineHeight: 1.7 }}>
+                <li>Todos os registros deste inventário serão <strong>apagados permanentemente</strong></li>
+                <li>Os itens já inventariados <strong>perderão seus dados</strong> de estado, situação e fotos</li>
+                <li>Esta ação <strong>não pode ser desfeita</strong></li>
+              </ul>
+            </div>
+            <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 20px" }}>
+              {unidadesAtivas.length} unidade{unidadesAtivas.length > 1 ? "s" : ""} · {totalFound} item{totalFound !== 1 ? "ns" : ""} registrado{totalFound !== 1 ? "s" : ""}
+            </p>
+            <div style={{ display: "flex", gap: 9 }}>
+              <button
+                onClick={() => setModal(null)}
+                style={{ ...bp, flex: 2, background: "#1e3a8a" }}
+              >
+                ← Voltar ao inventário
+              </button>
+              <button
+                onClick={() => {
+                  // Warning is shown but we only clear the local session (no Firebase delete)
+                  clearAtivas();
+                  setInvSubTab("inventariar");
+                  setModal(null);
+                  showT("Sessão de inventário encerrada");
+                }}
+                style={{ ...bs, flex: 1, color: "#dc2626", border: "1px solid #fca5a5" }}
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </Overlay>
