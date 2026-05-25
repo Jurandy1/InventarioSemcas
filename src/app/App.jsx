@@ -3,7 +3,7 @@ import { Badge } from "../components/Badge.jsx";
 import { CameraModal } from "../components/CameraModal.jsx";
 import { TArea, TInput } from "../components/FormFields.jsx";
 import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js";
-import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken } from "../services/firebase.js";
+import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken, obterInventariantePorUid } from "../services/firebase.js";
 import { getDisplayPhotoUrl, uploadPhotos, isStorageOk, deletePhoto } from "../services/storage.js";
 import { generateCoordinadorLink, generateCoordinadorToken, generateQRCode } from "../services/qr-service.js";
 import { criarBackupManual, logAuditoria, setupRealtimeSync } from "../services/audit.js";
@@ -13,6 +13,7 @@ import { compressPhotoArray, getCachedData, perfMonitor, setCachedData } from ".
 import { loadUnidades } from "../utils/xlsx.js";
 import { gerarTodasSugestoes } from "../utils/suggestions.js";
 import { CoordenadoresTab } from "./CoordenadoresTab.jsx";
+import { InventariantesTab } from "./InventariantesTab.jsx";
 
 function getItemCode(item) {
   return item?.patrimonioLabel || item?.id || "—";
@@ -893,6 +894,41 @@ export default function App() {
     setLoginError("");
     try {
       const user = loginMode === "login" ? await fbLogin(email, senha) : await fbRegister(email, senha);
+
+      // ── Inventariante approval gate ──────────────────────────────────────
+      if (loginMode === "login") {
+        try {
+          const invEntry = await obterInventariantePorUid(user.uid);
+          if (invEntry) {
+            if (invEntry.status === "pendente_aprovacao") {
+              clearFirebaseSession();
+              setLoginError("⏳ Sua conta está aguardando aprovação do administrador. Tente novamente em breve.");
+              return;
+            }
+            if (invEntry.status === "rejeitado") {
+              clearFirebaseSession();
+              setLoginError("❌ Seu acesso foi rejeitado. Entre em contato com o administrador.");
+              return;
+            }
+            if (invEntry.status === "desativado") {
+              clearFirebaseSession();
+              setLoginError("🚫 Sua conta foi desativada. Entre em contato com o administrador.");
+              return;
+            }
+            // aprovado — use the registered name
+            user.nome = invEntry.nome || user.nome;
+            user.role = "inventariante";
+          } else {
+            // Not in inventariantes collection = admin
+            user.role = "admin";
+          }
+        } catch {
+          // If check fails (e.g. new account with no collection yet), treat as admin
+          user.role = "admin";
+        }
+      }
+      // ────────────────────────────────────────────────────────────────────
+
       setLogado(user);
       try {
         localStorage.setItem("inv-session", JSON.stringify(user));
@@ -1535,14 +1571,15 @@ export default function App() {
   );
 
   const navs = [
-    { id: "inventario", icon: "📦", l: "Inventário", badge: unidadesAtivas.length > 0 ? unidadesAtivas.length : null },
-    { id: "busca", icon: "🔍", l: "Busca" },
-    { id: "itens", icon: "🪑", l: "Itens" },
-    { id: "nf", icon: "🧾", l: "Notas" },
-    { id: "tombos", icon: "🔖", l: "Tombos" },
-    { id: "dash", icon: "📊", l: "Dashboard" },
+    { id: "inventario",    icon: "📦", l: "Inventário",    badge: unidadesAtivas.length > 0 ? unidadesAtivas.length : null },
+    { id: "busca",         icon: "🔍", l: "Busca" },
+    { id: "itens",         icon: "🪑", l: "Itens" },
+    { id: "nf",            icon: "🧾", l: "Notas" },
+    { id: "tombos",        icon: "🔖", l: "Tombos" },
+    { id: "dash",          icon: "📊", l: "Dashboard" },
     { id: "coordenadores", icon: "👩‍💼", l: "Coordenadores" },
-    { id: "locais", icon: "📍", l: "Locais" },
+    { id: "inventariantes",icon: "👷", l: "Inventariantes" },
+    { id: "locais",        icon: "📍", l: "Locais" },
   ];
 
   const doGlobalSearch = async (q) => {
@@ -1909,7 +1946,6 @@ export default function App() {
                     </div>
                   );
                 })}
-              </div>
               </div>
 
               {totalPages > 1 && (
@@ -2294,6 +2330,8 @@ export default function App() {
           )}
 
           {tab === "coordenadores" && <CoordenadoresTab unidades={unidades} showT={showT} isMob={isMob} />}
+
+          {tab === "inventariantes" && <InventariantesTab showT={showT} isMob={isMob} />}
 
           {tab === "locais" && (
             <div>
