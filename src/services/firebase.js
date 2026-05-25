@@ -198,6 +198,8 @@ export async function fsDel(collection, docId) {
   });
 }
 
+// ─── Coordenadores (existing) ─────────────────────────────────────────────────
+
 export async function criarConviteCoordinador(unidadeId, unidadeNome, matricula = "", criadoPor = "") {
   assertFirebaseConfigured();
   if (!authToken) throw new Error("Usuário não autenticado");
@@ -327,4 +329,102 @@ export async function gerarLinkConviteCoordinador(unidadeId, unidadeNome, matric
   const prefix = base.endsWith("/") ? base : `${base}/`;
   const link = `${window.location.origin}${prefix}#/coordregistro/${convite.token}`;
   return { convite, link };
+}
+
+// ─── Inventariantes (new) ─────────────────────────────────────────────────────
+
+export async function criarConviteInventariante(criadoPor = "") {
+  assertFirebaseConfigured();
+  if (!authToken) throw new Error("Usuário não autenticado");
+
+  const token = `inv_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+  const agora = new Date();
+  const dataExpiracao = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const convite = {
+    token,
+    status: "ativo",
+    dataCriacao: agora.toISOString(),
+    dataExpiracao: dataExpiracao.toISOString(),
+    dataUso: null,
+    criadoPor: criadoPor || authUid,
+  };
+
+  await fsSet("convites_inventariantes", token, convite);
+  return convite;
+}
+
+export async function gerarLinkConviteInventariante() {
+  const convite = await criarConviteInventariante(authUid);
+  const base = import.meta.env.BASE_URL || "/";
+  const prefix = base.endsWith("/") ? base : `${base}/`;
+  const link = `${window.location.origin}${prefix}#/invregistro/${convite.token}`;
+  return { convite, link };
+}
+
+export async function obterInventariantes(status = "pendente_aprovacao") {
+  assertFirebaseConfigured();
+  if (!authToken) return [];
+  const todos = await fsGetAll("inventariantes");
+  if (status === "todos") return todos;
+  return todos.filter((c) => c.status === status);
+}
+
+export async function obterInventariantePorUid(uid) {
+  assertFirebaseConfigured();
+  if (!authToken) return null;
+  try {
+    const todos = await fsGetAll("inventariantes");
+    return todos.find((c) => c.uid === uid) || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function aprovarInventariante(uid, observacoes = "") {
+  assertFirebaseConfigured();
+  if (!authToken) throw new Error("Usuário não autenticado");
+
+  const inv = await obterInventariantePorUid(uid);
+  if (!inv) throw new Error("Inventariante não encontrado");
+
+  inv.status = "aprovado";
+  inv.dataAprovacao = new Date().toISOString();
+  inv.observacoes = observacoes;
+  inv.aprovadoPor = authUid;
+
+  await fsSet("inventariantes", inv._id || uid, inv);
+  return inv;
+}
+
+export async function rejeitarInventariante(uid, motivo = "") {
+  assertFirebaseConfigured();
+  if (!authToken) throw new Error("Usuário não autenticado");
+
+  const inv = await obterInventariantePorUid(uid);
+  if (!inv) throw new Error("Inventariante não encontrado");
+
+  inv.status = "rejeitado";
+  inv.dataRejeicao = new Date().toISOString();
+  inv.motivoRejeicao = motivo;
+  inv.rejeitadoPor = authUid;
+
+  await fsSet("inventariantes", inv._id || uid, inv);
+  return inv;
+}
+
+export async function desativarInventariante(uid, motivo = "") {
+  assertFirebaseConfigured();
+  if (!authToken) throw new Error("Usuário não autenticado");
+
+  const inv = await obterInventariantePorUid(uid);
+  if (!inv) throw new Error("Inventariante não encontrado");
+
+  inv.status = "desativado";
+  inv.dataDesativacao = new Date().toISOString();
+  inv.motivoDesativacao = motivo;
+  inv.desativadoPor = authUid;
+
+  await fsSet("inventariantes", inv._id || uid, inv);
+  return inv;
 }
