@@ -7,6 +7,14 @@ import { fsGetAll, fsSet } from "../services/firebase.js";
 import { uploadPhotos } from "../services/storage.js";
 import { loadUnidades } from "../utils/xlsx.js";
 
+// Situacoes available to coordinator — Permuta is hidden
+const SITUACOES_COORD = SITUACOES.filter((s) => s !== "Permuta");
+
+// Mask permuta situation: coordinator sees "Em uso" instead of "Permuta"
+function maskSituacao(situacao) {
+  return situacao === "Permuta" ? "Em uso" : situacao;
+}
+
 export function CoordinadorPage({ token, coordData, onLogout }) {
   const [itens, setItens] = useState([]);
   const [found, setFound] = useState([]);
@@ -91,71 +99,23 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
   const inventariados = useMemo(() => itens.filter((i) => foundSet.has(i.id)), [itens, foundSet]);
 
   const inp = {
-    width: "100%",
-    border: "1.5px solid #d1d5db",
-    borderRadius: 9,
-    padding: "10px 13px",
-    fontSize: 14,
-    fontFamily: "inherit",
-    boxSizing: "border-box",
-    outline: "none",
+    width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9,
+    padding: "10px 13px", fontSize: 14, fontFamily: "inherit",
+    boxSizing: "border-box", outline: "none",
   };
 
-  const bp = {
-    background: "#6b21a8",
-    color: "#fff",
-    border: "none",
-    borderRadius: 9,
-    padding: "11px 18px",
-    fontSize: 14,
-    fontWeight: 700,
-    cursor: "pointer",
-  };
-
-  const bs = {
-    background: "#f1f5f9",
-    color: "#334155",
-    border: "1px solid #cbd5e1",
-    borderRadius: 9,
-    padding: "11px 18px",
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: "pointer",
-  };
-
-  const cd = {
-    background: "#fff",
-    borderRadius: 12,
-    padding: 16,
-    boxShadow: "0 1px 3px rgba(0,0,0,.06)",
-  };
+  const bp = { background: "#6b21a8", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
+  const bs = { background: "#f1f5f9", color: "#334155", border: "1px solid #cbd5e1", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" };
+  const cd = { background: "#fff", borderRadius: 12, padding: 16, boxShadow: "0 1px 3px rgba(0,0,0,.06)" };
 
   const Overlay = ({ children, onClose }) => (
     <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,.5)",
-        zIndex: 300,
-        display: "flex",
-        alignItems: isMob ? "flex-end" : "center",
-        justifyContent: "center",
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 300, display: "flex", alignItems: isMob ? "flex-end" : "center", justifyContent: "center" }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "#fff",
-          borderRadius: isMob ? "20px 20px 0 0" : 16,
-          width: isMob ? "100%" : "560px",
-          maxHeight: isMob ? "90dvh" : "85vh",
-          overflowY: "auto",
-          padding: 24,
-          paddingBottom: isMob ? "calc(24px + env(safe-area-inset-bottom, 0px))" : 24,
-        }}
+        style={{ background: "#fff", borderRadius: isMob ? "20px 20px 0 0" : 16, width: isMob ? "100%" : "560px", maxHeight: isMob ? "90dvh" : "85vh", overflowY: "auto", padding: 24, paddingBottom: isMob ? "calc(24px + env(safe-area-inset-bottom, 0px))" : 24 }}
       >
         {children}
       </div>
@@ -166,7 +126,8 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
     const f = foundMap[item.id];
     setDetItem(item);
     setDetEstado(f?.estado || "Bom");
-    setDetSituacao(f?.situacao || "Em uso");
+    // Mask permuta: coordinator never sees "Permuta" situacao
+    setDetSituacao(maskSituacao(f?.situacao || "Em uso"));
     setDetLocal(f?.localId || "");
     setDetObs(f?.obs || "");
     setDetMarca(f?.marca || item.marca || "");
@@ -233,6 +194,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
+      {/* Header */}
       <div style={{ background: "#6b21a8", color: "#fff", padding: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 200 }}>
         <div>
           <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>👩‍💼 {coordData?.coordenadoraNome}</p>
@@ -244,6 +206,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       </div>
 
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: isMob ? 12 : 24 }}>
+        {/* Tab nav */}
         <div style={{ display: "flex", gap: 8, marginBottom: 20, overflowX: "auto", paddingBottom: 8 }}>
           {[
             { id: "itens", label: "📦 Meu Inventário", count: itens.length },
@@ -255,11 +218,16 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
               style={{ padding: "10px 16px", borderRadius: 9, border: "none", background: tab === t.id ? "#6b21a8" : "#fff", color: tab === t.id ? "#fff" : "#374151", fontWeight: 600, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}
             >
               {t.label}
-              {t.count !== undefined && <span style={{ background: tab === t.id ? "rgba(255,255,255,.3)" : "#e2e8f0", color: tab === t.id ? "#fff" : "#64748b", borderRadius: 99, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>{t.count}</span>}
+              {t.count !== undefined && (
+                <span style={{ background: tab === t.id ? "rgba(255,255,255,.3)" : "#e2e8f0", color: tab === t.id ? "#fff" : "#64748b", borderRadius: 99, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>
+                  {t.count}
+                </span>
+              )}
             </button>
           ))}
         </div>
 
+        {/* Itens tab */}
         {tab === "itens" && (
           <div>
             <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>📦 Itens pendentes</h2>
@@ -272,10 +240,13 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
             ) : (
               <>
                 <TInput initial={search} onVal={setSearch} placeholder="🔍 Buscar item..." style={{ ...inp, marginBottom: 12 }} />
-
                 <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(300px,1fr))", gap: 10 }}>
                   {filteredPendentes.map((item) => (
-                    <div key={item.id} onClick={() => openItem(item)} style={{ ...cd, cursor: "pointer", border: "1.5px solid #e2e8f0", display: "flex", flexDirection: "column" }}>
+                    <div
+                      key={item.id}
+                      onClick={() => openItem(item)}
+                      style={{ ...cd, cursor: "pointer", border: "1.5px solid #e2e8f0", display: "flex", flexDirection: "column" }}
+                    >
                       <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{item.descricao || item.especie || "—"}</p>
                       <p style={{ margin: "4px 0 0", fontSize: 11, color: "#64748b" }}>Nº {item.id}</p>
                       <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>{item.fornecedor || "—"}</p>
@@ -285,18 +256,51 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
                 </div>
               </>
             )}
+
+            {/* Also show already-found items */}
+            {inventariados.length > 0 && (
+              <div style={{ marginTop: 20 }}>
+                <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "#16a34a" }}>✅ Já localizados ({inventariados.length})</h3>
+                <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(300px,1fr))", gap: 8 }}>
+                  {inventariados.map((item) => {
+                    const f = foundMap[item.id];
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => openItem(item)}
+                        style={{ ...cd, cursor: "pointer", border: "1.5px solid #bbf7d0", background: "#f0fdf4", display: "flex", gap: 10, alignItems: "center" }}
+                      >
+                        <span style={{ fontSize: 18, flexShrink: 0 }}>✅</span>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700 }}>{item.descricao || item.especie || "—"}</p>
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {item.id}</p>
+                          {f && (
+                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
+                              <Badge label={f.estado} c={EC[f.estado]} />
+                              {/* Only show masked situacao — never show "Permuta" */}
+                              <Badge label={maskSituacao(f.situacao)} c={SC[maskSituacao(f.situacao)] || SC["Em uso"]} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
+        {/* Relatório tab */}
         {tab === "relatorio" && (
           <div>
             <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>📊 Relatório</h2>
             <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
               {[
-                { label: "Total", valor: itens.length, cor: "#1e3a8a" },
-                { label: "Localizados", valor: inventariados.length, cor: "#16a34a" },
-                { label: "Pendentes", valor: pendentes.length, cor: "#dc2626" },
-                { label: "Progresso", valor: `${itens.length > 0 ? Math.round((inventariados.length / itens.length) * 100) : 0}%`, cor: "#7c3aed" },
+                { label: "Total",       valor: itens.length,         cor: "#1e3a8a" },
+                { label: "Localizados", valor: inventariados.length,  cor: "#16a34a" },
+                { label: "Pendentes",   valor: pendentes.length,      cor: "#dc2626" },
+                { label: "Progresso",   valor: `${itens.length > 0 ? Math.round((inventariados.length / itens.length) * 100) : 0}%`, cor: "#7c3aed" },
               ].map((stat) => (
                 <div key={stat.label} style={cd}>
                   <p style={{ margin: 0, fontSize: isMob ? 20 : 28, fontWeight: 700, color: stat.cor }}>{stat.valor}</p>
@@ -308,27 +312,21 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
         )}
       </div>
 
+      {/* Detail modal */}
       {modal === "detalhe" && detItem && (
-        <Overlay
-          onClose={() => {
-            setModal(null);
-            setDetItem(null);
-          }}
-        >
+        <Overlay onClose={() => { setModal(null); setDetItem(null); }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
             <div>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700 }}>{detItem.descricao || detItem.especie || "—"}</h2>
               <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Nº {detItem.id}</p>
             </div>
-            <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer", padding: "4px 8px" }}>
-              ✕
-            </button>
+            <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer", padding: "4px 8px" }}>✕</button>
           </div>
 
           {foundMap[detItem.id] ? (
-            <div style={{ marginTop: 10, marginBottom: 10 }}>
+            <div style={{ marginTop: 10, marginBottom: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
               <Badge label="Inventariado" c={{ bg: "#d1fae5", tx: "#065f46" }} />
-              <span style={{ marginLeft: 8, fontSize: 11, color: "#64748b" }}>
+              <span style={{ fontSize: 11, color: "#64748b", alignSelf: "center" }}>
                 {foundMap[detItem.id].data} {foundMap[detItem.id].hora || ""}
               </span>
             </div>
@@ -342,21 +340,14 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
             <div>
               <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Estado</p>
               <select value={detEstado} onChange={(e) => setDetEstado(e.target.value)} style={inp}>
-                {ESTADOS.map((e) => (
-                  <option key={e} value={e}>
-                    {e}
-                  </option>
-                ))}
+                {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
               </select>
             </div>
             <div>
               <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Situação</p>
               <select value={detSituacao} onChange={(e) => setDetSituacao(e.target.value)} style={inp}>
-                {SITUACOES.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
+                {/* Coordinator cannot set or see "Permuta" */}
+                {SITUACOES_COORD.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           </div>
@@ -364,11 +355,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
           <p style={{ margin: "12px 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Local</p>
           <select value={detLocal} onChange={(e) => setDetLocal(e.target.value)} style={inp}>
             <option value="">— Sem local —</option>
-            {locais.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.nome}
-              </option>
-            ))}
+            {locais.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
           </select>
 
           <p style={{ margin: "12px 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Marca</p>
@@ -380,7 +367,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
           <div style={{ marginTop: 12, padding: 12, background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
               <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a" }}>📷 Fotos</p>
-              <button onClick={() => setModal("camera")} style={{ ...bp, padding: "9px 12px" }}>
+              <button onClick={() => setModal("camera")} style={{ ...bp, padding: "9px 12px", fontSize: 12 }}>
                 Tirar / adicionar
               </button>
             </div>
@@ -390,15 +377,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
           </div>
 
           <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
-            <button
-              onClick={() => {
-                setModal(null);
-                setDetItem(null);
-              }}
-              style={{ ...bs, flex: 1 }}
-            >
-              Cancelar
-            </button>
+            <button onClick={() => { setModal(null); setDetItem(null); }} style={{ ...bs, flex: 1 }}>Cancelar</button>
             <button onClick={saveItem} disabled={saving} style={{ ...bp, flex: 1, background: "#16a34a", opacity: saving ? 0.8 : 1 }}>
               ✓ Salvar
             </button>
@@ -409,32 +388,13 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       {modal === "camera" && (
         <CameraModal
           existingPhotos={detNewBase64 || []}
-          onCapture={(arr) => {
-            setDetNewBase64(arr || []);
-            setModal("detalhe");
-          }}
+          onCapture={(arr) => { setDetNewBase64(arr || []); setModal("detalhe"); }}
           onClose={() => setModal("detalhe")}
         />
       )}
 
       {toast && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: "calc(24px + env(safe-area-inset-bottom, 0px))",
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "#6b21a8",
-            color: "#fff",
-            padding: "11px 24px",
-            borderRadius: 24,
-            fontSize: 13,
-            fontWeight: 600,
-            zIndex: 400,
-            boxShadow: "0 4px 16px rgba(0,0,0,.25)",
-            maxWidth: "92vw",
-          }}
-        >
+        <div style={{ position: "fixed", bottom: "calc(24px + env(safe-area-inset-bottom, 0px))", left: "50%", transform: "translateX(-50%)", background: "#6b21a8", color: "#fff", padding: "11px 24px", borderRadius: 24, fontSize: 13, fontWeight: 600, zIndex: 400, boxShadow: "0 4px 16px rgba(0,0,0,.25)", maxWidth: "92vw" }}>
           {toast}
         </div>
       )}
