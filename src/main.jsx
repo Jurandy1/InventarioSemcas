@@ -3,8 +3,9 @@ import { createRoot } from "react-dom/client";
 
 const path = String(window.location.pathname || "");
 const hash = String(window.location.hash || "");
-const isCoordPage = path.includes("/coord/") || hash.includes("#/coord/");
-const isCoordRegistro = path.includes("/coordregistro/") || hash.includes("#/coordregistro/");
+const isCoordPage      = path.includes("/coord/")        || hash.includes("#/coord/");
+const isCoordRegistro  = path.includes("/coordregistro/") || hash.includes("#/coordregistro/");
+const isInvRegistro    = path.includes("/invregistro/")   || hash.includes("#/invregistro/");
 
 const rootEl = document.getElementById("root");
 if (rootEl) {
@@ -26,7 +27,10 @@ async function boot() {
   if (!el) return;
   const root = createRoot(el);
 
-  if (isCoordRegistro) {
+  if (isInvRegistro) {
+    const mod = await import("./app/InventarianteRegistro.jsx");
+    root.render(React.createElement(React.StrictMode, null, React.createElement(mod.InventarianteRegistro)));
+  } else if (isCoordRegistro) {
     const mod = await import("./app/CoordinadorRegistro.jsx");
     root.render(React.createElement(React.StrictMode, null, React.createElement(mod.CoordinadorRegistro)));
   } else if (isCoordPage) {
