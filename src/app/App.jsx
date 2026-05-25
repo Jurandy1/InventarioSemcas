@@ -50,6 +50,14 @@ function SmartImg({ src, alt = "", style, ...rest }) {
   return <img src={resolved} alt={alt} style={style} {...rest} />;
 }
 
+// ─── helpers to show edited description/especie ────────────────────────────
+function getDisplayDesc(item, foundEntry) {
+  return foundEntry?.descricaoEdit || item.descricao || item.especie || "—";
+}
+function getDisplayEspecie(item, foundEntry) {
+  return foundEntry?.especieEdit || item.especie || "—";
+}
+
 function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, setFt, setModal, isMob, inp, cd, bs }) {
   const [localCat, setLocalCat] = useState("Todas");
   const [localSub, setLocalSub] = useState(null);
@@ -104,7 +112,10 @@ function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, s
           (i.especie || "").toLowerCase().includes(q) ||
           (i.marca || "").toLowerCase().includes(q) ||
           (i.fornecedor || "").toLowerCase().includes(q) ||
-          (i.nf || "").toLowerCase().includes(q)
+          (i.nf || "").toLowerCase().includes(q) ||
+          (foundMap[i.id]?.descricaoEdit || "").toLowerCase().includes(q) ||
+          (foundMap[i.id]?.permutaDesc || "").toLowerCase().includes(q) ||
+          (foundMap[i.id]?.permutaMarca || "").toLowerCase().includes(q)
         )
       )
         return false;
@@ -203,6 +214,8 @@ function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, s
     const foto = f?.fotoUrls?.[0];
     const isF = !!f;
     const catDef = CATEGORY_TREE.find((c) => getCategoryGroup(item.especie) === c.name) || CATEGORY_TREE[CATEGORY_TREE.length - 1];
+    const displayDesc = getDisplayDesc(item, f);
+    const isPermuta = f?.situacao === "Permuta";
 
     return (
       <div
@@ -220,6 +233,11 @@ function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, s
             detOrigemLocked: !item.isManual,
             detExistingUrls: f?.fotoUrls || [],
             detNewBase64: [],
+            detDescricao: f?.descricaoEdit || item.descricao || "",
+            detEspecie: f?.especieEdit || item.especie || "",
+            detPermutaDesc: f?.permutaDesc || "",
+            detPermutaMarca: f?.permutaMarca || "",
+            detPermutaEstado: f?.permutaEstado || "Bom",
           };
           setFt((t) => t + 1);
           setModal("detalhe");
@@ -229,7 +247,7 @@ function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, s
           cursor: "pointer",
           padding: 0,
           overflow: "hidden",
-          border: `1.5px solid ${isF ? "#bbf7d0" : "#e2e8f0"}`,
+          border: `1.5px solid ${isPermuta ? "#fcd34d" : isF ? "#bbf7d0" : "#e2e8f0"}`,
           display: "flex",
           flexDirection: "column",
         }}
@@ -251,11 +269,11 @@ function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, s
             <SmartImg src={foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-              <span style={{ fontSize: 32, opacity: isF ? 0.5 : 0.2 }}>{catDef.icon}</span>
-              <span style={{ fontSize: 9, fontWeight: 700, color: isF ? "#16a34a" : "#94a3b8", letterSpacing: ".05em" }}>{isF ? "✅ SEM FOTO" : "📷 PENDENTE"}</span>
+              <span style={{ fontSize: 32, opacity: isF ? 0.5 : 0.2 }}>{isPermuta ? "🔄" : catDef.icon}</span>
+              <span style={{ fontSize: 9, fontWeight: 700, color: isPermuta ? "#92400e" : isF ? "#16a34a" : "#94a3b8", letterSpacing: ".05em" }}>{isPermuta ? "🔄 PERMUTA" : isF ? "✅ SEM FOTO" : "📷 PENDENTE"}</span>
             </div>
           )}
-          <div style={{ position: "absolute", top: 5, right: 5, background: isF ? "#16a34a" : "#f59e0b", borderRadius: 99, width: 9, height: 9, boxShadow: "0 0 0 2px #fff" }} />
+          <div style={{ position: "absolute", top: 5, right: 5, background: isPermuta ? "#f59e0b" : isF ? "#16a34a" : "#f59e0b", borderRadius: 99, width: 9, height: 9, boxShadow: "0 0 0 2px #fff" }} />
           {(f?.fotoUrls?.length || 0) > 1 && (
             <div style={{ position: "absolute", bottom: 5, right: 5, background: "rgba(0,0,0,.55)", color: "#fff", borderRadius: 99, fontSize: 9, fontWeight: 700, padding: "2px 6px" }}>
               📷 {f.fotoUrls.length}
@@ -278,8 +296,13 @@ function ItensTab({ todosItens, unidades, foundMap, foundSet, saveAtiva, form, s
               WebkitBoxOrient: "vertical",
             }}
           >
-            {item.descricao || item.especie || "—"}
+            {displayDesc}
           </p>
+          {isPermuta && f?.permutaDesc && (
+            <p style={{ margin: 0, fontSize: 9, color: "#92400e", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              🔄 Real: {f.permutaDesc}
+            </p>
+          )}
           <p style={{ margin: 0, fontSize: 9, color: "#64748b", fontWeight: 600 }}>Nº {getItemCode(item)}</p>
           <p style={{ margin: "1px 0 0", fontSize: 9, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {(item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 36)}
@@ -588,7 +611,8 @@ export default function App() {
   const [logado, setLogado] = useState(null);
   const [tab, setTab] = useState("inventario");
   const [unidades, setUnidades] = useState([]);
-  const [unidadeAtiva, setUnidadeAtiva] = useState(null);
+  const [unidadesAtivas, setUnidadesAtivas] = useState([]); // units in active inventory
+  const [pendingUnids, setPendingUnids] = useState(new Set()); // IDs being selected (before confirm)
   const [locais, setLocais] = useState([]);
   const [found, setFound] = useState([]);
   const [tombosNE, setTombosNE] = useState([]);
@@ -720,10 +744,11 @@ export default function App() {
             new Promise((_, rej) => setTimeout(() => rej(new Error("Timeout ao carregar dados")), 15000)),
           ]);
           try {
-            const ativaId = localStorage.getItem("inv-ativa-id");
-            if (ativaId && unids?.length) {
-              const u = unids.find((x) => x.id === ativaId);
-              if (u) setUnidadeAtiva(u);
+            const ativasRaw = localStorage.getItem("inv-ativas-ids");
+            if (ativasRaw && unids?.length) {
+              const ids = JSON.parse(ativasRaw);
+              const restored = ids.map((id) => unids.find((x) => x.id === id)).filter(Boolean);
+              if (restored.length) setUnidadesAtivas(restored);
             }
           } catch {}
         }
@@ -881,15 +906,41 @@ export default function App() {
     }
   };
 
-  const saveAtiva = (u) => {
-    setUnidadeAtiva(u);
-    try {
-      if (u) localStorage.setItem("inv-ativa-id", u.id);
-      else localStorage.removeItem("inv-ativa-id");
-    } catch {}
+  // ─── multi-unit active inventory helpers ────────────────────────────────────
+  const confirmarAtivas = (units) => {
+    setUnidadesAtivas(units);
+    setPendingUnids(new Set());
+    try { localStorage.setItem("inv-ativas-ids", JSON.stringify(units.map((x) => x.id))); } catch {}
   };
 
-  const markFound = async (itemId, estado, situacao, localId, obs, marca, origem, fotoUrls = []) => {
+  const addAtiva = (u) => {
+    setUnidadesAtivas((prev) => {
+      const next = prev.find((x) => x.id === u.id) ? prev : [...prev, u];
+      try { localStorage.setItem("inv-ativas-ids", JSON.stringify(next.map((x) => x.id))); } catch {}
+      return next;
+    });
+  };
+
+  const removeAtiva = (uid) => {
+    setUnidadesAtivas((prev) => {
+      const next = prev.filter((u) => u.id !== uid);
+      try { localStorage.setItem("inv-ativas-ids", JSON.stringify(next.map((x) => x.id))); } catch {}
+      return next;
+    });
+  };
+
+  const clearAtivas = () => {
+    setUnidadesAtivas([]);
+    setPendingUnids(new Set());
+    try { localStorage.removeItem("inv-ativas-ids"); } catch {}
+  };
+
+  // Compat: primary unit (first active) – used by addManual, finalize, etc.
+  const unidadeAtiva = unidadesAtivas[0] || null;
+  const saveAtiva = (u) => { if (u) addAtiva(u); else clearAtivas(); };
+
+  // ─── markFound: now accepts extras for description overrides & permuta ──────
+  const markFound = async (itemId, estado, situacao, localId, obs, marca, origem, fotoUrls = [], extras = {}) => {
     const now = new Date();
     const entryUnidadeId = unidadeAtiva?.id || form.current?.detItem?.unidadeId || "";
     const entryUnidadeNome = unidadeAtiva?.nome || form.current?.detItem?.unidadeNome || "";
@@ -911,6 +962,7 @@ export default function App() {
       ultimaAtualizacao: now.toISOString(),
       ultimoUsuarioAnterior: undefined,
       user: logado?.nome || "",
+      ...extras,
     };
     const currentFound = foundRef.current || found || [];
     const existing = currentFound.find((f) => f.patrimonioId === itemId);
@@ -941,6 +993,21 @@ export default function App() {
     const existingUrls = form.current.detExistingUrls || [];
     const newBase64 = form.current.detNewBase64 || [];
     let allUrls = [...existingUrls];
+
+    // Build extras: description/especie overrides + permuta data
+    const extras = {};
+    const descEdit = (form.current.detDescricao || "").trim();
+    const espEdit = (form.current.detEspecie || "").trim();
+    if (descEdit) extras.descricaoEdit = descEdit;
+    if (espEdit) extras.especieEdit = espEdit;
+
+    const situacaoAtual = gf("detSituacao") || "Em uso";
+    if (situacaoAtual === "Permuta") {
+      extras.permutaDesc = (gf("detPermutaDesc") || "").trim();
+      extras.permutaMarca = (gf("detPermutaMarca") || "").trim();
+      extras.permutaEstado = gf("detPermutaEstado") || "Bom";
+    }
+
     try {
       let compressedBase64 = [];
 
@@ -957,7 +1024,7 @@ export default function App() {
         unidadeId: unidadeAtiva?.id || item?.unidadeId || "",
         unidadeNome: unidadeAtiva?.nome || item?.unidadeNome || "",
         estado: gf("detEstado") || "Bom",
-        situacao: gf("detSituacao") || "Em uso",
+        situacao: situacaoAtual,
         localId: gf("detLocal"),
         obs: gf("detObs"),
         marca: gf("detMarca") || "",
@@ -969,6 +1036,7 @@ export default function App() {
         email: logado?.email || "",
         ultimaAtualizacao: new Date().toISOString(),
         user: logado?.nome || "",
+        ...extras,
       };
 
       if (!navigator.onLine) {
@@ -984,6 +1052,8 @@ export default function App() {
         updateQueueStatus();
         await setCachedData("inventario", newFound);
         await logAuditoria("queue-save", "inventario", item.id, before, offlineEntry);
+        // Update local item desc/especie if changed
+        if (descEdit || espEdit) _applyDescOverride(item.id, descEdit, espEdit);
         setModal(null);
         showT("✓ Salvo offline (sincronizará quando voltar online)");
         return;
@@ -1005,13 +1075,27 @@ export default function App() {
         showT("⚠️ Firebase Storage não configurado — fotos não salvas");
       }
 
-      const after = await markFound(item.id, gf("detEstado") || "Bom", gf("detSituacao") || "Em uso", gf("detLocal"), gf("detObs"), gf("detMarca"), gf("detOrigem") || "Próprio", allUrls);
+      const after = await markFound(
+        item.id,
+        gf("detEstado") || "Bom",
+        situacaoAtual,
+        gf("detLocal"),
+        gf("detObs"),
+        gf("detMarca"),
+        gf("detOrigem") || "Próprio",
+        allUrls,
+        extras,
+      );
       const base = foundRef.current || found || [];
       const newFound = [...base.filter((f) => f.patrimonioId !== item.id), { ...after, _id: item.id }];
       foundRef.current = newFound;
       setFound(newFound);
       await setCachedData("inventario", newFound);
       await logAuditoria("update", "inventario", item.id, before, after);
+
+      // Apply description/especie override to local unidades state for immediate display
+      if (descEdit || espEdit) _applyDescOverride(item.id, descEdit, espEdit);
+
       notificationService.notify(EVENTOS.ITEM_ENCONTRADO, {
         message: `Item ${item.id} salvo com sucesso`,
         type: "success",
@@ -1028,6 +1112,25 @@ export default function App() {
       perfMonitor.end("saveDetail");
     }
   };
+
+  // Helper: update item description/especie in local unidades state
+  function _applyDescOverride(itemId, descEdit, espEdit) {
+    if (!descEdit && !espEdit) return;
+    setUnidades((prev) =>
+      prev.map((u) => ({
+        ...u,
+        itens: u.itens.map((i) =>
+          i.id === itemId
+            ? {
+                ...i,
+                ...(descEdit ? { descricao: descEdit } : {}),
+                ...(espEdit ? { especie: espEdit } : {}),
+              }
+            : i
+        ),
+      }))
+    );
+  }
 
   const addLocal = async () => {
     const n = gf("localNome");
@@ -1095,7 +1198,8 @@ export default function App() {
     }
 
     const novaAtiva = { ...unidadeAtiva, itens: [...unidadeAtiva.itens, item] };
-    saveAtiva(novaAtiva);
+    // Update the unit inside unidadesAtivas array (not just the compat var)
+    setUnidadesAtivas((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
     setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
 
     const created = await markFound(id, gf("manEstado") || "Bom", gf("manSituacao") || "Em uso", locais[0]?.id || "", desc.trim(), gf("manMarca"), gf("manOrigem") || "Próprio", fotoUrls);
@@ -1167,12 +1271,12 @@ export default function App() {
   };
 
   const finalizarInv = async () => {
-    const pendentes = (unidadeAtiva?.itens || []).filter((i) => !foundSet.has(i.id));
+    const pendentes = allItens.filter((i) => !foundSet.has(i.id));
     for (const item of pendentes) {
-      const ne = { patrimonioId: item.id, descricao: item.descricao, especie: item.especie, unidade: unidadeAtiva?.nome, dataFin: new Date().toLocaleDateString("pt-BR") };
+      const ne = { patrimonioId: item.id, descricao: item.descricao, especie: item.especie, unidade: item.unidadeNome, dataFin: new Date().toLocaleDateString("pt-BR") };
       await fsSet("tombosNE", item.id, ne);
     }
-    setTombosNE((prev) => [...prev, ...pendentes.map((i) => ({ ...i, unidade: unidadeAtiva?.nome, dataFin: new Date().toLocaleDateString("pt-BR") }))]);
+    setTombosNE((prev) => [...prev, ...pendentes.map((i) => ({ ...i, unidade: i.unidadeNome, dataFin: new Date().toLocaleDateString("pt-BR") }))]);
     setModal(null);
     showT(`Finalizado! ${pendentes.length} não encontrado(s)`);
   };
@@ -1203,14 +1307,14 @@ export default function App() {
     };
     await fsSet("coordenadores", token, coordDoc);
 
-    const pendentes = (unidadeAtiva?.itens || []).filter((i) => !foundSet.has(i.id));
+    const pendentes = allItens.filter((i) => !foundSet.has(i.id));
     const dataFin = new Date().toLocaleDateString("pt-BR");
     for (const item of pendentes) {
       const ne = {
         patrimonioId: item.id,
         descricao: item.descricao,
         especie: item.especie,
-        unidade: unidadeAtiva?.nome,
+        unidade: item.unidadeNome,
         dataFin,
         coordenadora: nome,
         matricula,
@@ -1221,7 +1325,7 @@ export default function App() {
       ...prev,
       ...pendentes.map((i) => ({
         ...i,
-        unidade: unidadeAtiva?.nome,
+        unidade: i.unidadeNome,
         dataFin,
         coordenadora: nome,
         matricula,
@@ -1257,7 +1361,10 @@ export default function App() {
       return m;
     }, {});
   }, [found]);
-  const allItens = unidadeAtiva?.itens || [];
+  const allItens = React.useMemo(
+    () => unidadesAtivas.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeNome: u.nome, unidadeId: u.id }))),
+    [unidadesAtivas]
+  );
   const totalBens = allItens.length;
   const totalFound = allItens.filter((i) => foundSet.has(i.id)).length;
   const progresso = totalBens > 0 ? Math.round((totalFound / totalBens) * 100) : 0;
@@ -1275,7 +1382,15 @@ export default function App() {
 
   const filtered = allItens.filter((i) => {
     const s = search.toLowerCase();
-    return !s || getItemCode(i).toLowerCase().includes(s) || (i.id || "").toLowerCase().includes(s) || (i.especie || "").toLowerCase().includes(s) || (i.descricao || "").toLowerCase().includes(s) || (i.fornecedor || "").toLowerCase().includes(s);
+    return !s ||
+      getItemCode(i).toLowerCase().includes(s) ||
+      (i.id || "").toLowerCase().includes(s) ||
+      (i.especie || "").toLowerCase().includes(s) ||
+      (i.descricao || "").toLowerCase().includes(s) ||
+      (i.fornecedor || "").toLowerCase().includes(s) ||
+      (foundMap[i.id]?.descricaoEdit || "").toLowerCase().includes(s) ||
+      (foundMap[i.id]?.permutaDesc || "").toLowerCase().includes(s) ||
+      (foundMap[i.id]?.permutaMarca || "").toLowerCase().includes(s);
   });
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -1420,7 +1535,7 @@ export default function App() {
   );
 
   const navs = [
-    { id: "inventario", icon: "📦", l: "Inventário" },
+    { id: "inventario", icon: "📦", l: "Inventário", badge: unidadesAtivas.length > 0 ? unidadesAtivas.length : null },
     { id: "busca", icon: "🔍", l: "Busca" },
     { id: "itens", icon: "🪑", l: "Itens" },
     { id: "nf", icon: "🧾", l: "Notas" },
@@ -1446,7 +1561,10 @@ export default function App() {
           (item.especie || "").toLowerCase().includes(term) ||
           (item.fornecedor || "").toLowerCase().includes(term) ||
           (item.marca || "").toLowerCase().includes(term) ||
-          (item.nf || "").toLowerCase().includes(term)
+          (item.nf || "").toLowerCase().includes(term) ||
+          (foundMap[item.id]?.descricaoEdit || "").toLowerCase().includes(term) ||
+          (foundMap[item.id]?.permutaDesc || "").toLowerCase().includes(term) ||
+          (foundMap[item.id]?.permutaMarca || "").toLowerCase().includes(term)
         ) {
           results.push({ ...item, unidadeNome: unidade.nome, unidadeId: unidade.id });
           if (results.length >= 200) break;
@@ -1458,12 +1576,43 @@ export default function App() {
     setGlobalSearching(false);
   };
 
+  // ─── Helper to open detail modal (deduplicates the 4 identical blocks) ──────
+  const openDetModal = (item) => {
+    const f = foundMap[item.id];
+    form.current = {
+      detItem: item,
+      detEstado: f?.estado || "Bom",
+      detSituacao: f?.situacao || "Em uso",
+      detLocal: f?.localId || "",
+      detObs: f?.obs || "",
+      detMarca: f?.marca || item.marca || "",
+      detOrigem: f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
+      detOrigemLocked: !item.isManual,
+      detExistingUrls: f?.fotoUrls || [],
+      detNewBase64: [],
+      detDescricao: f?.descricaoEdit || item.descricao || "",
+      detEspecie: f?.especieEdit || item.especie || "",
+      detPermutaDesc: f?.permutaDesc || "",
+      detPermutaMarca: f?.permutaMarca || "",
+      detPermutaEstado: f?.permutaEstado || "Bom",
+    };
+    setFt((t) => t + 1);
+    setModal("detalhe");
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
       <div style={{ background: "#1e3a8a", color: "#fff", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 200 }}>
         <div>
           <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>📋 Inventário SEMCAS</p>
-          <p style={{ margin: 0, fontSize: 11, opacity: 0.7 }}>{logado.nome}{unidadeAtiva ? ` · ${unidadeAtiva.nome}` : ""}</p>
+          <p style={{ margin: 0, fontSize: 11, opacity: 0.7 }}>
+            {logado.nome}
+            {unidadesAtivas.length === 1
+              ? ` · ${unidadesAtivas[0].nome}`
+              : unidadesAtivas.length > 1
+              ? ` · ${unidadesAtivas.length} unidades em inventário`
+              : ""}
+          </p>
           <div style={{ marginTop: 3 }}>{renderOfflineStatus()}</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -1500,9 +1649,14 @@ export default function App() {
               <button
                 key={n.id}
                 onClick={() => setTab(n.id)}
-                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: tab === n.id ? "#1e3a8a" : "transparent", color: tab === n.id ? "#fff" : "#374151", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", marginBottom: 4, textAlign: "left" }}
+                style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", background: tab === n.id ? "#1e3a8a" : "transparent", color: tab === n.id ? "#fff" : "#374151", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", marginBottom: 4, textAlign: "left", position: "relative" }}
               >
                 {n.icon} {n.l}
+                {n.badge && (
+                  <span style={{ marginLeft: "auto", background: tab === n.id ? "rgba(255,255,255,.3)" : "#1e3a8a", color: "#fff", borderRadius: 99, fontSize: 10, fontWeight: 800, padding: "1px 6px", minWidth: 16, textAlign: "center" }}>
+                    {n.badge}
+                  </span>
+                )}
               </button>
             ))}
             <hr style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "12px 0" }} />
@@ -1511,13 +1665,45 @@ export default function App() {
         )}
 
         <div style={{ flex: 1, padding: isMob ? 12 : 24, paddingBottom: isMob ? "calc(78px + env(safe-area-inset-bottom, 0px))" : 24 }}>
-          {tab === "inventario" && !unidadeAtiva && (
+          {tab === "inventario" && unidadesAtivas.length === 0 && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>📦 Selecionar Unidade</h2>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>📦 Selecionar Unidade(s)</h2>
+                  <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>Selecione uma ou mais unidades para inventariar juntas</p>
+                </div>
                 {loadingXlsx && <span style={{ fontSize: 12, color: "#64748b" }}>Carregando dados...</span>}
               </div>
+
+              {/* Confirm bar */}
+              {pendingUnids.size > 0 && (
+                <div style={{ position: "sticky", top: 64, zIndex: 100, background: "#1e3a8a", borderRadius: 12, padding: "12px 16px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, boxShadow: "0 4px 16px rgba(30,58,138,.35)" }}>
+                  <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>
+                    📦 {pendingUnids.size} unidade{pendingUnids.size > 1 ? "s" : ""} selecionada{pendingUnids.size > 1 ? "s" : ""}
+                  </span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => setPendingUnids(new Set())}
+                      style={{ background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}
+                    >
+                      Limpar
+                    </button>
+                    <button
+                      onClick={() => {
+                        const selected = unidades.filter((u) => pendingUnids.has(u.id));
+                        confirmarAtivas(selected);
+                        setPage(1);
+                      }}
+                      style={{ background: "#fff", color: "#1e3a8a", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 800 }}
+                    >
+                      ✓ Iniciar inventário
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <TInput initial="" onVal={(v) => setUnidadeSearch(v)} placeholder="🔍 Buscar unidade..." style={{ ...inp, marginBottom: 12 }} />
+
               {unidades.length === 0 ? (
                 <div style={{ ...cd, textAlign: "center", padding: 40 }}>
                   <p style={{ fontSize: 48 }}>📂</p>
@@ -1530,9 +1716,41 @@ export default function App() {
                     .map((u) => {
                       const inv = u.itens.filter((i) => foundSet.has(i.id)).length;
                       const pct = u.itens.length > 0 ? Math.round((inv / u.itens.length) * 100) : 0;
+                      const selected = pendingUnids.has(u.id);
                       return (
-                        <button key={u.id} onClick={() => { saveAtiva(u); setPage(1); }} style={{ ...cd, border: "1.5px solid #e2e8f0", cursor: "pointer", textAlign: "left", position: "relative", overflow: "hidden" }}>
-                          <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{u.nome}</p>
+                        <button
+                          key={u.id}
+                          onClick={() => {
+                            setPendingUnids((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(u.id)) next.delete(u.id);
+                              else next.add(u.id);
+                              return next;
+                            });
+                          }}
+                          style={{
+                            ...cd,
+                            border: `2px solid ${selected ? "#1e3a8a" : "#e2e8f0"}`,
+                            cursor: "pointer",
+                            textAlign: "left",
+                            position: "relative",
+                            overflow: "hidden",
+                            background: selected ? "#eff6ff" : "#fff",
+                            transition: "border-color .15s, background .15s",
+                          }}
+                        >
+                          {/* Checkbox indicator */}
+                          <div style={{
+                            position: "absolute", top: 10, right: 10,
+                            width: 20, height: 20, borderRadius: 6,
+                            border: `2px solid ${selected ? "#1e3a8a" : "#d1d5db"}`,
+                            background: selected ? "#1e3a8a" : "#fff",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 11, color: "#fff", fontWeight: 900,
+                          }}>
+                            {selected && "✓"}
+                          </div>
+                          <p style={{ margin: 0, fontSize: 13, fontWeight: selected ? 800 : 700, color: selected ? "#1e3a8a" : "#0f172a", paddingRight: 28 }}>{u.nome}</p>
                           <p style={{ margin: "4px 0 8px", fontSize: 12, color: "#64748b" }}>{u.itens.length} itens · {inv} inventariados</p>
                           <div style={{ height: 4, borderRadius: 2, background: "#e2e8f0" }}>
                             <div style={{ height: "100%", background: pct === 100 ? "#16a34a" : "#1e3a8a", borderRadius: 2, width: `${pct}%`, transition: "width .3s" }} />
@@ -1545,32 +1763,97 @@ export default function App() {
             </div>
           )}
 
-          {tab === "inventario" && unidadeAtiva && (
+          {tab === "inventario" && unidadesAtivas.length > 0 && (
             <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{unidadeAtiva.nome}</h2>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <button onClick={() => { form.current = { manEstado: "Bom", manPatrimonio: "" }; setFt((t) => t + 1); setModal("manual"); }} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#10b981" }}>
-                    + Manual
-                  </button>
-                  {totalFound > 0 && (
-                    <button onClick={() => setModal("finalizar")} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#dc2626" }}>
-                      ✓ Finalizar
+              {/* ── "Em inventário" header with unit chips ── */}
+              <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #bfdbfe", background: "#eff6ff" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#1e3a8a" }}>
+                      📋 Em inventário — {unidadesAtivas.length} unidade{unidadesAtivas.length > 1 ? "s" : ""}
+                    </p>
+                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#3b82f6" }}>
+                      {totalFound}/{totalBens} itens inventariados ({progresso}%)
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button
+                      onClick={() => { form.current = { manEstado: "Bom", manPatrimonio: "" }; setFt((t) => t + 1); setModal("manual"); }}
+                      style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#10b981" }}
+                    >
+                      + Manual
                     </button>
-                  )}
-                  <button onClick={() => saveAtiva(null)} style={{ ...bs, fontSize: 11, padding: "6px 12px" }}>
-                    Trocar
-                  </button>
+                    {totalFound > 0 && (
+                      <button onClick={() => setModal("finalizar")} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#dc2626" }}>
+                        ✓ Finalizar
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setPendingUnids(new Set()); setUnidadesAtivas([]); try { localStorage.removeItem("inv-ativas-ids"); } catch {} }}
+                      style={{ ...bs, fontSize: 11, padding: "6px 12px" }}
+                    >
+                      🔄 Trocar
+                    </button>
+                    <button
+                      onClick={() => {
+                        // open add-unit modal (reuses selection UI via pendingUnids pre-filled)
+                        setPendingUnids(new Set(unidadesAtivas.map((u) => u.id)));
+                        clearAtivas();
+                      }}
+                      style={{ ...bs, fontSize: 11, padding: "6px 12px" }}
+                    >
+                      ➕ Unidade
+                    </button>
+                  </div>
                 </div>
-              </div>
 
-              <div style={{ ...cd, marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>Progresso</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "#1e3a8a" }}>{totalFound}/{totalBens} ({progresso}%)</span>
-                </div>
-                <div style={{ height: 6, borderRadius: 3, background: "#e2e8f0" }}>
+                {/* Overall progress bar */}
+                <div style={{ height: 6, borderRadius: 3, background: "#dbeafe", marginBottom: 12 }}>
                   <div style={{ height: "100%", background: progresso === 100 ? "#16a34a" : "#1e3a8a", borderRadius: 3, width: `${progresso}%`, transition: "width .3s" }} />
+                </div>
+
+                {/* Per-unit chips */}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {unidadesAtivas.map((u) => {
+                    const uFound = u.itens.filter((i) => foundSet.has(i.id)).length;
+                    const uPct = u.itens.length > 0 ? Math.round((uFound / u.itens.length) * 100) : 0;
+                    const done = uPct === 100;
+                    return (
+                      <div
+                        key={u.id}
+                        style={{
+                          background: done ? "#dcfce7" : "#fff",
+                          border: `1.5px solid ${done ? "#86efac" : "#cbd5e1"}`,
+                          borderRadius: 10,
+                          padding: "8px 12px",
+                          minWidth: 160,
+                          flex: "1 1 160px",
+                          maxWidth: 280,
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}>
+                          <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: done ? "#15803d" : "#0f172a", lineHeight: 1.3, flex: 1 }}>
+                            {done ? "✅ " : "📦 "}{u.nome.replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 48)}
+                          </p>
+                          {unidadesAtivas.length > 1 && (
+                            <button
+                              onClick={() => removeAtiva(u.id)}
+                              style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 14, padding: 0, lineHeight: 1, flexShrink: 0 }}
+                              title="Remover desta seleção"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                        <p style={{ margin: "4px 0 5px", fontSize: 10, color: done ? "#16a34a" : "#64748b", fontWeight: 600 }}>
+                          {uFound}/{u.itens.length} · {uPct}%
+                        </p>
+                        <div style={{ height: 3, borderRadius: 2, background: done ? "#bbf7d0" : "#e2e8f0" }}>
+                          <div style={{ height: "100%", background: done ? "#16a34a" : "#1e3a8a", borderRadius: 2, width: `${uPct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1581,31 +1864,35 @@ export default function App() {
                   const f = foundMap[item.id];
                   const isF = !!f;
                   const foto = f?.fotoUrls?.[0];
+                  const displayDesc = getDisplayDesc(item, f);
+                  const isPermuta = f?.situacao === "Permuta";
                   return (
                     <div
-                      key={item.id}
-                      onClick={() => {
-                        form.current = {
-                          detItem: item,
-                          detEstado: f?.estado || "Bom",
-                          detSituacao: f?.situacao || "Em uso",
-                          detLocal: f?.localId || "",
-                          detObs: f?.obs || "",
-                          detMarca: f?.marca || item.marca || "",
-                          detOrigem: f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
-                          detOrigemLocked: !item.isManual,
-                          detExistingUrls: f?.fotoUrls || [],
-                          detNewBase64: [],
-                        };
-                        setFt((t) => t + 1);
-                        setModal("detalhe");
-                      }}
-                      style={{ ...cd, cursor: "pointer", border: `1.5px solid ${isF ? "#bbf7d0" : "#e2e8f0"}`, display: "flex", gap: 12 }}
+                      key={`${item.unidadeId}_${item.id}`}
+                      onClick={() => openDetModal(item)}
+                      style={{ ...cd, cursor: "pointer", border: `1.5px solid ${isPermuta ? "#fcd34d" : isF ? "#bbf7d0" : "#e2e8f0"}`, display: "flex", gap: 12 }}
                     >
-                      {foto ? <SmartImg src={foto} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} /> : <div style={{ width: 56, height: 56, borderRadius: 8, background: isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{isF ? "✅" : "📷"}</div>}
+                      {foto
+                        ? <SmartImg src={foto} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
+                        : <div style={{ width: 56, height: 56, borderRadius: 8, background: isPermuta ? "#fef3c7" : isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{isPermuta ? "🔄" : isF ? "✅" : "📷"}</div>
+                      }
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{item.descricao || item.especie || "—"}</p>
-                    <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{displayDesc}</p>
+                        {isPermuta && f?.permutaDesc && (
+                          <div style={{ marginTop: 4, padding: "4px 8px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 7 }}>
+                            <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: "#92400e", textTransform: "uppercase", letterSpacing: ".04em" }}>🔄 Real</p>
+                            <p style={{ margin: "1px 0 0", fontSize: 12, fontWeight: 700, color: "#78350f" }}>
+                              {f.permutaDesc}{f.permutaMarca ? ` · ${f.permutaMarca}` : ""}
+                            </p>
+                          </div>
+                        )}
+                        <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                        {/* Show unit name when multiple units active */}
+                        {unidadesAtivas.length > 1 && (
+                          <p style={{ margin: "1px 0 2px", fontSize: 10, fontWeight: 700, color: "#6366f1" }}>
+                            🏛️ {(item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 40)}
+                          </p>
+                        )}
                         <p style={{ margin: "0 0 4px", fontSize: 11, color: "#94a3b8" }}>{item.fornecedor || "—"}{item.marca ? ` · ${item.marca}` : ""}{item.nf ? ` · NF ${item.nf}` : ""}</p>
                         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                           {isF ? (
@@ -1623,22 +1910,15 @@ export default function App() {
                   );
                 })}
               </div>
+              </div>
 
               {totalPages > 1 && (
                 <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 16, flexWrap: "wrap" }}>
-                  <button onClick={() => setPage(1)} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                    «
-                  </button>
-                  <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                    ‹
-                  </button>
+                  <button onClick={() => setPage(1)} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>«</button>
+                  <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>‹</button>
                   <span style={{ fontSize: 12, color: "#64748b" }}>Pág {page}/{totalPages} · {filtered.length} itens</span>
-                  <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                    ›
-                  </button>
-                  <button onClick={() => setPage(totalPages)} disabled={page === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                    »
-                  </button>
+                  <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>›</button>
+                  <button onClick={() => setPage(totalPages)} disabled={page === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>»</button>
                 </div>
               )}
             </div>
@@ -1662,33 +1942,56 @@ export default function App() {
                 <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px" }}>{globalResults.length} resultado(s)</p>
               )}
               <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(360px,1fr))", gap: 10 }}>
-                {globalResults.map((item) => (
-                  <div
-                    key={`${item.unidadeId}_${item.id}`}
-                    onClick={() => {
-                      const u = unidades.find((x) => x.id === item.unidadeId);
-                      if (u) saveAtiva(u);
-                      form.current = {
-                        detItem: item,
-                        detEstado: foundMap[item.id]?.estado || "Bom",
-                        detSituacao: foundMap[item.id]?.situacao || "Em uso",
-                        detLocal: foundMap[item.id]?.localId || "",
-                        detObs: foundMap[item.id]?.obs || "",
-                        detMarca: foundMap[item.id]?.marca || item.marca || "",
-                        detOrigem: foundMap[item.id]?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
-                        detOrigemLocked: !item.isManual,
-                        detExistingUrls: foundMap[item.id]?.fotoUrls || [],
-                        detNewBase64: [],
-                      };
-                      setFt((t) => t + 1);
-                      setModal("detalhe");
-                    }}
-                    style={{ ...cd, cursor: "pointer" }}
-                  >
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{item.descricao || item.especie || "—"}</p>
-                    <p style={{ margin: "4px 0 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(item)} · {item.unidadeNome}</p>
-                  </div>
-                ))}
+                {globalResults.map((item) => {
+                  const fEntry = foundMap[item.id];
+                  const isPermuta = fEntry?.situacao === "Permuta";
+                  const displayDesc = getDisplayDesc(item, fEntry);
+                  return (
+                    <div
+                      key={`${item.unidadeId}_${item.id}`}
+                      onClick={() => {
+                        const u = unidades.find((x) => x.id === item.unidadeId);
+                        if (u) saveAtiva(u);
+                        openDetModal(item);
+                      }}
+                      style={{
+                        ...cd,
+                        cursor: "pointer",
+                        border: `1.5px solid ${isPermuta ? "#fcd34d" : fEntry ? "#bbf7d0" : "#e2e8f0"}`,
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          {/* Sistema (original) */}
+                          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{displayDesc}</p>
+
+                          {/* Item real da permuta */}
+                          {isPermuta && fEntry?.permutaDesc && (
+                            <div style={{ marginTop: 6, padding: "6px 10px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8 }}>
+                              <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: "#92400e", letterSpacing: ".04em", textTransform: "uppercase" }}>🔄 Item real encontrado</p>
+                              <p style={{ margin: "2px 0 0", fontSize: 12, fontWeight: 700, color: "#78350f" }}>
+                                {fEntry.permutaDesc}
+                                {fEntry.permutaMarca ? ` · ${fEntry.permutaMarca}` : ""}
+                              </p>
+                            </div>
+                          )}
+
+                          <p style={{ margin: "6px 0 0", fontSize: 11, color: "#64748b" }}>
+                            Nº {getItemCode(item)} · {(item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 50)}
+                          </p>
+                          {item.fornecedor && (
+                            <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>🏭 {item.fornecedor}{item.nf ? ` · NF ${item.nf}` : ""}</p>
+                          )}
+                        </div>
+                        {fEntry ? (
+                          <Badge label={fEntry.estado} c={EC[fEntry.estado]} />
+                        ) : (
+                          <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1798,48 +2101,41 @@ export default function App() {
                             </div>
 
                             <div style={{ display: "grid", gap: 6 }}>
-                              {n.itens.slice(0, 4).map((i) => (
-                                <div
-                                  key={i.id}
-                                  onClick={() => {
-                                    const u = unidades.find((x) => x.id === i.unidadeId);
-                                    if (u) saveAtiva(u);
-                                    const f = foundMap[i.id];
-                                    form.current = {
-                                      detItem: i,
-                                      detEstado: f?.estado || "Bom",
-                                      detSituacao: f?.situacao || "Em uso",
-                                      detLocal: f?.localId || "",
-                                      detObs: f?.obs || "",
-                                      detMarca: f?.marca || i.marca || "",
-                                      detOrigem: f?.origem || (i.isManual ? "Próprio" : i.tipoEntrada || "Próprio"),
-                                      detOrigemLocked: !i.isManual,
-                                      detExistingUrls: f?.fotoUrls || [],
-                                      detNewBase64: [],
-                                    };
-                                    setFt((t) => t + 1);
-                                    setModal("detalhe");
-                                  }}
-                                  style={{
-                                    display: "flex",
-                                    gap: 10,
-                                    alignItems: "center",
-                                    padding: "8px 10px",
-                                    borderRadius: 10,
-                                    cursor: "pointer",
-                                    border: `1px solid ${foundSet.has(i.id) ? "#bbf7d0" : "#e2e8f0"}`,
-                                    background: foundSet.has(i.id) ? "#f0fdf4" : "#fff",
-                                  }}
-                                >
-                                  <span style={{ fontSize: 12 }}>{foundSet.has(i.id) ? "✅" : "⬜"}</span>
-                                  <div style={{ minWidth: 0 }}>
-                                    <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                      {i.descricao || i.especie || "—"}
-                                    </p>
-                                    <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {i.id} · {i.unidadeNome}</p>
+                              {n.itens.slice(0, 4).map((i) => {
+                                const fEntry = foundMap[i.id];
+                                const isPermutaNF = fEntry?.situacao === "Permuta";
+                                return (
+                                  <div
+                                    key={i.id}
+                                    onClick={() => {
+                                      const u = unidades.find((x) => x.id === i.unidadeId);
+                                      if (u) saveAtiva(u);
+                                      openDetModal(i);
+                                    }}
+                                    style={{
+                                      display: "flex",
+                                      gap: 10,
+                                      alignItems: "center",
+                                      padding: "8px 10px",
+                                      borderRadius: 10,
+                                      cursor: "pointer",
+                                      border: `1px solid ${isPermutaNF ? "#fcd34d" : foundSet.has(i.id) ? "#bbf7d0" : "#e2e8f0"}`,
+                                      background: isPermutaNF ? "#fefce8" : foundSet.has(i.id) ? "#f0fdf4" : "#fff",
+                                    }}
+                                  >
+                                    <span style={{ fontSize: 12 }}>{isPermutaNF ? "🔄" : foundSet.has(i.id) ? "✅" : "⬜"}</span>
+                                    <div style={{ minWidth: 0 }}>
+                                      <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                        {getDisplayDesc(i, fEntry)}
+                                      </p>
+                                      {isPermutaNF && fEntry?.permutaDesc && (
+                                        <p style={{ margin: "1px 0 0", fontSize: 10, color: "#92400e", fontWeight: 700 }}>🔄 Real: {fEntry.permutaDesc}</p>
+                                      )}
+                                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {i.id} · {i.unidadeNome}</p>
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
 
                             {n.itens.length > 4 && <p style={{ margin: "10px 0 0", fontSize: 11, color: "#94a3b8", textAlign: "center" }}>+{n.itens.length - 4} item(ns) nesta NF</p>}
@@ -1850,19 +2146,11 @@ export default function App() {
 
                     {totalNfPages > 1 && (
                       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 16, flexWrap: "wrap" }}>
-                        <button onClick={() => setNfPage(1)} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                          «
-                        </button>
-                        <button onClick={() => setNfPage((p) => Math.max(1, p - 1))} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                          ‹
-                        </button>
+                        <button onClick={() => setNfPage(1)} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>«</button>
+                        <button onClick={() => setNfPage((p) => Math.max(1, p - 1))} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>‹</button>
                         <span style={{ fontSize: 12, color: "#64748b" }}>Pág {curPage}/{totalNfPages}</span>
-                        <button onClick={() => setNfPage((p) => Math.min(totalNfPages, p + 1))} disabled={curPage === totalNfPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                          ›
-                        </button>
-                        <button onClick={() => setNfPage(totalNfPages)} disabled={curPage === totalNfPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                          »
-                        </button>
+                        <button onClick={() => setNfPage((p) => Math.min(totalNfPages, p + 1))} disabled={curPage === totalNfPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>›</button>
+                        <button onClick={() => setNfPage(totalNfPages)} disabled={curPage === totalNfPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>»</button>
                       </div>
                     )}
                   </>
@@ -1930,15 +2218,9 @@ export default function App() {
                 ))}
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-                <button onClick={() => gerarRelatorio("pdf")} style={{ ...bp, fontSize: 12 }}>
-                  📄 PDF
-                </button>
-                <button onClick={() => gerarRelatorio("excel")} style={{ ...bp, fontSize: 12, background: "#0f766e" }}>
-                  📊 Excel
-                </button>
-                <button onClick={fazerBackup} style={{ ...bs, fontSize: 12 }}>
-                  💾 Backup
-                </button>
+                <button onClick={() => gerarRelatorio("pdf")} style={{ ...bp, fontSize: 12 }}>📄 PDF</button>
+                <button onClick={() => gerarRelatorio("excel")} style={{ ...bp, fontSize: 12, background: "#0f766e" }}>📊 Excel</button>
+                <button onClick={fazerBackup} style={{ ...bs, fontSize: 12 }}>💾 Backup</button>
               </div>
               <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, marginTop: 20 }}>👥 Últimos a inventariar</h3>
               <div style={{ ...cd, marginBottom: 16 }}>
@@ -1962,8 +2244,7 @@ export default function App() {
                         <div key={usuario} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: idx === arr.length - 1 ? "none" : "1px solid #e2e8f0" }}>
                           <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{usuario}</span>
                           <span style={{ fontSize: 12, color: "#64748b" }}>
-                            {data.count} item(ns)
-                            {data.lastTime ? ` · ${new Date(data.lastTime).toLocaleString("pt-BR")}` : ""}
+                            {data.count} item(ns){data.lastTime ? ` · ${new Date(data.lastTime).toLocaleString("pt-BR")}` : ""}
                           </span>
                         </div>
                       ))
@@ -1974,7 +2255,7 @@ export default function App() {
                 <div style={{ ...cd, border: "1.5px solid #fed7aa", background: "#fff7ed", marginBottom: 16 }}>
                   <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#9a3412" }}>Registros incompletos na planilha (XLSX): {xlsxCorrompidos.length}</p>
                   <p style={{ margin: "6px 0 0", fontSize: 12, color: "#9a3412", fontWeight: 600, lineHeight: 1.35 }}>
-                    Alguns patrimônios estão com apenas o número preenchido e sem dados (NF, fornecedor, descrição, valores). Isso pode fazer a aba de Notas Fiscais parecer “faltando itens”.
+                    Alguns patrimônios estão com apenas o número preenchido e sem dados (NF, fornecedor, descrição, valores).
                   </p>
                   <div style={{ display: "grid", gap: 6, marginTop: 10 }}>
                     {xlsxCorrompidos.slice(0, 10).map((i) => (
@@ -1983,17 +2264,7 @@ export default function App() {
                           <p style={{ margin: 0, fontSize: 12, fontWeight: 900, color: "#7c2d12" }}>Nº {i.id}</p>
                           <p style={{ margin: "2px 0 0", fontSize: 11, color: "#9a3412", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.unidadeNome}</p>
                         </div>
-                        <button
-                          onClick={() => {
-                            const u = unidades.find((x) => x.id === i.unidadeId);
-                            if (u) saveAtiva(u);
-                            setTab("inventario");
-                            showT("Abra o item para revisar os dados");
-                          }}
-                          style={{ ...bs, padding: "6px 10px", fontSize: 12 }}
-                        >
-                          Ver
-                        </button>
+                        <button onClick={() => { const u = unidades.find((x) => x.id === i.unidadeId); if (u) saveAtiva(u); setTab("inventario"); showT("Abra o item para revisar os dados"); }} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>Ver</button>
                       </div>
                     ))}
                   </div>
@@ -2003,10 +2274,7 @@ export default function App() {
               <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Estado de Conservação</h3>
               <div style={cd}>
                 {(() => {
-                  const ec = found.reduce((a, f) => {
-                    a[f.estado] = (a[f.estado] || 0) + 1;
-                    return a;
-                  }, {});
+                  const ec = found.reduce((a, f) => { a[f.estado] = (a[f.estado] || 0) + 1; return a; }, {});
                   return Object.entries(ec).length === 0 ? (
                     <p style={{ color: "#94a3b8", fontSize: 13 }}>Sem dados</p>
                   ) : (
@@ -2031,9 +2299,7 @@ export default function App() {
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 16 }}>
                 <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>📍 Locais</h2>
-                <button onClick={() => { form.current = {}; setModal("addLocal"); }} style={bp}>
-                  + Novo
-                </button>
+                <button onClick={() => { form.current = {}; setModal("addLocal"); }} style={bp}>+ Novo</button>
               </div>
               {locais.length === 0 ? (
                 <div style={{ ...cd, textAlign: "center", padding: 40 }}>
@@ -2051,18 +2317,7 @@ export default function App() {
                           {l.desc && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#94a3b8" }}>{l.desc}</p>}
                           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>{c} item(s)</p>
                         </div>
-                        <button
-                          onClick={() => {
-                            if (c > 0) {
-                              showT("Remova itens antes");
-                              return;
-                            }
-                            delLocal(l);
-                          }}
-                          style={{ border: "none", background: "#fff0f0", color: "#dc2626", borderRadius: 7, padding: "6px 10px", cursor: "pointer" }}
-                        >
-                          🗑
-                        </button>
+                        <button onClick={() => { if (c > 0) { showT("Remova itens antes"); return; } delLocal(l); }} style={{ border: "none", background: "#fff0f0", color: "#dc2626", borderRadius: 7, padding: "6px 10px", cursor: "pointer" }}>🗑</button>
                       </div>
                     );
                   })}
@@ -2076,36 +2331,19 @@ export default function App() {
       {isMob && (
         <div
           style={{
-            position: "fixed",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            background: "#fff",
-            borderTop: "1.5px solid #e2e8f0",
-            display: "flex",
-            zIndex: 200,
-            paddingBottom: "env(safe-area-inset-bottom, 0px)",
-            boxShadow: "0 -6px 16px rgba(15,23,42,.08)",
+            position: "fixed", bottom: 0, left: 0, right: 0, background: "#fff",
+            borderTop: "1.5px solid #e2e8f0", display: "flex", zIndex: 200,
+            paddingBottom: "env(safe-area-inset-bottom, 0px)", boxShadow: "0 -6px 16px rgba(15,23,42,.08)",
           }}
         >
           {navs.map((n) => (
-            <button
-              key={n.id}
-              onClick={() => setTab(n.id)}
-              style={{
-                flex: 1,
-                minHeight: 56,
-                padding: "10px 2px 8px",
-                border: "none",
-                background: "none",
-                cursor: "pointer",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 2,
-              }}
-            >
+            <button key={n.id} onClick={() => setTab(n.id)} style={{ flex: 1, minHeight: 56, padding: "10px 2px 8px", border: "none", background: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, position: "relative" }}>
               <span style={{ fontSize: 18 }}>{n.icon}</span>
+              {n.badge && (
+                <span style={{ position: "absolute", top: 6, right: "calc(50% - 14px)", background: "#dc2626", color: "#fff", borderRadius: 99, fontSize: 9, fontWeight: 800, padding: "1px 4px", minWidth: 14, textAlign: "center", lineHeight: "14px" }}>
+                  {n.badge}
+                </span>
+              )}
               <span style={{ fontSize: 10, fontWeight: tab === n.id ? 800 : 500, color: tab === n.id ? "#1e3a8a" : "#94a3b8" }}>{n.l}</span>
             </button>
           ))}
@@ -2114,29 +2352,25 @@ export default function App() {
 
       {modal === "camera" && <CameraModal existingPhotos={cameraTarget === "manual" ? form.current.manPhotos || [] : form.current.detNewBase64 || []} onCapture={onCameraCapture} onClose={() => { setCameraTarget(null); setModal(cameraTarget === "manual" ? "manual" : form.current.detItem ? "detalhe" : null); }} />}
 
+      {/* ─── DETAIL MODAL ───────────────────────────────────────────────────── */}
       {modal === "detalhe" && form.current.detItem && (
         <Overlay onClose={() => setModal(null)}>
+          {/* Header */}
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, flex: 1, minWidth: 0 }}>{form.current.detItem.descricao || form.current.detItem.especie || "—"}</h2>
-            <button
-              onClick={() => setModal(null)}
-              style={{
-                background: "none",
-                border: "none",
-                fontSize: 22,
-                color: "#64748b",
-                cursor: "pointer",
-                padding: "4px 8px",
-                lineHeight: 1,
-              }}
-            >
-              ✕
-            </button>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, flex: 1, minWidth: 0 }}>
+              {form.current.detItem.descricao || form.current.detItem.especie || "—"}
+            </h2>
+            <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: 22, color: "#64748b", cursor: "pointer", padding: "4px 8px", lineHeight: 1 }}>✕</button>
           </div>
-          <p style={{ margin: "0 0 4px", fontSize: 12, color: "#64748b" }}>Nº {getItemCode(form.current.detItem)} · {form.current.detItem.data} · R$ {(form.current.detItem.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
-          <p style={{ margin: "0 0 12px", fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>
-            Fornecedor: {form.current.detItem.fornecedor || "—"} · Marca: {form.current.detItem.marca || "—"} · NF: {form.current.detItem.nf || "—"} · Empenho: {form.current.detItem.empenho || "—"}
+
+          {/* Read-only metadata */}
+          <p style={{ margin: "0 0 4px", fontSize: 12, color: "#64748b" }}>
+            Nº {getItemCode(form.current.detItem)} · {form.current.detItem.data} · R$ {(form.current.detItem.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
           </p>
+          <p style={{ margin: "0 0 12px", fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>
+            Fornecedor: {form.current.detItem.fornecedor || "—"} · NF: {form.current.detItem.nf || "—"} · Empenho: {form.current.detItem.empenho || "—"}
+          </p>
+
           {foundMap[form.current.detItem.id] && (
             <p style={{ margin: "4px 0 12px", fontSize: 11, color: "#10b981", fontWeight: 600 }}>
               ✅ Inventariado por: {foundMap[form.current.detItem.id].usuario || foundMap[form.current.detItem.id].user || "—"} em {foundMap[form.current.detItem.id].data || "—"}
@@ -2148,6 +2382,32 @@ export default function App() {
             </p>
           )}
 
+          {/* ── EDITABLE FIELDS (description / especie) ── */}
+          <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
+            <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 800, color: "#0369a1" }}>✏️ Dados Editáveis do Item</p>
+            <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Descrição</p>
+            <TInput
+              key={`detDesc_${ft}`}
+              initial={form.current.detDescricao}
+              onVal={(v) => uf("detDescricao", v)}
+              placeholder="Descrição do item..."
+              style={{ ...inp, marginBottom: 10 }}
+            />
+            <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Espécie / Tipo</p>
+            <TInput
+              key={`detEsp_${ft}`}
+              initial={form.current.detEspecie}
+              onVal={(v) => uf("detEspecie", v)}
+              placeholder="Ex: CADEIRA, MESA, TELEVISOR..."
+              suggestions={sugestoes.especies}
+              style={inp}
+            />
+            <p style={{ margin: "8px 0 0", fontSize: 10, color: "#64748b" }}>
+              🔒 Tombo, Fornecedor, NF e Valor não podem ser alterados.
+            </p>
+          </div>
+
+          {/* Photos */}
           {(() => {
             const photoList = [...(form.current.detExistingUrls || []), ...(form.current.detNewBase64 || [])];
             return (
@@ -2183,9 +2443,7 @@ export default function App() {
                               setFt((t) => t + 1);
                             }}
                             style={{ position: "absolute", top: 4, right: 4, background: "rgba(220,38,38,.85)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-                          >
-                            ×
-                          </button>
+                          >×</button>
                         </div>
                       ))}
                     </div>
@@ -2208,71 +2466,107 @@ export default function App() {
           <select defaultValue={form.current.detLocal} onChange={(e) => uf("detLocal", e.target.value)} style={inp}>
             <option value="">— Sem local —</option>
             {locais.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.nome}
-              </option>
+              <option key={l.id} value={l.id}>{l.nome}</option>
             ))}
           </select>
+
           <Lbl>Origem</Lbl>
           {form.current.detOrigemLocked ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "10px 12px",
-                borderRadius: 10,
-                background: (origemMeta[form.current.detOrigem || "Próprio"] || origemMeta["Próprio"]).bg,
-                color: (origemMeta[form.current.detOrigem || "Próprio"] || origemMeta["Próprio"]).tx,
-                fontSize: 12,
-                fontWeight: 800,
-              }}
-            >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: (origemMeta[form.current.detOrigem || "Próprio"] || origemMeta["Próprio"]).bg, color: (origemMeta[form.current.detOrigem || "Próprio"] || origemMeta["Próprio"]).tx, fontSize: 12, fontWeight: 800 }}>
               <span style={{ fontSize: 14 }}>{(origemMeta[form.current.detOrigem || "Próprio"] || origemMeta["Próprio"]).ico}</span>
               <span>{form.current.detOrigem || "Próprio"}</span>
             </div>
           ) : (
             <div style={{ display: "flex", gap: 8 }}>
               {["Próprio", "Doação", "Permuta"].map((o) => (
-                <button
-                  key={o}
-                  onClick={() => {
-                    form.current.detOrigem = o;
-                    setFt((t) => t + 1);
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: "10px",
-                    borderRadius: 9,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    border: `2px solid ${(form.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#e2e8f0"}`,
-                    background: (form.current.detOrigem || "Próprio") === o ? "#dbeafe" : "#fff",
-                    color: (form.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#6b7280",
-                  }}
-                >
+                <button key={o} onClick={() => { form.current.detOrigem = o; setFt((t) => t + 1); }}
+                  style={{ flex: 1, padding: "10px", borderRadius: 9, fontSize: 12, fontWeight: 700, cursor: "pointer", border: `2px solid ${(form.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#e2e8f0"}`, background: (form.current.detOrigem || "Próprio") === o ? "#dbeafe" : "#fff", color: (form.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#6b7280" }}>
                   {o === "Próprio" ? "🏛️ Próprio" : o === "Doação" ? "🎁 Doação" : "🔄 Permuta"}
                 </button>
               ))}
             </div>
           )}
+
           <Lbl>Marca (se diferente do relatório)</Lbl>
           <TInput initial={form.current.detMarca} onVal={(v) => uf("detMarca", v)} placeholder="Ex: Tramontina..." style={inp} />
+
           <Lbl>Estado de Conservação</Lbl>
           <EGrid fk="detEstado" />
+
           <Lbl>Situação</Lbl>
-          <select defaultValue={form.current.detSituacao} onChange={(e) => uf("detSituacao", e.target.value)} style={inp}>
+          <select
+            defaultValue={form.current.detSituacao}
+            onChange={(e) => {
+              uf("detSituacao", e.target.value);
+              setFt((t) => t + 1); // re-render to show/hide Permuta section
+            }}
+            style={inp}
+          >
             {SITUACOES.map((s) => (
               <option key={s}>{s}</option>
             ))}
           </select>
+
+          {/* ── PERMUTA SECTION (shown when situação = Permuta) ── */}
+          {(form.current.detSituacao || "Em uso") === "Permuta" && (
+            <div style={{ background: "#fffbeb", border: "2px solid #fcd34d", borderRadius: 12, padding: "14px 16px", marginTop: 14 }}>
+              <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#92400e" }}>🔄 Item Encontrado no Lugar</p>
+              <p style={{ margin: "0 0 12px", fontSize: 12, color: "#78350f" }}>
+                O sistema registra "{form.current.detItem.descricao || form.current.detItem.especie}" mas fisicamente há outro item. Descreva o que está lá:
+              </p>
+
+              <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, color: "#374151" }}>Descrição do item real *</p>
+              <TInput
+                key={`permDesc_${ft}`}
+                initial={form.current.detPermutaDesc}
+                onVal={(v) => uf("detPermutaDesc", v)}
+                placeholder="Ex: Televisor 43 polegadas, Cadeira giratória..."
+                suggestions={sugestoes.descricoes}
+                style={{ ...inp, marginBottom: 10 }}
+              />
+
+              <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, color: "#374151" }}>Marca do item real</p>
+              <TInput
+                key={`permMarca_${ft}`}
+                initial={form.current.detPermutaMarca}
+                onVal={(v) => uf("detPermutaMarca", v)}
+                placeholder="Ex: Samsung, Tramontina..."
+                suggestions={sugestoes.marcas}
+                style={{ ...inp, marginBottom: 10 }}
+              />
+
+              <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#374151" }}>Estado do item real</p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
+                {ESTADOS.map((e) => (
+                  <button
+                    key={e}
+                    onClick={() => { form.current.detPermutaEstado = e; setFt((t) => t + 1); }}
+                    style={{
+                      padding: "8px 4px",
+                      borderRadius: 8,
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      border: `2px solid ${(form.current.detPermutaEstado || "Bom") === e ? EC[e].tx : "#e2e8f0"}`,
+                      background: (form.current.detPermutaEstado || "Bom") === e ? EC[e].bg : "#fff",
+                      color: (form.current.detPermutaEstado || "Bom") === e ? EC[e].tx : "#6b7280",
+                    }}
+                  >
+                    {e}
+                  </button>
+                ))}
+              </div>
+              <p style={{ margin: "10px 0 0", fontSize: 10, color: "#92400e" }}>
+                📋 Estes dados ficarão registrados no inventário e aparecerão na aba Notas Fiscais.
+              </p>
+            </div>
+          )}
+
           <Lbl>Observações</Lbl>
           <TArea initial={form.current.detObs} onVal={(v) => uf("detObs", v)} rows={2} placeholder="Anotações..." style={{ ...inp, resize: "none" }} />
+
           <div style={{ display: "flex", gap: 9, marginTop: 16, flexDirection: isMob ? "column" : "row" }}>
-            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
-              Cancelar
-            </button>
+            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>Cancelar</button>
             {foundSet.has(form.current.detItem.id) && (
               <button
                 onClick={async () => {
@@ -2297,22 +2591,7 @@ export default function App() {
         <Overlay onClose={() => setModal(null)}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Adicionar Manual</h2>
-            <button
-              onClick={() => setModal(null)}
-              style={{
-                background: "none",
-                border: "none",
-                fontSize: 20,
-                color: "#64748b",
-                cursor: "pointer",
-                padding: "4px 8px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              ✕
-            </button>
+            <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer", padding: "4px 8px", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
           </div>
           <Lbl>Descrição *</Lbl>
           <TArea key="manDesc" initial={gf("manDesc")} onVal={(v) => uf("manDesc", v)} rows={3} placeholder="Descreva o item..." style={{ ...inp, resize: "none" }} />
@@ -2342,9 +2621,7 @@ export default function App() {
             >
               Marcar S/T
             </button>
-            <span style={{ fontSize: 11, color: "#64748b", alignSelf: "center" }}>
-              Se deixar em branco, o sistema gera um código automático.
-            </span>
+            <span style={{ fontSize: 11, color: "#64748b", alignSelf: "center" }}>Se deixar em branco, o sistema gera um código automático.</span>
           </div>
           <Lbl>Espécie</Lbl>
           <TInput key={"manEsp_" + ft} initial={gf("manEspecie")} onVal={(v) => uf("manEspecie", v)} placeholder="Ex: CADEIRA, MESA..." suggestions={sugestoes.especies} style={inp} />
@@ -2366,9 +2643,7 @@ export default function App() {
           <EGrid fk="manEstado" />
           <Lbl>Situação</Lbl>
           <select key="manSit" defaultValue={gf("manSituacao") || "Em uso"} onChange={(e) => uf("manSituacao", e.target.value)} style={inp}>
-            {SITUACOES.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
+            {SITUACOES.map((s) => (<option key={s}>{s}</option>))}
           </select>
           <Lbl>Fotos</Lbl>
           {form.current.manPhotos?.length > 0 ? (
@@ -2377,15 +2652,11 @@ export default function App() {
                 {form.current.manPhotos.map((ph, i) => (
                   <div key={i} style={{ position: "relative" }}>
                     <SmartImg src={ph} alt="" style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6 }} />
-                    <button onClick={() => { form.current.manPhotos = form.current.manPhotos.filter((_, j) => j !== i); setFt((t) => t + 1); }} style={{ position: "absolute", top: -4, right: -4, background: "#dc2626", color: "#fff", border: "none", borderRadius: "50%", width: 16, height: 16, fontSize: 9, cursor: "pointer" }}>
-                      ×
-                    </button>
+                    <button onClick={() => { form.current.manPhotos = form.current.manPhotos.filter((_, j) => j !== i); setFt((t) => t + 1); }} style={{ position: "absolute", top: -4, right: -4, background: "#dc2626", color: "#fff", border: "none", borderRadius: "50%", width: 16, height: 16, fontSize: 9, cursor: "pointer" }}>×</button>
                   </div>
                 ))}
               </div>
-              <button onClick={() => { setCameraTarget("manual"); setModal("camera"); }} style={{ width: "100%", border: "1.5px dashed #93c5fd", background: "#eff6ff", borderRadius: 8, padding: 8, cursor: "pointer", fontSize: 12, color: "#1d4ed8", fontWeight: 600 }}>
-                + Mais fotos
-              </button>
+              <button onClick={() => { setCameraTarget("manual"); setModal("camera"); }} style={{ width: "100%", border: "1.5px dashed #93c5fd", background: "#eff6ff", borderRadius: 8, padding: 8, cursor: "pointer", fontSize: 12, color: "#1d4ed8", fontWeight: 600 }}>+ Mais fotos</button>
             </div>
           ) : (
             <button onClick={() => { setCameraTarget("manual"); setModal("camera"); }} style={{ width: "100%", border: "2px dashed #cbd5e1", background: "#f8fafc", borderRadius: 10, padding: 16, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
@@ -2394,12 +2665,8 @@ export default function App() {
             </button>
           )}
           <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
-            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
-              Cancelar
-            </button>
-            <button onClick={addManual} style={{ ...bp, flex: 1 }}>
-              ✓ Criar
-            </button>
+            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>Cancelar</button>
+            <button onClick={addManual} style={{ ...bp, flex: 1 }}>✓ Criar</button>
           </div>
         </Overlay>
       )}
@@ -2412,12 +2679,8 @@ export default function App() {
           <Lbl>Descrição</Lbl>
           <TInput initial="" onVal={(v) => uf("localDesc", v)} placeholder="Andar, ala..." style={inp} />
           <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
-            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
-              Cancelar
-            </button>
-            <button onClick={addLocal} style={{ ...bp, flex: 1 }}>
-              Criar
-            </button>
+            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>Cancelar</button>
+            <button onClick={addLocal} style={{ ...bp, flex: 1 }}>Criar</button>
           </div>
         </Overlay>
       )}
@@ -2427,7 +2690,11 @@ export default function App() {
           <div style={{ textAlign: "center" }}>
             <p style={{ fontSize: 48, margin: "0 0 16px" }}>⚠️</p>
             <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700 }}>Finalizar Inventário</h2>
-            <p style={{ color: "#64748b", margin: "0 0 20px" }}>{unidadeAtiva?.nome}</p>
+            <p style={{ color: "#64748b", margin: "0 0 20px" }}>
+              {unidadesAtivas.length === 1
+                ? unidadesAtivas[0].nome
+                : `${unidadesAtivas.length} unidades selecionadas`}
+            </p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
               <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 12 }}>
                 <p style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "#16a34a" }}>{totalFound}</p>
@@ -2438,7 +2705,6 @@ export default function App() {
                 <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Não encontrados</p>
               </div>
             </div>
-
             <div style={{ background: "#f9f3ff", border: "1.5px solid #e9d5ff", borderRadius: 12, padding: 16, marginBottom: 16, textAlign: "left" }}>
               <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, color: "#6b21a8" }}>📋 Dados da Coordenadora</p>
               <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Nome completo *</p>
@@ -2446,61 +2712,25 @@ export default function App() {
               <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Matrícula *</p>
               <TInput initial={gf("coordMatricula")} onVal={(v) => uf("coordMatricula", v)} placeholder="Ex: 123456..." style={inp} />
             </div>
-
             <div style={{ display: "flex", gap: 9 }}>
-              <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
-                Cancelar
-              </button>
-              <button onClick={finalizarComCoordenadora} style={{ ...bp, flex: 1, background: "#16a34a" }}>
-                ✓ Gerar QR Code
-              </button>
+              <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>Cancelar</button>
+              <button onClick={finalizarComCoordenadora} style={{ ...bp, flex: 1, background: "#16a34a" }}>✓ Gerar QR Code</button>
             </div>
           </div>
         </Overlay>
       )}
 
       {modal === "qrcode-resultado" && qrCodeUrl && (
-        <Overlay
-          onClose={() => {
-            setModal(null);
-            setQrCodeUrl(null);
-          }}
-        >
+        <Overlay onClose={() => { setModal(null); setQrCodeUrl(null); }}>
           <div style={{ textAlign: "center" }}>
             <p style={{ fontSize: 40, margin: "0 0 16px" }}>📱</p>
             <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 700 }}>QR Code Gerado</h2>
-            <p style={{ color: "#64748b", margin: "0 0 16px", fontSize: 13 }}>
-              {gf("coordNome")} • {gf("coordMatricula")}
-            </p>
-
+            <p style={{ color: "#64748b", margin: "0 0 16px", fontSize: 13 }}>{gf("coordNome")} • {gf("coordMatricula")}</p>
             <img src={qrCodeUrl} alt="QR Code" style={{ width: 280, height: 280, margin: "16px auto", border: "2px solid #e2e8f0", borderRadius: 12 }} />
-
-            <p style={{ color: "#64748b", margin: "16px 0 0", fontSize: 12 }}>
-              A coordenadora pode escanear este código com o celular para acessar e gerenciar a unidade.
-            </p>
-
+            <p style={{ color: "#64748b", margin: "16px 0 0", fontSize: 12 }}>A coordenadora pode escanear este código com o celular para acessar e gerenciar a unidade.</p>
             <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
-              <button
-                onClick={() => {
-                  const a = document.createElement("a");
-                  a.href = qrCodeUrl;
-                  a.download = `qr_${unidadeAtiva?.id || "unidade"}.png`;
-                  a.click();
-                }}
-                style={{ ...bs, flex: 1 }}
-              >
-                ⬇️ Baixar
-              </button>
-              <button
-                onClick={() => {
-                  setModal(null);
-                  setQrCodeUrl(null);
-                  saveAtiva(null);
-                }}
-                style={{ ...bp, flex: 1 }}
-              >
-                ✓ Feito
-              </button>
+              <button onClick={() => { const a = document.createElement("a"); a.href = qrCodeUrl; a.download = `qr_${unidadeAtiva?.id || "unidade"}.png`; a.click(); }} style={{ ...bs, flex: 1 }}>⬇️ Baixar</button>
+              <button onClick={() => { setModal(null); setQrCodeUrl(null); clearAtivas(); }} style={{ ...bp, flex: 1 }}>✓ Feito</button>
             </div>
           </div>
         </Overlay>
