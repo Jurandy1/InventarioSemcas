@@ -40,11 +40,13 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
   const [flashOn, setFlashOn] = useState(false);
   const [preview, setPreview] = useState(null);
   const [captured, setCaptured] = useState([...existingPhotos]);
+  const [cameraError, setCameraError] = useState(null);
   const fileInputRef = useRef(null);
 
   const startCamera = async (facing) => {
     if (stream) stream.getTracks().forEach((t) => t.stop());
     try {
+      setCameraError(null);
       const s = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
       });
@@ -54,7 +56,25 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
       if (track.getCapabilities && track.getCapabilities().torch) {
         await track.applyConstraints({ advanced: [{ torch: flashOn }] });
       }
-    } catch {}
+    } catch (error) {
+      console.error("Erro ao acessar câmera:", error);
+      
+      let mensagemErro = "Não foi possível acessar a câmera";
+      
+      if (error.name === "NotAllowedError") {
+        mensagemErro = "Acesso à câmera foi negado. Verifique as permissões.";
+      } else if (error.name === "NotFoundError") {
+        mensagemErro = "Nenhuma câmera encontrada neste dispositivo.";
+      } else if (error.name === "NotReadableError") {
+        mensagemErro = "A câmera está sendo usada por outro aplicativo.";
+      } else if (error.name === "OverconstrainedError") {
+        mensagemErro = "A câmera não suporta as configurações solicitadas.";
+      } else if (error.name === "TypeError") {
+        mensagemErro = "Seu navegador não suporta acesso à câmera.";
+      }
+      
+      setCameraError(mensagemErro);
+    }
   };
 
   useEffect(() => {
@@ -71,7 +91,10 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
       const track = stream.getVideoTracks()[0];
       try {
         await track.applyConstraints({ advanced: [{ torch: newFlash }] });
-      } catch {}
+      } catch (error) {
+        console.warn("Erro ao ativar flash:", error);
+        // Flash é opcional, não deve bloquear
+      }
     }
   };
 
@@ -132,12 +155,71 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
     onClose();
   };
 
+  // Se houver erro de câmera, mostrar tela de erro com opção de galeria
+  if (cameraError) {
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 400, display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "rgba(0,0,0,.8)", zIndex: 1 }}>
+          <button onClick={cancel} style={{ background: "none", border: "none", color: "#fff", fontSize: 14, cursor: "pointer", fontWeight: 600 }}>✕ Cancelar</button>
+          <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>Erro de Câmera</span>
+          <div style={{ width: 80 }} />
+        </div>
+
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ textAlign: "center", maxWidth: 400 }}>
+            <p style={{ fontSize: 48, margin: "0 0 16px" }}>📷</p>
+            <h3 style={{ margin: "0 0 12px", fontSize: 16, fontWeight: 700, color: "#fff" }}>Câmera Indisponível</h3>
+            <p style={{ margin: "0 0 24px", fontSize: 14, color: "#cbd5e1", lineHeight: 1.5 }}>
+              {cameraError}
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  background: "#1e3a8a",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 12,
+                  padding: "12px 24px",
+                  fontSize: 14,
+                  cursor: "pointer",
+                  fontWeight: 700
+                }}
+              >
+                📁 Selecionar da Galeria
+              </button>
+              <button
+                onClick={cancel}
+                style={{
+                  background: "rgba(255,255,255,.1)",
+                  color: "#fff",
+                  border: "1px solid rgba(255,255,255,.2)",
+                  borderRadius: 12,
+                  padding: "12px 24px",
+                  fontSize: 14,
+                  cursor: "pointer",
+                  fontWeight: 600
+                }}
+              >
+                Voltar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFileSelect} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 400, display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "rgba(0,0,0,.8)", zIndex: 1 }}>
         <button onClick={cancel} style={{ background: "none", border: "none", color: "#fff", fontSize: 14, cursor: "pointer", fontWeight: 600 }}>✕ Cancelar</button>
         <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{captured.length} foto(s)</span>
-        <button onClick={toggleFlash} style={{ background: flashOn ? "#fbbf24" : "rgba(255,255,255,.2)", border: "none", color: flashOn ? "#000" : "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>⚡ {flashOn ? "ON" : "OFF"}</button>
+        <button onClick={toggleFlash} style={{ background: flashOn ? "#fbbf24" : "rgba(255,255,255,.2)", border: "none", color: flashOn ? "#000" : "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+          {flashOn ? "🔦 Ligado" : "🔦 Desligado"}
+        </button>
       </div>
 
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
@@ -158,7 +240,9 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
           {captured.map((ph, i) => (
             <div key={i} style={{ position: "relative", flexShrink: 0 }}>
               <img src={ph} alt="" style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "2px solid #fff" }} />
-              <button onClick={() => setCaptured((p) => p.filter((_, j) => j !== i))} style={{ position: "absolute", top: -4, right: -4, background: "#dc2626", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              <button onClick={() => setCaptured((p) => p.filter((_, j) => j !== i))} style={{ position: "absolute", top: -4, right: -4, background: "#dc2626", color: "#fff", border: "none", borderRadius: "50%", width: 20, height: 20, fontSize: 12, cursor: "pointer", fontWeight: 700 }}>
+                ×
+              </button>
             </div>
           ))}
         </div>
@@ -167,16 +251,24 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-around", padding: "16px", background: "rgba(0,0,0,.9)" }}>
         {preview ? (
           <>
-            <button onClick={retakePhoto} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 12, padding: "12px 24px", fontSize: 14, cursor: "pointer", fontWeight: 600 }}>↩ Refazer</button>
-            <button onClick={acceptPhoto} style={{ background: "#16a34a", border: "none", color: "#fff", borderRadius: 12, padding: "12px 24px", fontSize: 14, cursor: "pointer", fontWeight: 700 }}>✓ Usar foto</button>
+            <button onClick={retakePhoto} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 12, padding: "12px 24px", fontSize: 14, cursor: "pointer", fontWeight: 700 }}>
+              Refazer
+            </button>
+            <button onClick={acceptPhoto} style={{ background: "#16a34a", border: "none", color: "#fff", borderRadius: 12, padding: "12px 24px", fontSize: 14, cursor: "pointer", fontWeight: 700 }}>
+              ✓ Aceitar
+            </button>
           </>
         ) : (
           <>
-            <button onClick={() => fileInputRef.current?.click()} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: "50%", width: 48, height: 48, fontSize: 20, cursor: "pointer" }}>🖼️</button>
+            <button onClick={() => fileInputRef.current?.click()} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: "50%", width: 48, height: 48, fontSize: 20, cursor: "pointer" }}>
+              📁
+            </button>
             <button onClick={takePhoto} style={{ background: "#fff", border: "4px solid rgba(255,255,255,.3)", borderRadius: "50%", width: 72, height: 72, cursor: "pointer" }}>
               <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#fff" }} />
             </button>
-            <button onClick={flipCamera} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: "50%", width: 48, height: 48, fontSize: 20, cursor: "pointer" }}>🔄</button>
+            <button onClick={flipCamera} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: "50%", width: 48, height: 48, fontSize: 20, cursor: "pointer" }}>
+              🔄
+            </button>
           </>
         )}
       </div>
@@ -191,4 +283,3 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
     </div>
   );
 }
-
