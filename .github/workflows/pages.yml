@@ -35,7 +35,8 @@ jobs:
           VITE_FB_API_KEY: ${{ secrets.VITE_FB_API_KEY }}
           VITE_FB_PROJECT_ID: ${{ secrets.VITE_FB_PROJECT_ID }}
           VITE_FB_STORAGE_BUCKET: ${{ secrets.VITE_FB_STORAGE_BUCKET }}
-        run: node -e "const req=['VITE_FB_API_KEY','VITE_FB_PROJECT_ID','VITE_FB_STORAGE_BUCKET'];const miss=req.filter(k=>!process.env[k]);if(miss.length){console.error('Missing secrets: '+miss.join(', '));process.exit(1)}console.log('Firebase secrets present')"
+        run: >-
+          node -e "const req=['VITE_FB_API_KEY','VITE_FB_PROJECT_ID','VITE_FB_STORAGE_BUCKET'];const miss=req.filter(k=>!process.env[k]);if(miss.length){console.error('Missing secrets: '+miss.join(', '));process.exit(1)}console.log('Firebase secrets present')"
 
       - name: Build
         env:
