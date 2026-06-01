@@ -1,5 +1,25 @@
 import React, { useEffect, useRef, useState } from "react";
 
+function canvasToJpegObjectUrl(canvas, quality = 0.8) {
+  return new Promise((resolve) => {
+    try {
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            resolve(canvas.toDataURL("image/jpeg", quality));
+            return;
+          }
+          resolve(URL.createObjectURL(blob));
+        },
+        "image/jpeg",
+        quality
+      );
+    } catch {
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    }
+  });
+}
+
 async function compressPhoto(file) {
   return new Promise((res) => {
     const r = new FileReader();
@@ -25,7 +45,7 @@ async function compressPhoto(file) {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
         ctx.drawImage(img, 0, 0, w, h);
-        res(c.toDataURL("image/jpeg", 0.8));
+        canvasToJpegObjectUrl(c, 0.8).then(res);
       };
       img.src = e.target.result;
     };
@@ -156,9 +176,9 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
       c2.width = w * sc;
       c2.height = h * sc;
       c2.getContext("2d").drawImage(c, 0, 0, c2.width, c2.height);
-      setPreview(c2.toDataURL("image/jpeg", 0.8));
+      canvasToJpegObjectUrl(c2, 0.8).then(setPreview);
     } else {
-      setPreview(c.toDataURL("image/jpeg", 0.8));
+      canvasToJpegObjectUrl(c, 0.8).then(setPreview);
     }
   };
 
@@ -169,7 +189,14 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
     }
   };
 
-  const retakePhoto = () => setPreview(null);
+  const retakePhoto = () => {
+    if (String(preview || "").startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(String(preview));
+      } catch {}
+    }
+    setPreview(null);
+  };
 
   const handleFileSelect = async (e) => {
     const f = e.target.files?.[0];
@@ -186,11 +213,21 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
 
   const done = () => {
     stopStream();
+    if (String(preview || "").startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(String(preview));
+      } catch {}
+    }
     onCapture(captured);
   };
 
   const cancel = () => {
     stopStream();
+    if (String(preview || "").startsWith("blob:")) {
+      try {
+        URL.revokeObjectURL(String(preview));
+      } catch {}
+    }
     onClose();
   };
 
@@ -219,8 +256,21 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
         <div style={{ display: "flex", gap: 6, padding: "8px 16px", background: "rgba(0,0,0,.8)", overflowX: "auto" }}>
           {captured.map((ph, i) => (
             <div key={i} style={{ position: "relative", flexShrink: 0 }}>
-              <img src={ph} alt="" style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "2px solid #fff" }} />
-              <button onClick={() => setCaptured((p) => p.filter((_, j) => j !== i))} style={{ position: "absolute", top: -4, right: -4, background: "#dc2626", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              <img src={ph} alt="" style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "2px solid #fff" }} loading="lazy" decoding="async" />
+              <button
+                onClick={() => {
+                  const old = captured[i];
+                  if (String(old || "").startsWith("blob:")) {
+                    try {
+                      URL.revokeObjectURL(String(old));
+                    } catch {}
+                  }
+                  setCaptured((p) => p.filter((_, j) => j !== i));
+                }}
+                style={{ position: "absolute", top: -4, right: -4, background: "#dc2626", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+              >
+                ×
+              </button>
             </div>
           ))}
         </div>

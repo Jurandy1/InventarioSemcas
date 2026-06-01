@@ -17,7 +17,7 @@ function SmartImg({ src, alt = "", style, ...rest }) {
       alive = false;
     };
   }, [src]);
-  return <img src={resolved} alt={alt} style={style} {...rest} />;
+  return <img src={resolved} alt={alt} style={style} loading="lazy" decoding="async" {...rest} />;
 }
 
 export function ItemDetailModal({
@@ -34,6 +34,7 @@ export function ItemDetailModal({
   getField,
   sugestoes,
   onOpenCamera,
+  onViewImage,
   onClose,
   onSave,
   onDelete,
@@ -136,7 +137,9 @@ export function ItemDetailModal({
                           objectFit: "cover",
                           borderRadius: 10,
                           border: "1px solid #e2e8f0",
+                          cursor: "zoom-in",
                         }}
+                        onClick={() => onViewImage?.(ph)}
                       />
                       <button
                         onClick={() => {
@@ -148,6 +151,12 @@ export function ItemDetailModal({
                             deletePhoto(url);
                           } else {
                             const idx = i - existing.length;
+                            const old = newb64[idx];
+                            if (String(old || "").startsWith("blob:")) {
+                              try {
+                                URL.revokeObjectURL(String(old));
+                              } catch {}
+                            }
                             formRef.current.detNewBase64 = newb64.filter((_, j) => j !== idx);
                           }
                           bumpFt();

@@ -26,7 +26,7 @@ function SmartImg({ src, alt = "", style, ...rest }) {
       alive = false;
     };
   }, [src]);
-  return <img src={resolved} alt={alt} style={style} {...rest} />;
+  return <img src={resolved} alt={alt} style={style} loading="lazy" decoding="async" {...rest} />;
 }
 
 export function InventarioPage({
@@ -60,6 +60,7 @@ export function InventarioPage({
   onOpenCancelar,
   locais,
   onQuickAddLocal,
+  onViewImage,
 }) {
   const [unidadeSearch, setUnidadeSearch] = useState("");
   const [localNomeRapido, setLocalNomeRapido] = useState("");
@@ -308,7 +309,15 @@ export function InventarioPage({
                   style={{ ...cd, cursor: "pointer", border: `1.5px solid ${isPermuta ? "#fcd34d" : isF ? "#bbf7d0" : "#e2e8f0"}`, display: "flex", gap: 12 }}
                 >
                   {foto ? (
-                    <SmartImg src={foto} alt="" style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
+                    <SmartImg
+                      src={foto}
+                      alt=""
+                      style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0, cursor: "zoom-in" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onViewImage?.(foto);
+                      }}
+                    />
                   ) : (
                     <div style={{ width: 56, height: 56, borderRadius: 8, background: isPermuta ? "#fef3c7" : isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>
                       {isPermuta ? "🔄" : isF ? "✅" : "📷"}

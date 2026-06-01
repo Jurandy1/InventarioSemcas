@@ -104,11 +104,13 @@ export async function uploadPhoto(base64, path) {
   const { token } = getFirebaseSession();
   if (!token) throw new Error("Usuário não autenticado");
 
-  // Converter base64 data URL para Blob
+  // Converter data URL ou blob URL para Blob
   let blob;
   try {
-    if (base64.startsWith('data:')) {
-      blob = dataURLtoBlob(base64);
+    if (String(base64 || "").startsWith("blob:")) {
+      blob = await fetch(String(base64)).then((r) => r.blob());
+    } else if (String(base64 || "").startsWith("data:")) {
+      blob = dataURLtoBlob(String(base64));
     } else {
       throw new Error("Base64 inválido");
     }

@@ -27,10 +27,10 @@ function SmartImg({ src, alt = "", style, ...rest }) {
       alive = false;
     };
   }, [src]);
-  return <img src={resolved} alt={alt} style={style} {...rest} />;
+  return <img src={resolved} alt={alt} style={style} loading="lazy" decoding="async" {...rest} />;
 }
 
-export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva, formRef, bumpFt, setModal, isMob, inp, cd, bs }) {
+export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva, formRef, bumpFt, setModal, isMob, inp, cd, bs, onViewImage }) {
   const [localCat, setLocalCat] = useState("Todas");
   const [localSub, setLocalSub] = useState(null);
   const [localEst, setLocalEst] = useState("Todos");
@@ -238,7 +238,15 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
           }}
         >
           {foto ? (
-            <SmartImg src={foto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <SmartImg
+              src={foto}
+              alt=""
+              style={{ width: "100%", height: "100%", objectFit: "cover", cursor: "zoom-in" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onViewImage?.(foto);
+              }}
+            />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
               <span style={{ fontSize: 32, opacity: isF ? 0.5 : 0.2 }}>{isPermuta ? "🔄" : catDef.icon}</span>

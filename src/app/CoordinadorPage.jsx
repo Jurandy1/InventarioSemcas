@@ -5,6 +5,7 @@ import { TArea, TInput } from "../components/FormFields.jsx";
 import { EC, ESTADOS, SC, SITUACOES } from "../constants/inventory.js";
 import { fsGetAll, fsSet } from "../services/firebase.js";
 import { uploadPhotos } from "../services/storage.js";
+import { compressPhotoArray } from "../utils/performance.js";
 import { loadUnidades } from "../utils/xlsx.js";
 
 // Situacoes available to coordinator — Permuta is hidden
@@ -32,6 +33,16 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
   const [detExistingUrls, setDetExistingUrls] = useState([]);
   const [detNewBase64, setDetNewBase64] = useState([]);
   const [saving, setSaving] = useState(false);
+  const revokeBlobUrls = (arr) => {
+    for (const s of arr || []) {
+      const v = String(s || "");
+      if (v.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(v);
+        } catch {}
+      }
+    }
+  };
 
   const isMob = window.innerWidth < 768;
 
@@ -100,7 +111,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
 
   const inp = {
     width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9,
-    padding: "10px 13px", fontSize: 14, fontFamily: "inherit",
+    padding: "10px 13px", fontSize: isMob ? 16 : 14, fontFamily: "inherit",
     boxSizing: "border-box", outline: "none",
   };
 
@@ -132,6 +143,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
     setDetObs(f?.obs || "");
     setDetMarca(f?.marca || item.marca || "");
     setDetExistingUrls((f?.fotoUrls || []).slice());
+    revokeBlobUrls(detNewBase64);
     setDetNewBase64([]);
     setModal("detalhe");
   };
@@ -143,7 +155,8 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       let fotoUrls = [...(detExistingUrls || [])];
       if (detNewBase64.length > 0) {
         const prefix = `coord/${token}/${detItem.id}_${Date.now()}`;
-        const uploaded = await uploadPhotos(detNewBase64, prefix);
+        const compressed = await compressPhotoArray(detNewBase64);
+        const uploaded = await uploadPhotos(compressed, prefix);
         fotoUrls = [...fotoUrls, ...uploaded];
       }
 
@@ -171,6 +184,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
 
       await fsSet("inventario", detItem.id, entry);
       setFound((prev) => [...prev.filter((f) => f.patrimonioId !== detItem.id), { ...entry, _id: detItem.id }]);
+      revokeBlobUrls(detNewBase64);
       setModal(null);
       showT("✓ Salvo");
     } catch (e) {
@@ -388,7 +402,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       {modal === "camera" && (
         <CameraModal
           existingPhotos={detNewBase64 || []}
-          onCapture={(arr) => { setDetNewBase64(arr || []); setModal("detalhe"); }}
+          onCapture={(arr) => { revokeBlobUrls(detNewBase64); setDetNewBase64(arr || []); setModal("detalhe"); }}
           onClose={() => setModal("detalhe")}
         />
       )}

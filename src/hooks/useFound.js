@@ -227,6 +227,19 @@ export function useFound({ showT, applyDescOverride } = {}) {
           type: "success",
         });
 
+        try {
+          const olds = formRef.current.detNewBase64 || [];
+          for (const s of olds) {
+            const v = String(s || "");
+            if (v.startsWith("blob:")) {
+              try {
+                URL.revokeObjectURL(v);
+              } catch {}
+            }
+          }
+          formRef.current.detNewBase64 = [];
+        } catch {}
+
         closeModal?.();
         showT?.("✓ Salvo com " + (allUrls.length > existingUrls.length ? "fotos" : "sucesso") + "!");
       } catch (e) {

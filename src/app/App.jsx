@@ -14,7 +14,7 @@ import { loadUnidades } from "../utils/xlsx.js";
 import { gerarTodasSugestoes } from "../utils/suggestions.js";
 import { CoordenadoresTab } from "./CoordenadoresTab.jsx";
 import { InventariantesTab } from "./InventariantesTab.jsx";
-import { Overlay } from "../components/Overlay.jsx";
+import { ImageOverlay, Overlay } from "../components/Overlay.jsx";
 import { ToastNotification } from "../components/ToastNotification.jsx";
 import { NavBar } from "../components/NavBar.jsx";
 import { ItemDetailModal } from "../components/ItemDetailModal.jsx";
@@ -66,7 +66,7 @@ function SmartImg({ src, alt = "", style, ...rest }) {
       alive = false;
     };
   }, [src]);
-  return <img src={resolved} alt={alt} style={style} {...rest} />;
+  return <img src={resolved} alt={alt} style={style} loading="lazy" decoding="async" {...rest} />;
 }
 
 // ─── helpers to show edited description/especie ────────────────────────────
@@ -95,6 +95,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const [nfTipo, setNfTipo] = useState("Todos");
   const [nfPage, setNfPage] = useState(1);
   const [ft, setFt] = useState(0);
+  const [imgViewSrc, setImgViewSrc] = useState(null);
 
   const formRef = useRef({});
   const manualPatrimonioRef = useRef(null);
@@ -104,10 +105,26 @@ function OrganizedApp({ firebaseOk, isProd }) {
     formRef.current[k] = v;
   };
   const getField = (k) => formRef.current[k] || "";
+  const revokeBlobUrls = (arr) => {
+    for (const s of arr || []) {
+      const v = String(s || "");
+      if (v.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(v);
+        } catch {}
+      }
+    }
+  };
 
   const showT = React.useCallback((msg) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2500);
+  }, []);
+
+  const onViewImage = React.useCallback((src) => {
+    const s = String(src || "");
+    if (!s) return;
+    setImgViewSrc(s);
   }, []);
 
   const { queueStatus, updateQueueStatus } = useOfflineQueue();
@@ -319,7 +336,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     Permuta: { bg: "#ede9fe", tx: "#6d28d9", ico: "🔄" },
   };
 
-  const inp = { width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" };
+  const inp = { width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: isMob ? 16 : 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" };
   const bp = { background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
   const bs = { background: "#f1f5f9", color: "#334155", border: "1px solid #cbd5e1", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" };
   const cd = { background: "#fff", borderRadius: 12, padding: 16, boxShadow: "0 1px 3px rgba(0,0,0,.06)" };
@@ -406,6 +423,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
   const onCameraCapture = (photoArray) => {
     if (cameraTarget === "manual") {
+      revokeBlobUrls(formRef.current.manPhotos || []);
       formRef.current.manPhotos = photoArray;
       setCameraTarget(null);
       setModal("manual");
@@ -664,6 +682,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
               await locais.createLocal({ nome });
               showT("✓ Local adicionado!");
             }}
+            onViewImage={onViewImage}
           />
         )}
 
@@ -701,6 +720,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             inp={inp}
             cd={cd}
             bs={bs}
+            onViewImage={onViewImage}
           />
         )}
 
@@ -783,7 +803,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       )}
 
       {modal === "detalhe" && formRef.current.detItem && (
-        <Overlay isMobile={isMob} onClose={() => setModal(null)}>
+        <Overlay isMobile={isMob} onClose={() => { revokeBlobUrls(formRef.current.detNewBase64 || []); setModal(null); }}>
           <ItemDetailModal
             item={formRef.current.detItem}
             foundEntry={found.foundMap[formRef.current.detItem.id]}
@@ -798,7 +818,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
             getField={getField}
             sugestoes={sugestoes}
             onOpenCamera={openCamera}
-            onClose={() => setModal(null)}
+            onViewImage={onViewImage}
+            onClose={() => { revokeBlobUrls(formRef.current.detNewBase64 || []); setModal(null); }}
             onSave={() =>
               found.saveDetail({
                 formRef,
@@ -806,11 +827,12 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 unidadeAtiva: unidadeAtiva || { id: formRef.current.detItem.unidadeId, nome: formRef.current.detItem.unidadeNome },
                 logado: auth.logado,
                 updateQueueStatus,
-                closeModal: () => setModal(null),
+                closeModal: () => { revokeBlobUrls(formRef.current.detNewBase64 || []); setModal(null); },
               })
             }
             onDelete={async () => {
               await found.deleteFound(formRef.current.detItem.id);
+              revokeBlobUrls(formRef.current.detNewBase64 || []);
               setModal(null);
               showT("Removido");
             }}
@@ -819,10 +841,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
       )}
 
       {modal === "manual" && (
-        <Overlay isMobile={isMob} onClose={() => setModal(null)}>
+        <Overlay isMobile={isMob} onClose={() => { revokeBlobUrls(formRef.current.manPhotos || []); setModal(null); }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Adicionar Manual</h2>
-            <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer", padding: "4px 8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={() => { revokeBlobUrls(formRef.current.manPhotos || []); setModal(null); }} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer", padding: "4px 8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
               ✕
             </button>
           </div>
@@ -925,9 +947,20 @@ function OrganizedApp({ firebaseOk, isProd }) {
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
                 {formRef.current.manPhotos.map((ph, i) => (
                   <div key={i} style={{ position: "relative" }}>
-                    <SmartImg src={ph} alt="" style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6 }} />
+                    <SmartImg
+                      src={ph}
+                      alt=""
+                      style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6, cursor: "zoom-in" }}
+                      onClick={() => onViewImage(ph)}
+                    />
                     <button
                       onClick={() => {
+                        const old = formRef.current.manPhotos?.[i];
+                        if (String(old || "").startsWith("blob:")) {
+                          try {
+                            URL.revokeObjectURL(String(old));
+                          } catch {}
+                        }
                         formRef.current.manPhotos = formRef.current.manPhotos.filter((_, j) => j !== i);
                         bumpFt();
                       }}
@@ -1099,6 +1132,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
           </div>
         </Overlay>
       )}
+
+      {imgViewSrc && <ImageOverlay src={imgViewSrc} onClose={() => setImgViewSrc(null)} />}
 
       <ToastNotification message={toast} isMobile={isMob} />
     </div>

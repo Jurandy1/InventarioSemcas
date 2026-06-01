@@ -213,6 +213,36 @@ export async function compressPhotoArray(base64Array, onProgress) {
   return results;
 }
 
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = () => reject(new Error("Falha ao ler arquivo"));
+    r.onload = () => resolve(String(r.result || ""));
+    r.readAsDataURL(blob);
+  });
+}
+
+export async function normalizePhotoSourcesToDataUrls(sources = []) {
+  const out = [];
+  for (const src of sources || []) {
+    const s = String(src || "");
+    if (!s) continue;
+    if (s.startsWith("data:")) {
+      out.push(s);
+      continue;
+    }
+    if (s.startsWith("blob:")) {
+      try {
+        const b = await fetch(s).then((r) => r.blob());
+        const d = await blobToDataUrl(b);
+        if (d) out.push(d);
+      } catch {}
+      continue;
+    }
+  }
+  return out;
+}
+
 export const FIRESTORE_INDEXES = [
   {
     collection: "inventario",

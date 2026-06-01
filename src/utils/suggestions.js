@@ -26,7 +26,7 @@ function safeLocaleCompare(a, b) {
   }
 }
 
-function uniqueSorted(values) {
+function uniqueSorted(values, limit = 600) {
   const seen = new Set();
   const out = [];
   for (const v of values) {
@@ -37,6 +37,7 @@ function uniqueSorted(values) {
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(raw);
+    if (out.length >= limit) break;
   }
   out.sort(safeLocaleCompare);
   return out;

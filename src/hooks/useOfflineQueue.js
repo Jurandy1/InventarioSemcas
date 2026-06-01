@@ -25,7 +25,7 @@ export function useOfflineQueue() {
     updateQueueStatus();
     window.addEventListener("online", updateQueueStatus);
     window.addEventListener("offline", updateQueueStatus);
-    const queueTimer = setInterval(updateQueueStatus, 3000);
+    const queueTimer = setInterval(updateQueueStatus, 10000);
     return () => {
       clearInterval(queueTimer);
       window.removeEventListener("online", updateQueueStatus);
