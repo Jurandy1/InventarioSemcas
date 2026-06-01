@@ -1,4 +1,4 @@
-import { fsGetAll, fsSet } from "./firebase.js";
+import { fsGetAll, fsSet, fsSetStrict } from "./firebase.js";
 
 export class OfflineManager {
   constructor() {
@@ -80,10 +80,10 @@ export class OfflineManager {
     try {
       switch (op.type) {
         case "save":
-          await fsSet(op.data.collection, op.data.docId, op.data.content);
+          await fsSetStrict(op.data.collection, op.data.docId, op.data.content);
           break;
         case "approve":
-          await fsSet("coordenadores", op.data.uid, op.data.coordData);
+          await fsSetStrict("coordenadores", op.data.uid, op.data.coordData);
           break;
         default:
           throw new Error(`Tipo de operação desconhecido: ${op.type}`);
@@ -111,7 +111,7 @@ export class OfflineManager {
     this.isSyncing = true;
 
     try {
-      const pending = this.queue.filter((op) => op.status === "pending" || op.status === "failed");
+      const pending = this.queue.filter((op) => op.status === "pending" || (op.status === "failed" && (op.retries || 0) < 5));
       for (const op of pending) {
         if (!this.isOnline) break; // Parar se desconectar
         await this.executeOperation(op);

@@ -48,11 +48,19 @@ export function getFirebaseSession() {
 
 export async function refreshAuthToken(storedRefreshToken) {
   assertFirebaseConfigured();
-  const r = await fetchWithTimeout(`https://securetoken.googleapis.com/v1/token?key=${FB.apiKey}`, {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: storedRefreshToken || "",
+  }).toString();
+  const r = await fetchWithTimeout(
+    `https://securetoken.googleapis.com/v1/token?key=${FB.apiKey}`,
+    {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=refresh_token&refresh_token=${storedRefreshToken}`,
-  }, 12000);
+      body,
+    },
+    12000
+  );
   const d = await r.json();
   if (d.error) throw new Error(d.error.message || "Falha ao renovar sessão");
   authToken = d.id_token;
@@ -174,6 +182,23 @@ export async function fsSet(collection, docId, data) {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
     body: JSON.stringify({ fields }),
   });
+}
+
+export async function fsSetStrict(collection, docId, data) {
+  assertFirebaseConfigured();
+  if (!authToken) throw new Error("Usuário não autenticado");
+  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
+  const fields = {};
+  for (const k in data) fields[k] = toFsValue(data[k]);
+  const r = await fetch(`${FS_URL}/${collection}/${docId}?key=${FB.apiKey}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+    body: JSON.stringify({ fields }),
+  });
+  if (r.ok) return true;
+  const d = await r.json().catch(() => ({}));
+  const msg = d?.error?.message || `Falha ao salvar em ${collection}/${docId}`;
+  throw new Error(msg);
 }
 
 export async function fsGetAll(collection) {

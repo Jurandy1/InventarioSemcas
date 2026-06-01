@@ -6,10 +6,12 @@ const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig(({ command }) => {
   const repoName = "InventarioSemcas";
+  const baseOverride = String(process.env.VITE_BASE || "").trim();
+  const isCI = Boolean(process.env.GITHUB_ACTIONS || process.env.CI);
 
   return {
     envDir: projectRoot,
-    base: command === "build" ? `/${repoName}/` : "/",
+    base: baseOverride || (command === "build" ? (isCI ? `/${repoName}/` : "/") : "/"),
     plugins: [react({ jsxRuntime: "classic" })],
     build: command === "build"
       ? { minify: false, cssMinify: false, reportCompressedSize: false, sourcemap: false }
