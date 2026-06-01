@@ -36,6 +36,8 @@ async function compressPhoto(file) {
 export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const aliveRef = useRef(true);
+  const startSeqRef = useRef(0);
   const [stream, setStream] = useState(null);
   const [facingMode, setFacingMode] = useState("environment");
   const [flashOn, setFlashOn] = useState(false);
@@ -67,16 +69,24 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
   };
 
   const startCamera = async (facing) => {
-    setCamError("");
+    const seq = ++startSeqRef.current;
+    if (aliveRef.current) setCamError("");
     stopStream();
     try {
       if (!navigator?.mediaDevices?.getUserMedia) {
-        setCamError("Este navegador não suporta acesso à câmera. Use a opção de galeria.");
+        if (aliveRef.current && seq === startSeqRef.current) setCamError("Este navegador não suporta acesso à câmera. Use a opção de galeria.");
         return;
       }
       const s = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
       });
+
+      if (!aliveRef.current || seq !== startSeqRef.current) {
+        try {
+          s.getTracks().forEach((t) => t.stop());
+        } catch {}
+        return;
+      }
       streamRef.current = s;
       setStream(s);
       if (videoRef.current) {
@@ -95,14 +105,17 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
         } catch {}
       }
     } catch (e) {
-      setCamError(explainCameraError(e));
+      if (aliveRef.current && seq === startSeqRef.current) setCamError(explainCameraError(e));
       stopStream();
     }
   };
 
   useEffect(() => {
+    aliveRef.current = true;
     startCamera(facingMode);
     return () => {
+      aliveRef.current = false;
+      startSeqRef.current++;
       stopStream();
     };
   }, []);
