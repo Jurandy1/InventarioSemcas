@@ -3,7 +3,7 @@ import { fsDel, fsGetAll, fsSet } from "../services/firebase.js";
 import { deletePhoto, isStorageOk, uploadPhotos } from "../services/storage.js";
 import { EVENTOS, notificationService, offlineManager } from "../services/features.js";
 import { logAuditoria } from "../services/audit.js";
-import { compressPhotoArray, getCachedData, perfMonitor, setCachedData } from "../utils/performance.js";
+import { bumpCacheBuster, compressPhotoArray, getCachedData, perfMonitor, setCachedData } from "../utils/performance.js";
 
 export function useFound({ showT, applyDescOverride } = {}) {
   const [found, setFound] = useState([]);
@@ -13,10 +13,12 @@ export function useFound({ showT, applyDescOverride } = {}) {
   const [uploadMsg, setUploadMsg] = useState("");
 
   const foundRef = useRef([]);
+  const foundPosRef = useRef(new Map());
 
   const syncFoundRef = useCallback(
     (next) => {
       foundRef.current = next;
+      foundPosRef.current = new Map(next.map((f, idx) => [f.patrimonioId, idx]));
       setFound(next);
     },
     [setFound]
@@ -84,8 +86,13 @@ export function useFound({ showT, applyDescOverride } = {}) {
       }
 
       await fsSet("inventario", itemId, entry);
-      const nextFound = [...currentFound.filter((f) => f.patrimonioId !== itemId), { ...entry, _id: itemId }];
+      const idx = foundPosRef.current.get(itemId);
+      const nextFound = currentFound.slice();
+      const nextEntry = { ...entry, _id: itemId };
+      if (typeof idx === "number") nextFound[idx] = nextEntry;
+      else nextFound.push(nextEntry);
       syncFoundRef(nextFound);
+      bumpCacheBuster();
       await setCachedData("inventario", nextFound);
       return entry;
     },
@@ -98,6 +105,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
       const base = foundRef.current || [];
       const next = base.filter((f) => f.patrimonioId !== itemId);
       syncFoundRef(next);
+      bumpCacheBuster();
       await setCachedData("inventario", next);
     },
     [syncFoundRef]
@@ -166,9 +174,14 @@ export function useFound({ showT, applyDescOverride } = {}) {
             content: offlineEntry,
           });
           const base = foundRef.current || [];
-          const newFound = [...base.filter((f) => f.patrimonioId !== item.id), { ...offlineEntry, _id: item.id }];
+          const idx = foundPosRef.current.get(item.id);
+          const nextEntry = { ...offlineEntry, _id: item.id };
+          const newFound = base.slice();
+          if (typeof idx === "number") newFound[idx] = nextEntry;
+          else newFound.push(nextEntry);
           syncFoundRef(newFound);
           updateQueueStatus?.();
+          bumpCacheBuster();
           await setCachedData("inventario", newFound);
           await logAuditoria("queue-save", "inventario", item.id, before, offlineEntry);
           if (descEdit || espEdit) applyDescOverride?.(item.id, descEdit, espEdit);

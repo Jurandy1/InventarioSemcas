@@ -45,6 +45,7 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
   const [captured, setCaptured] = useState([...existingPhotos]);
   const fileInputRef = useRef(null);
   const [camError, setCamError] = useState("");
+  const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
   const stopStream = () => {
     const s = streamRef.current;
@@ -173,6 +174,11 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
   const handleFileSelect = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    if (f.size > MAX_FILE_BYTES) {
+      setCamError(`Arquivo muito grande (${Math.round(f.size / (1024 * 1024))}MB). Selecione até 8MB.`);
+      e.target.value = "";
+      return;
+    }
     const d = await compressPhoto(f);
     setCaptured((p) => [...p, d]);
     e.target.value = "";

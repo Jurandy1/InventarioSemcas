@@ -18,6 +18,9 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
     setLogado(null);
     clearFirebaseSession();
     try {
+      sessionStorage.removeItem("inv-session");
+    } catch {}
+    try {
       localStorage.removeItem("inv-session");
     } catch {}
   }, []);
@@ -31,7 +34,15 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
 
       const hard = setTimeout(() => setLoading(false), 15000);
       try {
-        const saved = localStorage.getItem("inv-session");
+        let saved = null;
+        try {
+          saved = sessionStorage.getItem("inv-session");
+        } catch {}
+        if (!saved) {
+          try {
+            saved = localStorage.getItem("inv-session");
+          } catch {}
+        }
         if (!saved) return;
         const s = JSON.parse(saved);
         if (s.refreshToken) {
@@ -41,11 +52,17 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
             setFirebaseSession({ token: next.token, uid: next.uid });
             setLogado(next);
             try {
-              localStorage.setItem("inv-session", JSON.stringify(next));
+              sessionStorage.setItem("inv-session", JSON.stringify(next));
+            } catch {}
+            try {
+              localStorage.removeItem("inv-session");
             } catch {}
           } catch {
             setLogado(null);
             clearFirebaseSession();
+            try {
+              sessionStorage.removeItem("inv-session");
+            } catch {}
             try {
               localStorage.removeItem("inv-session");
             } catch {}
@@ -116,7 +133,10 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
 
         setLogado(user);
         try {
-          localStorage.setItem("inv-session", JSON.stringify(user));
+          sessionStorage.setItem("inv-session", JSON.stringify(user));
+        } catch {}
+        try {
+          localStorage.removeItem("inv-session");
         } catch {}
 
         setLoading(true);

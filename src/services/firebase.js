@@ -171,6 +171,117 @@ function fromFsDoc(doc) {
   return obj;
 }
 
+function buildStructuredWhere(where) {
+  if (!Array.isArray(where) || where.length === 0) return null;
+
+  const filters = where
+    .filter(Boolean)
+    .map((w) => ({
+      fieldFilter: {
+        field: { fieldPath: String(w.field || "") },
+        op: String(w.op || "EQUAL"),
+        value: toFsValue(w.value),
+      },
+    }))
+    .filter((f) => f.fieldFilter.field.fieldPath);
+
+  if (filters.length === 0) return null;
+  if (filters.length === 1) return filters[0];
+  return { compositeFilter: { op: "AND", filters } };
+}
+
+function normalizeOrderBy(orderBy) {
+  if (!orderBy) return [];
+  const arr = Array.isArray(orderBy) ? orderBy : [orderBy];
+  return arr
+    .filter(Boolean)
+    .map((o) => {
+      if (typeof o === "string") return { field: o, direction: "ASCENDING" };
+      return { field: String(o.field || ""), direction: String(o.direction || "ASCENDING") };
+    })
+    .filter((o) => o.field);
+}
+
+function ensureNameOrderBy(orderByArr) {
+  const hasName = orderByArr.some((o) => o.field === "__name__");
+  return hasName ? orderByArr : [...orderByArr, { field: "__name__", direction: "ASCENDING" }];
+}
+
+function safeParseJson(val) {
+  if (!val) return null;
+  if (typeof val === "object") return val;
+  try {
+    return JSON.parse(String(val));
+  } catch {
+    return null;
+  }
+}
+
+export async function fsQueryPage(collection, opts = {}) {
+  assertFirebaseConfigured();
+  if (!authToken) return { docs: [], nextCursor: null, hasMore: false };
+
+  const pageSize = Math.max(1, Math.min(1000, Number(opts.pageSize || 200) || 200));
+  const limit = Math.max(1, Math.min(1001, pageSize + 1));
+  const where = buildStructuredWhere(opts.where);
+  const orderByInput = ensureNameOrderBy(normalizeOrderBy(opts.orderBy));
+  const cursor = safeParseJson(opts.cursor);
+
+  const structuredQuery = {
+    from: [{ collectionId: collection }],
+    limit,
+    orderBy: orderByInput.map((o) => ({
+      field: { fieldPath: o.field },
+      direction: o.direction,
+    })),
+  };
+
+  if (where) structuredQuery.where = where;
+
+  if (cursor?.docName) {
+    structuredQuery.startAt = {
+      before: false,
+      values: orderByInput.map((o) => {
+        if (o.field === "__name__") return { referenceValue: String(cursor.docName) };
+        return toFsValue(cursor.fields?.[o.field]);
+      }),
+    };
+  }
+
+  const RUN_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents:runQuery`;
+  const r = await fetchWithTimeout(
+    `${RUN_URL}?key=${FB.apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
+      body: JSON.stringify({ structuredQuery }),
+    },
+    20000
+  );
+
+  if (!r.ok) return { docs: [], nextCursor: null, hasMore: false };
+  const rows = await r.json().catch(() => []);
+  const docsRaw = (Array.isArray(rows) ? rows : []).map((x) => x?.document).filter(Boolean);
+
+  const mapped = docsRaw.map((doc) => ({ _id: doc.name.split("/").pop(), ...fromFsDoc(doc) }));
+  const hasMore = mapped.length > pageSize;
+  const sliced = hasMore ? mapped.slice(0, pageSize) : mapped;
+
+  let nextCursor = null;
+  if (hasMore && docsRaw.length > 0) {
+    const lastDoc = docsRaw[Math.min(pageSize - 1, docsRaw.length - 1)];
+    const lastData = fromFsDoc(lastDoc) || {};
+    const fields = {};
+    for (const o of orderByInput) {
+      if (o.field === "__name__") continue;
+      fields[o.field] = lastData[o.field];
+    }
+    nextCursor = JSON.stringify({ docName: lastDoc.name, fields });
+  }
+
+  return { docs: sliced, nextCursor, hasMore };
+}
+
 export async function fsSet(collection, docId, data) {
   assertFirebaseConfigured();
   if (!authToken) return;
@@ -204,13 +315,45 @@ export async function fsSetStrict(collection, docId, data) {
 export async function fsGetAll(collection) {
   assertFirebaseConfigured();
   if (!authToken) return [];
+  const opts = arguments.length > 1 && typeof arguments[1] === "object" ? arguments[1] : {};
+  const pageSize = Math.max(1, Math.min(1000, Number(opts.pageSize || 250) || 250));
+
+  if (opts.where || opts.orderBy) {
+    const all = [];
+    let cursor = opts.cursor || null;
+    const max = typeof opts.limit === "number" ? Math.max(0, opts.limit) : Infinity;
+    while (all.length < max) {
+      const res = await fsQueryPage(collection, { ...opts, pageSize, cursor });
+      all.push(...res.docs);
+      if (!res.hasMore || res.docs.length === 0) break;
+      cursor = res.nextCursor;
+    }
+    return typeof opts.limit === "number" ? all.slice(0, opts.limit) : all;
+  }
+
   const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
-  const r = await fetch(`${FS_URL}/${collection}?key=${FB.apiKey}&pageSize=1000`, {
-    headers: { Authorization: `Bearer ${authToken}` },
-  });
-  if (!r.ok) return [];
-  const d = await r.json();
-  return (d.documents || []).map((doc) => ({ _id: doc.name.split("/").pop(), ...fromFsDoc(doc) }));
+  const out = [];
+  let pageToken = opts.pageToken || null;
+  const max = typeof opts.limit === "number" ? Math.max(0, opts.limit) : Infinity;
+
+  while (out.length < max) {
+    const url = `${FS_URL}/${collection}?key=${FB.apiKey}&pageSize=${pageSize}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`;
+    const r = await fetchWithTimeout(
+      url,
+      {
+        headers: { Authorization: `Bearer ${authToken}` },
+      },
+      20000
+    );
+    if (!r.ok) break;
+    const d = await r.json().catch(() => ({}));
+    const pageDocs = (d.documents || []).map((doc) => ({ _id: doc.name.split("/").pop(), ...fromFsDoc(doc) }));
+    out.push(...pageDocs);
+    if (!d.nextPageToken || pageDocs.length === 0) break;
+    pageToken = d.nextPageToken;
+  }
+
+  return typeof opts.limit === "number" ? out.slice(0, opts.limit) : out;
 }
 
 export async function fsDel(collection, docId) {
@@ -290,14 +433,20 @@ export async function obterCoordenadores(status = "pendente_aprovacao") {
 
 export async function obterCoordPorUid(uid) {
   assertFirebaseConfigured();
-  const todosCoord = await fsGetAll("coordenadores");
-  return todosCoord.find((c) => c.uid === uid) || null;
+  const rows = await fsGetAll("coordenadores", { where: [{ field: "uid", op: "EQUAL", value: uid }], orderBy: ["__name__"], limit: 1 });
+  return rows[0] || null;
 }
 
 export async function obterCoordPorUnidade(unidadeId) {
   assertFirebaseConfigured();
-  const todosCoord = await fsGetAll("coordenadores");
-  return todosCoord.filter((c) => c.unidadeId === unidadeId && c.status === "aprovada");
+  const rows = await fsGetAll("coordenadores", {
+    where: [
+      { field: "unidadeId", op: "EQUAL", value: unidadeId },
+      { field: "status", op: "EQUAL", value: "aprovada" },
+    ],
+    orderBy: ["__name__"],
+  });
+  return rows;
 }
 
 export async function aprovarCoordenador(uid, observacoes = "") {
@@ -399,8 +548,8 @@ export async function obterInventariantePorUid(uid) {
   assertFirebaseConfigured();
   if (!authToken) return null;
   try {
-    const todos = await fsGetAll("inventariantes");
-    return todos.find((c) => c.uid === uid) || null;
+    const rows = await fsGetAll("inventariantes", { where: [{ field: "uid", op: "EQUAL", value: uid }], orderBy: ["__name__"], limit: 1 });
+    return rows[0] || null;
   } catch {
     return null;
   }

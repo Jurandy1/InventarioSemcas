@@ -1,28 +1,20 @@
-import { fsGetAll } from "../services/firebase.js";
+import { fsQueryPage } from "../services/firebase.js";
 
 export async function paginarItens(unidadeId, pageSize = 50, cursor = null) {
   try {
-    const allItens = await fsGetAll("manuais");
-    const itensUnidade = allItens
-      .filter((item) => item.unidadeId === unidadeId)
-      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
-
-    let startIdx = 0;
-    if (cursor) {
-      startIdx = itensUnidade.findIndex((i) => i.id === cursor) + 1;
-      if (startIdx < 0) startIdx = 0;
-    }
-
-    const paged = itensUnidade.slice(startIdx, startIdx + pageSize);
-    const nextCursor = paged.length === pageSize ? paged[paged.length - 1]?.id || null : null;
-    const prevCursor = startIdx > 0 ? itensUnidade[Math.max(0, startIdx - pageSize)]?.id || null : null;
+    const res = await fsQueryPage("manuais", {
+      where: [{ field: "unidadeId", op: "EQUAL", value: unidadeId }],
+      orderBy: [{ field: "id", direction: "ASCENDING" }],
+      pageSize,
+      cursor,
+    });
 
     return {
-      itens: paged,
-      nextCursor,
-      prevCursor,
-      total: itensUnidade.length,
-      hasMore: nextCursor !== null,
+      itens: res.docs,
+      nextCursor: res.nextCursor,
+      prevCursor: null,
+      total: null,
+      hasMore: Boolean(res.nextCursor),
     };
   } catch (e) {
     console.error("Erro ao paginar:", e);
@@ -31,14 +23,34 @@ export async function paginarItens(unidadeId, pageSize = 50, cursor = null) {
 }
 
 const CACHE_PREFIX = "inv-cache-v2";
-const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_TTL = 30 * 60 * 1000;
+const CACHE_BUSTER_KEY = `${CACHE_PREFIX}:__buster__`;
+
+function getCacheBuster() {
+  try {
+    const raw = localStorage.getItem(CACHE_BUSTER_KEY);
+    return raw ? Number(raw) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function bumpCacheBuster() {
+  try {
+    localStorage.setItem(CACHE_BUSTER_KEY, String(Date.now()));
+  } catch {}
+}
 
 export async function getCachedData(key) {
   try {
     const stored = localStorage.getItem(`${CACHE_PREFIX}:${key}`);
     if (!stored) return null;
 
-    const { data, ts } = JSON.parse(stored);
+    const { data, ts, buster } = JSON.parse(stored);
+    if (typeof buster === "number" && buster !== getCacheBuster()) {
+      localStorage.removeItem(`${CACHE_PREFIX}:${key}`);
+      return null;
+    }
     if (Date.now() - ts > CACHE_TTL) {
       localStorage.removeItem(`${CACHE_PREFIX}:${key}`);
       return null;
@@ -52,7 +64,7 @@ export async function getCachedData(key) {
 
 export async function setCachedData(key, data) {
   try {
-    localStorage.setItem(`${CACHE_PREFIX}:${key}`, JSON.stringify({ data, ts: Date.now() }));
+    localStorage.setItem(`${CACHE_PREFIX}:${key}`, JSON.stringify({ data, ts: Date.now(), buster: getCacheBuster() }));
   } catch (e) {
     console.warn("Cache write failed:", e);
   }

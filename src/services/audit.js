@@ -86,17 +86,27 @@ export function setupRealtimeSync(unidadeId, onInventarioChange, onLocaisChange,
   if (!uid) return null;
 
   const unsubscribers = [];
+  const opts = arguments.length > 4 && typeof arguments[4] === "object" ? arguments[4] : {};
+  const invMs = Math.max(5000, Number(opts.inventarioMs || 30000) || 30000);
+  const locaisMs = Math.max(10000, Number(opts.locaisMs || 60000) || 60000);
+  const coordMs = Math.max(15000, Number(opts.coordenadoresMs || 90000) || 90000);
+
   const filterInventario = (docs) => {
     if (!unidadeId) return docs;
     return docs.filter((d) => !d.unidadeId || d.unidadeId === unidadeId);
   };
 
   if (onInventarioChange) {
-    fsGetAll("inventario").then((docs) => onInventarioChange(filterInventario(docs)));
+    const fetchInventario = () =>
+      unidadeId
+        ? fsGetAll("inventario", { where: [{ field: "unidadeId", op: "EQUAL", value: unidadeId }], orderBy: ["__name__"] })
+        : fsGetAll("inventario");
+
+    fetchInventario().then((docs) => onInventarioChange(filterInventario(docs)));
     const interval = setInterval(async () => {
-      const updated = await fsGetAll("inventario");
+      const updated = await fetchInventario();
       onInventarioChange(filterInventario(updated));
-    }, 5000);
+    }, invMs);
     unsubscribers.push(() => clearInterval(interval));
   }
 
@@ -105,7 +115,7 @@ export function setupRealtimeSync(unidadeId, onInventarioChange, onLocaisChange,
     const interval = setInterval(async () => {
       const updated = await fsGetAll("locais");
       onLocaisChange(updated);
-    }, 10000);
+    }, locaisMs);
     unsubscribers.push(() => clearInterval(interval));
   }
 
@@ -114,7 +124,7 @@ export function setupRealtimeSync(unidadeId, onInventarioChange, onLocaisChange,
     const interval = setInterval(async () => {
       const updated = await fsGetAll("coordenadores");
       onCoordenadoresChange(updated);
-    }, 15000);
+    }, coordMs);
     unsubscribers.push(() => clearInterval(interval));
   }
 

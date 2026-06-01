@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fsDel, fsGetAll, fsSet } from "../services/firebase.js";
-import { getCachedData, setCachedData } from "../utils/performance.js";
+import { bumpCacheBuster, getCachedData, setCachedData } from "../utils/performance.js";
 
 export function useLocais() {
   const [locais, setLocais] = useState([]);
@@ -31,6 +31,7 @@ export function useLocais() {
     await fsSet("locais", id, localData);
     const entry = { id, _id: id, ...localData };
     setLocais((prev) => [...prev, entry]);
+    bumpCacheBuster();
     try {
       await setCachedData("locais", [...(locaisRef.current || []), entry]);
     } catch {}
@@ -42,6 +43,7 @@ export function useLocais() {
     if (!id) return;
     await fsDel("locais", id);
     setLocais((prev) => prev.filter((x) => (x.id || x._id) !== id));
+    bumpCacheBuster();
     try {
       const next = (locaisRef.current || []).filter((x) => (x.id || x._id) !== id);
       await setCachedData("locais", next);
