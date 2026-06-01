@@ -6,8 +6,8 @@ async function compressPhoto(file) {
     r.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const maxW = 1200;
-        const maxH = 900;
+        const maxW = 1600;
+        const maxH = 1200;
         let w = img.width;
         let h = img.height;
         if (w > maxW) {
@@ -25,7 +25,7 @@ async function compressPhoto(file) {
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = "high";
         ctx.drawImage(img, 0, 0, w, h);
-        res(c.toDataURL("image/jpeg", 0.62));
+        res(c.toDataURL("image/jpeg", 0.8));
       };
       img.src = e.target.result;
     };
@@ -145,8 +145,8 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
     c.height = v.videoHeight;
     const ctx = c.getContext("2d");
     ctx.drawImage(v, 0, 0);
-    const maxW = 1200;
-    const maxH = 900;
+    const maxW = 1600;
+    const maxH = 1200;
     let w = c.width;
     let h = c.height;
     if (w > maxW || h > maxH) {
@@ -155,9 +155,9 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
       c2.width = w * sc;
       c2.height = h * sc;
       c2.getContext("2d").drawImage(c, 0, 0, c2.width, c2.height);
-      setPreview(c2.toDataURL("image/jpeg", 0.62));
+      setPreview(c2.toDataURL("image/jpeg", 0.8));
     } else {
-      setPreview(c.toDataURL("image/jpeg", 0.62));
+      setPreview(c.toDataURL("image/jpeg", 0.8));
     }
   };
 

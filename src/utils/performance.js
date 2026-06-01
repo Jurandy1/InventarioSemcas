@@ -70,7 +70,26 @@ export async function clearCache(pattern = null) {
   }
 }
 
-function compressPhotoWithTimeout(base64, maxWidth = 800, maxHeight = 600, quality = 0.65, timeoutMs = 5000) {
+function estimateDataUrlBytes(dataUrl) {
+  const s = String(dataUrl || "");
+  const idx = s.indexOf(",");
+  if (idx < 0) return 0;
+  const b64 = s.slice(idx + 1);
+  let padding = 0;
+  if (b64.endsWith("==")) padding = 2;
+  else if (b64.endsWith("=")) padding = 1;
+  return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
+}
+
+function compressPhotoWithTimeout(
+  base64,
+  maxWidth = 1600,
+  maxHeight = 1200,
+  quality = 0.8,
+  timeoutMs = 5000,
+  targetBytes = 360 * 1024,
+  minQuality = 0.6
+) {
   return Promise.race([
     new Promise((resolve) => {
       const img = new Image();
@@ -81,6 +100,11 @@ function compressPhotoWithTimeout(base64, maxWidth = 800, maxHeight = 600, quali
         resolved = true;
 
         try {
+          if (estimateDataUrlBytes(base64) > 0 && estimateDataUrlBytes(base64) <= targetBytes && img.width <= maxWidth && img.height <= maxHeight) {
+            resolve(base64);
+            return;
+          }
+
           let w = img.width;
           let h = img.height;
 
@@ -104,7 +128,31 @@ function compressPhotoWithTimeout(base64, maxWidth = 800, maxHeight = 600, quali
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = "high";
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL("image/jpeg", quality));
+
+          const clampQ = (q) => Math.min(0.92, Math.max(minQuality, q));
+          let lo = minQuality;
+          let hi = clampQ(quality);
+          let best = "";
+
+          let out = canvas.toDataURL("image/jpeg", hi);
+          if (estimateDataUrlBytes(out) <= targetBytes) {
+            resolve(out);
+            return;
+          }
+
+          for (let i = 0; i < 6; i++) {
+            const mid = clampQ((lo + hi) / 2);
+            out = canvas.toDataURL("image/jpeg", mid);
+            const bytes = estimateDataUrlBytes(out);
+            if (bytes > targetBytes) {
+              hi = mid;
+            } else {
+              lo = mid;
+              best = out;
+            }
+          }
+
+          resolve(best || out);
         } catch (err) {
           console.error("Erro ao comprimir:", err);
           resolve(base64);
@@ -140,7 +188,7 @@ export async function compressPhotoArray(base64Array, onProgress) {
   for (let i = 0; i < base64Array.length; i += BATCH_SIZE) {
     const batch = base64Array.slice(i, i + BATCH_SIZE);
     const batchResults = await Promise.all(
-      batch.map((b) => compressPhoto(b, 800, 600, 0.65))
+      batch.map((b) => compressPhotoWithTimeout(b, 1600, 1200, 0.82, 5000, 360 * 1024, 0.6))
     );
 
     results.push(...batchResults);
