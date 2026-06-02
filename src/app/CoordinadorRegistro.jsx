@@ -62,6 +62,7 @@ export function CoordinadorRegistro() {
       setFormData((prev) => ({
         ...prev,
         matricula: found.matricula || "",
+        nome: found.nomeSugerido || prev.nome || "",
       }));
       setStatus("formulario");
     } catch (err) {
@@ -170,14 +171,13 @@ export function CoordinadorRegistro() {
     return (
       <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #6b21a8, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
         <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 420, textAlign: "center" }}>
-          <p style={{ fontSize: 40, margin: "0 0 16px" }}>✅</p>
           <h1 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 700 }}>Registro concluído!</h1>
           <p style={{ color: "#64748b", fontSize: 13, margin: "0 0 24px", lineHeight: 1.5 }}>
             Bem-vinda, <strong>{formData.nome}</strong>!
           </p>
           <div style={{ background: "#f3e8ff", border: "1px solid #e9d5ff", borderRadius: 12, padding: 16, marginBottom: 24 }}>
             <p style={{ margin: 0, fontSize: 12, color: "#6b21a8", fontWeight: 600 }}>
-              📋 Sua solicitação foi enviada para aprovação. O administrador analisará seus dados e você receberá um email de confirmação.
+              Sua solicitação foi enviada para aprovação. O administrador analisará seus dados e você receberá um email de confirmação.
             </p>
           </div>
           <button
@@ -199,7 +199,6 @@ export function CoordinadorRegistro() {
     return (
       <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #6b21a8, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
         <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 420, textAlign: "center" }}>
-          <p style={{ fontSize: 40, margin: "0 0 16px" }}>❌</p>
           <h1 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 700 }}>Acesso negado</h1>
           <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 12, padding: 16, marginBottom: 24 }}>
             <p style={{ margin: 0, fontSize: 13, color: "#991b1b", fontWeight: 600, lineHeight: 1.4 }}>{error}</p>
@@ -223,8 +222,7 @@ export function CoordinadorRegistro() {
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #6b21a8, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 420 }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <p style={{ fontSize: 40, margin: 0 }}>👩‍💼</p>
-          <h1 style={{ margin: "12px 0 4px", fontSize: 20, fontWeight: 700 }}>Registre-se como Coordenadora</h1>
+          <h1 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 700 }}>Registre-se como Coordenadora</h1>
           <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>Inventário SEMCAS · {convite?.unidadeNome || ""}</p>
         </div>
 
@@ -350,7 +348,7 @@ export function CoordinadorRegistro() {
               opacity: submitting ? 0.8 : 1,
             }}
           >
-            {submitting ? "Registrando..." : "✓ Registrar"}
+            {submitting ? "Registrando..." : "Registrar"}
           </button>
         </form>
 

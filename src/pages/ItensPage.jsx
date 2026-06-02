@@ -132,7 +132,6 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
           textAlign: "left",
         }}
       >
-        <span style={{ fontSize: 16 }}>{cat.icon}</span>
         <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat.name}</span>
         <span
           style={{
@@ -249,16 +248,15 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
             />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-              <span style={{ fontSize: 32, opacity: isF ? 0.5 : 0.2 }}>{isPermuta ? "🔄" : catDef.icon}</span>
               <span style={{ fontSize: 9, fontWeight: 700, color: isPermuta ? "#92400e" : isF ? "#16a34a" : "#94a3b8", letterSpacing: ".05em" }}>
-                {isPermuta ? "🔄 PERMUTA" : isF ? "✅ SEM FOTO" : "📷 PENDENTE"}
+                {isPermuta ? "PERMUTA" : isF ? "SEM FOTO" : "PENDENTE"}
               </span>
             </div>
           )}
           <div style={{ position: "absolute", top: 5, right: 5, background: isPermuta ? "#f59e0b" : isF ? "#16a34a" : "#f59e0b", borderRadius: 99, width: 9, height: 9, boxShadow: "0 0 0 2px #fff" }} />
           {(f?.fotoUrls?.length || 0) > 1 && (
             <div style={{ position: "absolute", bottom: 5, right: 5, background: "rgba(0,0,0,.55)", color: "#fff", borderRadius: 99, fontSize: 9, fontWeight: 700, padding: "2px 6px" }}>
-              📷 {f.fotoUrls.length}
+              {f.fotoUrls.length} fotos
             </div>
           )}
         </div>
@@ -282,7 +280,7 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
           </p>
           {isPermuta && f?.permutaDesc && (
             <p style={{ margin: 0, fontSize: 9, color: "#92400e", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              🔄 Real: {f.permutaDesc}
+              Permuta real: {f.permutaDesc}
             </p>
           )}
           <p style={{ margin: 0, fontSize: 9, color: "#64748b", fontWeight: 600 }}>Nº {getItemCode(item)}</p>
@@ -390,7 +388,6 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
               textAlign: "left",
             }}
           >
-            <span style={{ fontSize: 16 }}>🗂️</span>
             <span style={{ flex: 1 }}>Todos</span>
             <span
               style={{
@@ -424,9 +421,9 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
           <hr style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "10px 0 8px" }} />
           <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", padding: "0 4px" }}>Status</p>
           {[
-            { key: "Todos", label: "📋 Todos" },
-            { key: "Inventariados", label: "✅ Inventariados" },
-            { key: "Pendentes", label: "⏳ Pendentes" },
+            { key: "Todos", label: "Todos" },
+            { key: "Inventariados", label: "Inventariados" },
+            { key: "Pendentes", label: "Pendentes" },
           ].map((s) => (
             <button
               key={s.key}
@@ -458,10 +455,10 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>🪑 Itens</h2>
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Itens</h2>
             {localCat !== "Todas" && (
               <span style={{ fontSize: 13, color: "#1e3a8a", fontWeight: 700 }}>
-                {CATEGORY_TREE.find((c) => c.name === localCat)?.icon} {localCat}
+                {localCat}
                 {localSub && <span style={{ color: "#64748b", fontWeight: 500 }}> › {localSub}</span>}
               </span>
             )}
@@ -471,7 +468,7 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
 
         {isMob && (
           <>
-            <MobileChips items={[{ name: "Todas", icon: "🗂️" }, ...CATEGORY_TREE]} selected={localCat} onSelect={(name) => selectCat(name || "Todas")} />
+            <MobileChips items={[{ name: "Todas" }, ...CATEGORY_TREE]} selected={localCat} onSelect={(name) => selectCat(name || "Todas")} />
             {localCat !== "Todas" && activeCatDef && (
               <MobileChips
                 items={activeCatDef.subs.filter((s) => subCounts[s.label] > 0).map((s) => s.label)}
@@ -500,7 +497,7 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
                     cursor: "pointer",
                   }}
                 >
-                  {s === "Todos" ? "📋 Todos" : s === "Inventariados" ? "✅ Inventariados" : "⏳ Pendentes"}
+                  {s}
                 </button>
               ))}
             </div>
@@ -514,7 +511,7 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
               setLocalQ(v);
               resetPage();
             }}
-            placeholder="🔍 Buscar descrição, Nº, marca, NF..."
+            placeholder="Buscar descrição, Nº, marca, NF..."
             style={inp}
           />
           <select
@@ -549,7 +546,6 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
 
         {paged.length === 0 ? (
           <div style={{ ...cd, textAlign: "center", padding: 48 }}>
-            <p style={{ fontSize: 40, margin: "0 0 8px" }}>🔍</p>
             <p style={{ color: "#94a3b8", margin: 0 }}>Nenhum item com esses filtros.</p>
             <button
               onClick={() => {

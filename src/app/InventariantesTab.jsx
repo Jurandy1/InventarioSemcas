@@ -50,7 +50,7 @@ export function InventariantesTab({ showT, isMob }) {
     if (!selected) return;
     try {
       await aprovarInventariante(selected.uid, form.observacoes);
-      showT("✓ Inventariante aprovado!");
+      showT("Inventariante aprovado!");
       setModal(null);
       carregar();
     } catch (e) { showT("Erro: " + e.message); }
@@ -60,7 +60,7 @@ export function InventariantesTab({ showT, isMob }) {
     if (!selected || !form.motivo.trim()) return;
     try {
       await rejeitarInventariante(selected.uid, form.motivo);
-      showT("✓ Inventariante rejeitado");
+      showT("Inventariante rejeitado");
       setModal(null);
       carregar();
     } catch (e) { showT("Erro: " + e.message); }
@@ -70,7 +70,7 @@ export function InventariantesTab({ showT, isMob }) {
     if (!selected) return;
     try {
       await desativarInventariante(selected.uid, form.motivo);
-      showT("✓ Inventariante desativado");
+      showT("Inventariante desativado");
       setModal(null);
       carregar();
     } catch (e) { showT("Erro: " + e.message); }
@@ -93,7 +93,7 @@ export function InventariantesTab({ showT, isMob }) {
       await navigator.clipboard.writeText(link);
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2000);
-      showT("✓ Link copiado!");
+      showT("Link copiado!");
     } catch {
       showT("Selecione e copie manualmente: " + link);
     }
@@ -140,9 +140,9 @@ export function InventariantesTab({ showT, isMob }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{inv.nome || "—"}</p>
-          <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>📧 {inv.email}</p>
-          {inv.matricula && <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>🪪 Matrícula: {inv.matricula}</p>}
-          {inv.cargo && <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>💼 {inv.cargo}</p>}
+          <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>{inv.email}</p>
+          {inv.matricula && <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Matrícula: {inv.matricula}</p>}
+          {inv.cargo && <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>{inv.cargo}</p>}
           {inv.dataCriacao && (
             <p style={{ margin: "4px 0 0", fontSize: 10, color: "#94a3b8" }}>
               Cadastro: {new Date(inv.dataCriacao).toLocaleDateString("pt-BR")}
@@ -178,10 +178,10 @@ export function InventariantesTab({ showT, isMob }) {
   );
 
   const tabs = [
-    { id: "pendentes",  label: `⏳ Pendentes (${pendentes.length})` },
-    { id: "aprovados",  label: `✅ Aprovados (${aprovados.length})` },
-    { id: "rejeitados", label: `❌ Rejeitados (${rejeitados.length})` },
-    { id: "desativados",label: `🚫 Desativados (${desativados.length})` },
+    { id: "pendentes",  label: `Pendentes (${pendentes.length})` },
+    { id: "aprovados",  label: `Aprovados (${aprovados.length})` },
+    { id: "rejeitados", label: `Rejeitados (${rejeitados.length})` },
+    { id: "desativados",label: `Desativados (${desativados.length})` },
   ];
 
   if (loading) {
@@ -197,13 +197,13 @@ export function InventariantesTab({ showT, isMob }) {
       {/* ── Header ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>👷 Inventariantes</h2>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Inventariantes</h2>
           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>
             Gerencie quem pode acessar o sistema de inventário
           </p>
         </div>
         <button onClick={() => { setLinkGerado(null); setModal("convite"); }} style={bp}>
-          🔗 Gerar Convite
+          Gerar Convite
         </button>
       </div>
 
@@ -224,38 +224,38 @@ export function InventariantesTab({ showT, isMob }) {
       <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(360px,1fr))", gap: 10 }}>
         {tab === "pendentes" && (
           pendentes.length === 0
-            ? <Empty icon="✅" msg="Nenhum inventariante aguardando aprovação" />
+            ? <Empty msg="Nenhum inventariante aguardando aprovação" />
             : pendentes.map((inv) => (
                 <InvCard key={inv.uid || inv._id} inv={inv} actions={[
-                  { label: "✓ Aprovar", onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("aprovar"); } },
-                  { label: "✕ Rejeitar", danger: true, onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("rejeitar"); } },
+                  { label: "Aprovar", onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("aprovar"); } },
+                  { label: "Rejeitar", danger: true, onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("rejeitar"); } },
                 ]} />
               ))
         )}
         {tab === "aprovados" && (
           aprovados.length === 0
-            ? <Empty icon="👤" msg="Nenhum inventariante aprovado ainda" />
+            ? <Empty msg="Nenhum inventariante aprovado ainda" />
             : aprovados.map((inv) => (
                 <InvCard key={inv.uid || inv._id} inv={inv} actions={[
-                  { label: "🚫 Desativar", danger: true, onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("desativar"); } },
+                  { label: "Desativar", danger: true, onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("desativar"); } },
                 ]} />
               ))
         )}
         {tab === "rejeitados" && (
           rejeitados.length === 0
-            ? <Empty icon="📋" msg="Nenhum inventariante rejeitado" />
+            ? <Empty msg="Nenhum inventariante rejeitado" />
             : rejeitados.map((inv) => (
                 <InvCard key={inv.uid || inv._id} inv={inv} actions={[
-                  { label: "✓ Aprovar mesmo assim", onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("aprovar"); } },
+                  { label: "Aprovar mesmo assim", onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("aprovar"); } },
                 ]} />
               ))
         )}
         {tab === "desativados" && (
           desativados.length === 0
-            ? <Empty icon="💤" msg="Nenhum inventariante desativado" />
+            ? <Empty msg="Nenhum inventariante desativado" />
             : desativados.map((inv) => (
                 <InvCard key={inv.uid || inv._id} inv={inv} actions={[
-                  { label: "✓ Reativar", onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("aprovar"); } },
+                  { label: "Reativar", onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("aprovar"); } },
                 ]} />
               ))
         )}
@@ -265,8 +265,8 @@ export function InventariantesTab({ showT, isMob }) {
       {modal === "convite" && (
         <Overlay onClose={() => setModal(null)}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>🔗 Gerar Convite</h2>
-            <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer" }}>✕</button>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Gerar Convite</h2>
+            <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: 12, color: "#64748b", cursor: "pointer", padding: "8px 10px", fontWeight: 700 }}>Fechar</button>
           </div>
 
           <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 12, padding: 16, marginBottom: 20 }}>
@@ -282,11 +282,11 @@ export function InventariantesTab({ showT, isMob }) {
               disabled={gerando}
               style={{ ...bp, width: "100%", opacity: gerando ? 0.7 : 1 }}
             >
-              {gerando ? "⏳ Gerando..." : "🔗 Gerar Link de Convite"}
+              {gerando ? "Gerando..." : "Gerar Link de Convite"}
             </button>
           ) : (
             <div style={{ background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 12, padding: 16 }}>
-              <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 800, color: "#15803d" }}>✅ Link gerado!</p>
+              <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 800, color: "#15803d" }}>Link gerado</p>
               <p style={{ margin: "0 0 10px", fontSize: 10, color: "#64748b" }}>
                 Válido até: {new Date(linkGerado.convite.dataExpiracao).toLocaleDateString("pt-BR")}
               </p>
@@ -298,7 +298,7 @@ export function InventariantesTab({ showT, isMob }) {
                   onClick={() => copiarLink(linkGerado.link)}
                   style={{ ...bp, flex: 1, fontSize: 13, background: copiado ? "#16a34a" : "#1e3a8a" }}
                 >
-                  {copiado ? "✓ Copiado!" : "📋 Copiar Link"}
+                  {copiado ? "Copiado" : "Copiar link"}
                 </button>
                 <button
                   onClick={() => { setLinkGerado(null); }}
@@ -319,7 +319,7 @@ export function InventariantesTab({ showT, isMob }) {
       {/* ── Modal: Aprovar ── */}
       {modal === "aprovar" && selected && (
         <Overlay onClose={() => setModal(null)}>
-          <h2 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 700 }}>✓ Aprovar Inventariante</h2>
+          <h2 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 700 }}>Aprovar inventariante</h2>
           <p style={{ margin: "0 0 16px", fontSize: 13, color: "#64748b" }}>
             Você está aprovando <strong>{selected.nome}</strong> ({selected.email}).
             Após aprovação, este usuário poderá fazer login e inventariar normalmente.
@@ -336,7 +336,7 @@ export function InventariantesTab({ showT, isMob }) {
           />
           <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
             <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>Cancelar</button>
-            <button onClick={handleAprovar} style={{ ...bp, flex: 1, background: "#16a34a" }}>✓ Confirmar Aprovação</button>
+            <button onClick={handleAprovar} style={{ ...bp, flex: 1, background: "#16a34a" }}>Confirmar aprovação</button>
           </div>
         </Overlay>
       )}
@@ -344,7 +344,7 @@ export function InventariantesTab({ showT, isMob }) {
       {/* ── Modal: Rejeitar ── */}
       {modal === "rejeitar" && selected && (
         <Overlay onClose={() => setModal(null)}>
-          <h2 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 700 }}>✕ Rejeitar Inventariante</h2>
+          <h2 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 700 }}>Rejeitar inventariante</h2>
           <p style={{ margin: "0 0 16px", fontSize: 13, color: "#64748b" }}>
             Você está rejeitando <strong>{selected.nome}</strong> ({selected.email}).
             O usuário não conseguirá fazer login.
@@ -366,7 +366,7 @@ export function InventariantesTab({ showT, isMob }) {
               disabled={!form.motivo.trim()}
               style={{ ...bp, flex: 1, background: "#dc2626", opacity: form.motivo.trim() ? 1 : 0.6 }}
             >
-              ✕ Confirmar Rejeição
+              Confirmar rejeição
             </button>
           </div>
         </Overlay>
@@ -375,7 +375,7 @@ export function InventariantesTab({ showT, isMob }) {
       {/* ── Modal: Desativar ── */}
       {modal === "desativar" && selected && (
         <Overlay onClose={() => setModal(null)}>
-          <h2 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 700 }}>🚫 Desativar Inventariante</h2>
+          <h2 style={{ margin: "0 0 12px", fontSize: 17, fontWeight: 700 }}>Desativar inventariante</h2>
           <p style={{ margin: "0 0 16px", fontSize: 13, color: "#64748b" }}>
             Você está desativando <strong>{selected.nome}</strong>. O acesso ao sistema será bloqueado imediatamente.
           </p>
@@ -391,7 +391,7 @@ export function InventariantesTab({ showT, isMob }) {
           />
           <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
             <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>Cancelar</button>
-            <button onClick={handleDesativar} style={{ ...bp, flex: 1, background: "#dc2626" }}>🚫 Desativar</button>
+            <button onClick={handleDesativar} style={{ ...bp, flex: 1, background: "#dc2626" }}>Desativar</button>
           </div>
         </Overlay>
       )}
@@ -399,10 +399,9 @@ export function InventariantesTab({ showT, isMob }) {
   );
 }
 
-function Empty({ icon, msg }) {
+function Empty({ msg }) {
   return (
     <div style={{ background: "#fff", borderRadius: 12, padding: 40, textAlign: "center", boxShadow: "0 1px 3px rgba(0,0,0,.06)", gridColumn: "1 / -1" }}>
-      <p style={{ fontSize: 40, margin: "0 0 8px" }}>{icon}</p>
       <p style={{ color: "#94a3b8", margin: 0, fontSize: 13 }}>{msg}</p>
     </div>
   );

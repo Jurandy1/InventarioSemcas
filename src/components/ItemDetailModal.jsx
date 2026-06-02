@@ -74,8 +74,8 @@ export function ItemDetailModal({
     <>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
         <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, flex: 1, minWidth: 0 }}>{item.descricao || item.especie || "—"}</h2>
-        <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, color: "#64748b", cursor: "pointer", padding: "4px 8px", lineHeight: 1 }}>
-          ✕
+        <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 12, color: "#64748b", cursor: "pointer", padding: "8px 10px", fontWeight: 700 }}>
+          Fechar
         </button>
       </div>
 
@@ -88,7 +88,7 @@ export function ItemDetailModal({
 
       {foundEntry && (
         <p style={{ margin: "4px 0 12px", fontSize: 11, color: "#10b981", fontWeight: 600 }}>
-          ✅ Inventariado por: {foundEntry.usuario || foundEntry.user || "—"} em {foundEntry.data || "—"}
+          Inventariado por: {foundEntry.usuario || foundEntry.user || "—"} em {foundEntry.data || "—"}
           {foundEntry.hora ? ` às ${foundEntry.hora}` : ""}
           {foundEntry.ultimoUsuarioAnterior &&
             foundEntry.ultimoUsuarioAnterior !== (foundEntry.usuario || foundEntry.user) && (
@@ -98,7 +98,7 @@ export function ItemDetailModal({
       )}
 
       <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
-        <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 800, color: "#0369a1" }}>✏️ Dados Editáveis do Item</p>
+        <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 800, color: "#0369a1" }}>Dados Editáveis do Item</p>
         <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Descrição</p>
         <TInput
           key={`detDesc_${ft}`}
@@ -116,7 +116,7 @@ export function ItemDetailModal({
           suggestions={sugestoes?.especies}
           style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" }}
         />
-        <p style={{ margin: "8px 0 0", fontSize: 10, color: "#64748b" }}>🔒 Tombo, Fornecedor, NF e Valor não podem ser alterados.</p>
+        <p style={{ margin: "8px 0 0", fontSize: 10, color: "#64748b" }}>Tombo, Fornecedor, NF e Valor não podem ser alterados.</p>
       </div>
 
       {(() => {
@@ -198,7 +198,7 @@ export function ItemDetailModal({
                     marginTop: 4,
                   }}
                 >
-                  📷 Adicionar mais fotos ({photoList.length})
+                  Adicionar mais fotos ({photoList.length})
                 </button>
               </div>
             ) : (
@@ -217,8 +217,7 @@ export function ItemDetailModal({
                   gap: 8,
                 }}
               >
-                <span style={{ fontSize: 36 }}>📷</span>
-                <span style={{ fontSize: 14, color: "#64748b", fontWeight: 600 }}>Tirar fotos do patrimônio</span>
+                <span style={{ fontSize: 14, color: "#64748b", fontWeight: 600 }}>Adicionar fotos</span>
                 <span style={{ fontSize: 11, color: "#94a3b8" }}>Item, plaqueta, estado de conservação</span>
               </button>
             )}
@@ -226,7 +225,7 @@ export function ItemDetailModal({
         );
       })()}
 
-      <Lbl>📍 Local</Lbl>
+      <Lbl>Local</Lbl>
       <select defaultValue={formRef.current.detLocal} onChange={(e) => setField("detLocal", e.target.value)} style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" }}>
         <option value="">— Sem local —</option>
         {locais.map((l) => (
@@ -251,7 +250,6 @@ export function ItemDetailModal({
             fontWeight: 800,
           }}
         >
-          <span style={{ fontSize: 14 }}>{(origemMeta[formRef.current.detOrigem || "Próprio"] || origemMeta["Próprio"]).ico}</span>
           <span>{formRef.current.detOrigem || "Próprio"}</span>
         </div>
       ) : (
@@ -275,7 +273,7 @@ export function ItemDetailModal({
                 color: (formRef.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#6b7280",
               }}
             >
-              {o === "Próprio" ? "🏛️ Próprio" : o === "Doação" ? "🎁 Doação" : "🔄 Permuta"}
+              {o}
             </button>
           ))}
         </div>
@@ -308,7 +306,7 @@ export function ItemDetailModal({
 
       {(getField("detSituacao") || "Em uso") === "Permuta" && (
         <div style={{ background: "#fffbeb", border: "2px solid #fcd34d", borderRadius: 12, padding: "14px 16px", marginTop: 14 }}>
-          <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#92400e" }}>🔄 Item Encontrado no Lugar</p>
+          <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#92400e" }}>Item encontrado no lugar (Permuta)</p>
           <p style={{ margin: "0 0 12px", fontSize: 12, color: "#78350f" }}>
             O sistema registra "{item.descricao || item.especie}" mas fisicamente há outro item. Descreva o que está lá:
           </p>
@@ -357,7 +355,7 @@ export function ItemDetailModal({
               </button>
             ))}
           </div>
-          <p style={{ margin: "10px 0 0", fontSize: 10, color: "#92400e" }}>📋 Estes dados ficarão registrados no inventário e aparecerão na aba Notas Fiscais.</p>
+          <p style={{ margin: "10px 0 0", fontSize: 10, color: "#92400e" }}>Estes dados ficarão registrados no inventário e aparecerão na aba Notas Fiscais.</p>
         </div>
       )}
 
@@ -402,7 +400,7 @@ export function ItemDetailModal({
               flex: 1,
             }}
           >
-            🗑
+            Remover
           </button>
         )}
         <button
@@ -419,7 +417,7 @@ export function ItemDetailModal({
             flex: 1,
           }}
         >
-          ✓ {foundSet?.has(item.id) ? "Salvar" : "Encontrado"}
+          {foundSet?.has(item.id) ? "Salvar" : "Marcar como encontrado"}
         </button>
       </div>
     </>

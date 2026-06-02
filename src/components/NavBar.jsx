@@ -31,7 +31,7 @@ export function NavBar({
         }}
       >
         <div>
-          <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>📋 Inventário SEMCAS</p>
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Inventário SEMCAS</p>
           <p style={{ margin: 0, fontSize: 11, opacity: 0.7 }}>
             {logado?.nome || ""}
             {unidadesAtivas?.length === 1
@@ -56,7 +56,7 @@ export function NavBar({
                 cursor: "pointer",
               }}
             >
-              {loadingXlsx ? "⏳" : "🔄"}
+              {loadingXlsx ? "Atualizando..." : "Atualizar"}
             </button>
           )}
           <button
@@ -88,7 +88,7 @@ export function NavBar({
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 8,
+                  gap: 6,
                   width: "100%",
                   background: activeTab === n.id ? "#1e3a8a" : "transparent",
                   color: activeTab === n.id ? "#fff" : "#374151",
@@ -103,7 +103,7 @@ export function NavBar({
                   position: "relative",
                 }}
               >
-                {n.icon} {n.l}
+                {n.l}
                 {n.badge && (
                   <span
                     style={{
@@ -124,7 +124,7 @@ export function NavBar({
               </button>
             ))}
             <hr style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "12px 0" }} />
-            <p style={{ fontSize: 10, color: "#94a3b8", margin: 0 }}>{storageOk ? "☁️ Fotos: Firebase Storage ✅" : "☁️ Fotos: Storage não configurado"}</p>
+            <p style={{ fontSize: 10, color: "#94a3b8", margin: 0 }}>{storageOk ? "Fotos: Firebase Storage OK" : "Fotos: Storage não configurado"}</p>
           </div>
         )}
 
@@ -168,11 +168,10 @@ export function NavBar({
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: 2,
+                gap: 0,
                 position: "relative",
               }}
             >
-              <span style={{ fontSize: 18 }}>{n.icon}</span>
               {n.badge && (
                 <span
                   style={{

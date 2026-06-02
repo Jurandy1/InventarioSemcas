@@ -58,6 +58,7 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
   const streamRef = useRef(null);
   const aliveRef = useRef(true);
   const startSeqRef = useRef(0);
+  const acceptingRef = useRef(false);
   const [stream, setStream] = useState(null);
   const [facingMode, setFacingMode] = useState("environment");
   const [flashOn, setFlashOn] = useState(false);
@@ -183,16 +184,24 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
   };
 
   const acceptPhoto = () => {
-    if (preview) {
-      setCaptured((p) => [...p, preview]);
-      setPreview(null);
-    }
+    if (acceptingRef.current || !preview) return;
+    acceptingRef.current = true;
+    const snapshot = preview;
+    setCaptured((arr) => {
+      if (arr.includes(snapshot)) return arr;
+      return [...arr, snapshot];
+    });
+    setPreview(null);
+    setTimeout(() => {
+      acceptingRef.current = false;
+    }, 350);
   };
 
   const retakePhoto = () => {
-    if (String(preview || "").startsWith("blob:")) {
+    const p = preview;
+    if (p && !captured.includes(p) && String(p).startsWith("blob:")) {
       try {
-        URL.revokeObjectURL(String(preview));
+        URL.revokeObjectURL(String(p));
       } catch {}
     }
     setPreview(null);
@@ -234,9 +243,9 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: 400, display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "rgba(0,0,0,.8)", zIndex: 1 }}>
-        <button onClick={cancel} style={{ background: "none", border: "none", color: "#fff", fontSize: 14, cursor: "pointer", fontWeight: 600 }}>✕ Cancelar</button>
+        <button onClick={cancel} style={{ background: "none", border: "none", color: "#fff", fontSize: 14, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
         <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{captured.length} foto(s)</span>
-        <button onClick={toggleFlash} style={{ background: flashOn ? "#fbbf24" : "rgba(255,255,255,.2)", border: "none", color: flashOn ? "#000" : "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>⚡ {flashOn ? "ON" : "OFF"}</button>
+        <button onClick={toggleFlash} style={{ background: flashOn ? "#fbbf24" : "rgba(255,255,255,.2)", border: "none", color: flashOn ? "#000" : "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Flash: {flashOn ? "ON" : "OFF"}</button>
       </div>
 
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
@@ -279,16 +288,22 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-around", padding: "16px", background: "rgba(0,0,0,.9)" }}>
         {preview ? (
           <>
-            <button onClick={retakePhoto} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 12, padding: "12px 24px", fontSize: 14, cursor: "pointer", fontWeight: 600 }}>↩ Refazer</button>
-            <button onClick={acceptPhoto} style={{ background: "#16a34a", border: "none", color: "#fff", borderRadius: 12, padding: "12px 24px", fontSize: 14, cursor: "pointer", fontWeight: 700 }}>✓ Usar foto</button>
+            <button onClick={retakePhoto} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 12, padding: "12px 24px", fontSize: 14, cursor: "pointer", fontWeight: 600 }}>Refazer</button>
+            <button
+              onClick={acceptPhoto}
+              disabled={acceptingRef.current}
+              style={{ background: "#16a34a", border: "none", color: "#fff", borderRadius: 12, padding: "12px 24px", fontSize: 14, cursor: "pointer", fontWeight: 700, opacity: acceptingRef.current ? 0.6 : 1 }}
+            >
+              Usar foto
+            </button>
           </>
         ) : (
           <>
-            <button onClick={() => fileInputRef.current?.click()} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: "50%", width: 48, height: 48, fontSize: 20, cursor: "pointer" }}>🖼️</button>
+            <button onClick={() => fileInputRef.current?.click()} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 12, padding: "10px 14px", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>Galeria</button>
             <button onClick={takePhoto} style={{ background: "#fff", border: "4px solid rgba(255,255,255,.3)", borderRadius: "50%", width: 72, height: 72, cursor: "pointer" }}>
               <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#fff" }} />
             </button>
-            <button onClick={flipCamera} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: "50%", width: 48, height: 48, fontSize: 20, cursor: "pointer" }}>🔄</button>
+            <button onClick={flipCamera} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 12, padding: "10px 14px", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>Trocar</button>
           </>
         )}
       </div>
@@ -310,7 +325,7 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
 
       {captured.length > 0 && !preview && (
         <button onClick={done} style={{ margin: "0 16px 16px", background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
-          ✓ Concluir ({captured.length} foto{captured.length > 1 ? "s" : ""})
+          Concluir ({captured.length} foto{captured.length > 1 ? "s" : ""})
         </button>
       )}
 

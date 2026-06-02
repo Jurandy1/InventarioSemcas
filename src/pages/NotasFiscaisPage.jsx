@@ -29,7 +29,7 @@ export function NotasFiscaisPage({
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>🧾 Notas Fiscais</h2>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Notas Fiscais</h2>
           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>{nfDataList.length} nota(s) no total</p>
         </div>
       </div>
@@ -41,7 +41,7 @@ export function NotasFiscaisPage({
             setNfSearch(v);
             setNfPage(1);
           }}
-          placeholder="🔍 Buscar NF ou fornecedor..."
+          placeholder="Buscar NF ou fornecedor..."
           style={inp}
         />
         <select
@@ -86,7 +86,7 @@ export function NotasFiscaisPage({
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <p style={{ margin: 0, fontSize: 15, fontWeight: 800, color: "#0f172a" }}>NF {n.nf}</p>
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "4px 10px", fontSize: 11, fontWeight: 800, background: meta.bg, color: meta.tx }}>
-                            {meta.ico} {n.tipoEntrada || "Próprio"}
+                            {n.tipoEntrada || "Próprio"}
                           </span>
                         </div>
                         <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.fornecedor || "—"}</p>
@@ -135,12 +135,11 @@ export function NotasFiscaisPage({
                               background: isPermutaNF ? "#fefce8" : foundSet.has(i.id) ? "#f0fdf4" : "#fff",
                             }}
                           >
-                            <span style={{ fontSize: 12 }}>{isPermutaNF ? "🔄" : foundSet.has(i.id) ? "✅" : "⬜"}</span>
                             <div style={{ minWidth: 0 }}>
                               <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                 {getDisplayDesc(i, fEntry)}
                               </p>
-                              {isPermutaNF && fEntry?.permutaDesc && <p style={{ margin: "1px 0 0", fontSize: 10, color: "#92400e", fontWeight: 700 }}>🔄 Real: {fEntry.permutaDesc}</p>}
+                              {isPermutaNF && fEntry?.permutaDesc && <p style={{ margin: "1px 0 0", fontSize: 10, color: "#92400e", fontWeight: 700 }}>Permuta real: {fEntry.permutaDesc}</p>}
                               <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {i.id} · {i.unidadeNome}</p>
                             </div>
                           </div>

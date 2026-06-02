@@ -47,7 +47,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
     if (!selectedCoord) return;
     try {
       await aprovarCoordenador(selectedCoord.uid, form.observacoes);
-      showT("✓ Coordenadora aprovada!");
+      showT("Coordenadora aprovada!");
       setModal(null);
       carregarCoord();
     } catch (e) {
@@ -59,7 +59,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
     if (!selectedCoord) return;
     try {
       await rejeitarCoordenador(selectedCoord.uid, form.motivo);
-      showT("✓ Coordenadora rejeitada");
+      showT("Coordenadora rejeitada");
       setModal(null);
       carregarCoord();
     } catch (e) {
@@ -71,7 +71,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
     if (!selectedCoord) return;
     try {
       await desativarCoordenador(selectedCoord.uid, form.motivo);
-      showT("✓ Coordenadora desativada");
+      showT("Coordenadora desativada");
       setModal(null);
       carregarCoord();
     } catch (e) {
@@ -180,8 +180,8 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
           <div style={{ minWidth: 0 }}>
             <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{coord.nome || "—"}</p>
-            <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>📧 {coord.email}</p>
-            <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>🏛️ {coord.unidadeNome}</p>
+            <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>{coord.email}</p>
+            <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>{coord.unidadeNome}</p>
             <p style={{ margin: "2px 0", fontSize: 11, color: "#94a3b8" }}>Matrícula: {coord.matricula || "—"}</p>
             {coord.dataCriacao && <p style={{ margin: "4px 0 0", fontSize: 10, color: "#94a3b8" }}>{new Date(coord.dataCriacao).toLocaleDateString("pt-BR")}</p>}
           </div>
@@ -212,7 +212,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>👩‍💼 Coordenadores</h2>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Coordenadores</h2>
         <button
           onClick={() => {
             setModal("novoconvite");
@@ -226,9 +226,9 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto", paddingBottom: 4 }}>
         {[
-          { id: "pendentes", label: `⏳ Pendentes (${coordPendentes.length})` },
-          { id: "aprovadas", label: `✅ Aprovadas (${coordAprovadas.length})` },
-          { id: "rejeitadas", label: `❌ Rejeitadas (${coordRejeitadas.length})` },
+          { id: "pendentes", label: `Pendentes (${coordPendentes.length})` },
+          { id: "aprovadas", label: `Aprovadas (${coordAprovadas.length})` },
+          { id: "rejeitadas", label: `Rejeitadas (${coordRejeitadas.length})` },
         ].map((t) => (
           <button
             key={t.id}
@@ -254,7 +254,6 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
         {tab === "pendentes" &&
           (coordPendentes.length === 0 ? (
             <div style={{ ...cd, textAlign: "center", padding: 40, gridColumn: "1 / -1" }}>
-              <p style={{ fontSize: 40, margin: "0 0 8px" }}>✅</p>
               <p style={{ color: "#94a3b8" }}>Nenhuma coordenadora pendente</p>
             </div>
           ) : (
@@ -264,8 +263,8 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
                 coord={coord}
                 action={{
                   buttons: [
-                    { label: "✓ Aprovar", action: "aprovar" },
-                    { label: "✕ Rejeitar", action: "rejeitar", color: "#dc2626" },
+                    { label: "Aprovar", action: "aprovar" },
+                    { label: "Rejeitar", action: "rejeitar", color: "#dc2626" },
                   ],
                   onAction: (action) => {
                     setSelectedCoord(coord);
@@ -280,7 +279,6 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
         {tab === "aprovadas" &&
           (coordAprovadas.length === 0 ? (
             <div style={{ ...cd, textAlign: "center", padding: 40, gridColumn: "1 / -1" }}>
-              <p style={{ fontSize: 40, margin: "0 0 8px" }}>👤</p>
               <p style={{ color: "#94a3b8" }}>Nenhuma coordenadora aprovada</p>
             </div>
           ) : (
@@ -289,7 +287,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
                 key={coord.uid}
                 coord={coord}
                 action={{
-                  buttons: [{ label: "🗑 Desativar", action: "desativar", color: "#dc2626" }],
+                  buttons: [{ label: "Desativar", action: "desativar", color: "#dc2626" }],
                   onAction: () => {
                     setSelectedCoord(coord);
                     setForm({ motivo: "", observacoes: "" });
@@ -303,7 +301,6 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
         {tab === "rejeitadas" &&
           (coordRejeitadas.length === 0 ? (
             <div style={{ ...cd, textAlign: "center", padding: 40, gridColumn: "1 / -1" }}>
-              <p style={{ fontSize: 40, margin: "0 0 8px" }}>📋</p>
               <p style={{ color: "#94a3b8" }}>Nenhuma coordenadora rejeitada</p>
             </div>
           ) : (
@@ -332,7 +329,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
               Cancelar
             </button>
             <button onClick={handleAprovar} style={{ ...bp, flex: 1, background: "#16a34a" }}>
-              ✓ Aprovar
+              Aprovar
             </button>
           </div>
         </Overlay>
@@ -359,7 +356,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
               Cancelar
             </button>
             <button onClick={handleRejeitar} disabled={!form.motivo.trim()} style={{ ...bp, flex: 1, background: "#dc2626", opacity: form.motivo.trim() ? 1 : 0.6 }}>
-              ✕ Rejeitar
+              Rejeitar
             </button>
           </div>
         </Overlay>
@@ -386,7 +383,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
               Cancelar
             </button>
             <button onClick={handleDesativar} style={{ ...bp, flex: 1, background: "#dc2626" }}>
-              🗑 Desativar
+              Desativar
             </button>
           </div>
         </Overlay>
@@ -411,7 +408,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
 
           {linkGerado ? (
             <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 12, padding: 16, marginTop: 16 }}>
-              <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#15803d" }}>✓ Convite criado!</p>
+              <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#15803d" }}>Convite criado!</p>
               <p style={{ margin: 0, fontSize: 12, color: "#065f46", wordBreak: "break-all", fontFamily: "monospace" }}>{linkGerado.link}</p>
               <button
                 onClick={() => {
@@ -420,7 +417,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
                 }}
                 style={{ width: "100%", marginTop: 10, ...bs, fontSize: 12 }}
               >
-                📋 Copiar link
+                Copiar link
               </button>
             </div>
           ) : (
@@ -429,7 +426,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
                 Cancelar
               </button>
               <button onClick={handleGerarConvite} style={{ ...bp, flex: 1 }}>
-                🔗 Gerar
+                Gerar
               </button>
             </div>
           )}

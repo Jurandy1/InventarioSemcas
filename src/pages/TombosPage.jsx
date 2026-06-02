@@ -3,20 +3,19 @@ import React from "react";
 export function TombosPage({ tombosNE, tombosDup, tombosTab, setTombosTab, isMob, bp, bs, cd }) {
   return (
     <div>
-      <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>🔖 Tombos</h2>
+      <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>Tombos</h2>
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button onClick={() => setTombosTab("ne")} style={{ ...(tombosTab === "ne" ? bp : bs), fontSize: 12 }}>
-          ❌ Não Encontrados ({tombosNE.length})
+          Não encontrados ({tombosNE.length})
         </button>
         <button onClick={() => setTombosTab("dup")} style={{ ...(tombosTab === "dup" ? bp : bs), fontSize: 12 }}>
-          🔄 Duplicados ({tombosDup.length})
+          Duplicados ({tombosDup.length})
         </button>
       </div>
 
       {tombosTab === "ne" &&
         (tombosNE.length === 0 ? (
           <div style={{ ...cd, textAlign: "center", padding: 40 }}>
-            <p style={{ fontSize: 48 }}>✅</p>
             <p style={{ color: "#94a3b8" }}>Nenhum</p>
           </div>
         ) : (
@@ -33,7 +32,6 @@ export function TombosPage({ tombosNE, tombosDup, tombosTab, setTombosTab, isMob
       {tombosTab === "dup" &&
         (tombosDup.length === 0 ? (
           <div style={{ ...cd, textAlign: "center", padding: 40 }}>
-            <p style={{ fontSize: 48 }}>🔄</p>
             <p style={{ color: "#94a3b8" }}>Detecção automática ao importar relatórios</p>
           </div>
         ) : (

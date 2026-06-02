@@ -21,7 +21,7 @@ export function DashboardPage({
 }) {
   return (
     <div>
-      <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>📊 Dashboard</h2>
+      <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>Dashboard</h2>
       <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
         {[
           { l: "Total", v: totalBens, c: "#1e3a8a" },
@@ -38,17 +38,17 @@ export function DashboardPage({
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
         <button onClick={() => gerarRelatorio("pdf")} style={{ ...bp, fontSize: 12 }}>
-          📄 PDF
+          PDF
         </button>
         <button onClick={() => gerarRelatorio("excel")} style={{ ...bp, fontSize: 12, background: "#0f766e" }}>
-          📊 Excel
+          Excel
         </button>
         <button onClick={fazerBackup} style={{ ...bs, fontSize: 12 }}>
-          💾 Backup
+          Backup
         </button>
       </div>
 
-      <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, marginTop: 20 }}>👥 Últimos a inventariar</h3>
+      <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, marginTop: 20 }}>Últimos a inventariar</h3>
       <div style={{ ...cd, marginBottom: 16 }}>
         {(() => {
           const userMap = {};

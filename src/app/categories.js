@@ -1,7 +1,7 @@
 export const CATEGORY_TREE = [
   {
     name: "Cadeiras",
-    icon: "🪑",
+    icon: "",
     re: /CADEIRA|POLTRONA|LONGARINA|ASSENTO/,
     subs: [
       { label: "Cadeira Giratória", match: (e) => /GIRAT|SECRETÁRI/.test(e) },
@@ -15,7 +15,7 @@ export const CATEGORY_TREE = [
   },
   {
     name: "Mesas",
-    icon: "🪞",
+    icon: "",
     re: /^MESA|BANCADA|BALCÃO/,
     subs: [
       { label: "Mesa de Trabalho", match: (e) => /TRABALHO|EM L|ESCRITÓRIO|ESCRITORIO/.test(e) || /^MESA$/.test(e) },
@@ -28,7 +28,7 @@ export const CATEGORY_TREE = [
   },
   {
     name: "Armários",
-    icon: "🗄️",
+    icon: "",
     re: /ARMÁRI|ARMARIO|ARQUIVO|ESTANTE|GAVETEIRO|RACK|PRATELEIRA|ROUPEIRO/,
     subs: [
       { label: "Arquivo", match: (e) => /ARQUIVO/.test(e) },
@@ -42,7 +42,7 @@ export const CATEGORY_TREE = [
   },
   {
     name: "Informática",
-    icon: "💻",
+    icon: "",
     re: /NOTEBOOK|COMPUTADOR|MICROCOMPUTADOR|CPU|LAPTOP|TABLET|DESKTOP|SCANNER|IMPRESSORA|MULTIFUNCIONAL|MONITOR|FRAGMENTADORA|ESTAÇÃO DE TRABALHO|MICRO COMPUTADOR/,
     subs: [
       { label: "Notebook / Laptop", match: (e) => /NOTEBOOK|LAPTOP/.test(e) },
@@ -57,7 +57,7 @@ export const CATEGORY_TREE = [
   },
   {
     name: "TV / AV",
-    icon: "📺",
+    icon: "",
     re: /TELEVISOR|TV |PROJETOR|TELÃO|DISPLAY|TELA|DATA SHOW/,
     subs: [
       { label: "Televisor", match: (e) => /TELEVISOR|^TV /.test(e) },
@@ -68,7 +68,7 @@ export const CATEGORY_TREE = [
   },
   {
     name: "Climatização",
-    icon: "❄️",
+    icon: "",
     re: /AR CONDICIONADO|VENTILADOR|CLIMATIZADOR|EXAUSTOR|SPLIT|PURIFICADOR/,
     subs: [
       { label: "Ar-Condicionado", match: (e) => /AR CONDICIONADO|SPLIT/.test(e) },
@@ -80,7 +80,7 @@ export const CATEGORY_TREE = [
   },
   {
     name: "Rede / TI",
-    icon: "🔌",
+    icon: "",
     re: /CÂMERA|CAMERA|ROTEADOR|SWITCH|NOBREAK|ESTABILIZADOR|SERVIDOR|HUB|MICROFONE|CAIXA AMPLIF|DVR|KIT DE SEGUR|MINI SYSTEM/,
     subs: [
       { label: "Câmera de Segurança", match: (e) => /CÂMERA|CAMERA|DVR|KIT DE SEGUR/.test(e) },
@@ -92,7 +92,7 @@ export const CATEGORY_TREE = [
   },
   {
     name: "Cozinha",
-    icon: "🍳",
+    icon: "",
     re: /LIQUIDIFICADOR|GELADEIRA|FOGÃO|MICROONDAS|CAFETEIRA|BEBEDOURO|FREEZER|FORNO|FILTRO|REFRIGERADOR|FOGAO|FRIGOBAR|BATEDEIRA|MAQUINA DE LAVAR/,
     subs: [
       { label: "Bebedouro", match: (e) => /BEBEDOURO/.test(e) },
@@ -104,7 +104,7 @@ export const CATEGORY_TREE = [
   },
   {
     name: "Saúde / Repouso",
-    icon: "🏥",
+    icon: "",
     re: /\bCAMA\b|MACA|COLCHÃO|BERÇO|BERCE/,
     subs: [
       { label: "Cama / Colchão", match: (e) => /CAMA|COLCHÃO/.test(e) },
@@ -114,7 +114,7 @@ export const CATEGORY_TREE = [
   },
   {
     name: "Outros",
-    icon: "📦",
+    icon: "",
     re: null,
     subs: [
       { label: "Veículos", match: (e) => /AUTOMÓVEL|MICROÔNIBUS|ÔNIBUS|CAMINHÃO/.test(e) },

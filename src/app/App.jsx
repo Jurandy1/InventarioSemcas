@@ -5,7 +5,7 @@ import { TArea, TInput } from "../components/FormFields.jsx";
 import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js";
 import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken, obterInventariantePorUid } from "../services/firebase.js";
 import { getDisplayPhotoUrl, uploadPhotos, isStorageOk, deletePhoto } from "../services/storage.js";
-import { generateCoordinadorLink, generateCoordinadorToken, generateQRCode } from "../services/qr-service.js";
+import { generateQRCode } from "../services/qr-service.js";
 import { criarBackupManual, logAuditoria, setupRealtimeSync } from "../services/audit.js";
 import { EVENTOS, gerarRelatorioExcel, gerarRelatorioPDF, notificationService, offlineManager } from "../services/features.js";
 import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "./categories.js";
@@ -25,7 +25,6 @@ import { ItensPage } from "../pages/ItensPage.jsx";
 import { NotasFiscaisPage } from "../pages/NotasFiscaisPage.jsx";
 import { TombosPage } from "../pages/TombosPage.jsx";
 import { DashboardPage } from "../pages/DashboardPage.jsx";
-import { LocaisPage } from "../pages/LocaisPage.jsx";
 import { useAuth } from "../hooks/useAuth.js";
 import { useUnidades } from "../hooks/useUnidades.js";
 import { useLocais } from "../hooks/useLocais.js";
@@ -87,6 +86,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const [cameraTarget, setCameraTarget] = useState(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [hideFound, setHideFound] = useState(true);
   const [tombosTab, setTombosTab] = useState("ne");
   const [globalSearch, setGlobalSearch] = useState("");
   const [globalResults, setGlobalResults] = useState([]);
@@ -250,20 +250,20 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
   const renderOfflineStatus = () => {
     if (queueStatus.isOnline && queueStatus.pending === 0 && queueStatus.failed === 0) {
-      return <span style={{ fontSize: 12, color: "#dcfce7", fontWeight: 700 }}>📡 Online</span>;
+      return <span style={{ fontSize: 12, color: "#dcfce7", fontWeight: 700 }}>Online</span>;
     }
 
     if (!queueStatus.isOnline) {
       return (
         <span style={{ fontSize: 12, color: "#fef3c7", fontWeight: 700 }}>
-          📴 Offline · {queueStatus.pending} pendente{queueStatus.pending !== 1 ? "s" : ""}
+          Offline · {queueStatus.pending} pendente{queueStatus.pending !== 1 ? "s" : ""}
         </span>
       );
     }
 
     return (
       <span style={{ fontSize: 12, color: "#fde68a", fontWeight: 700 }}>
-        ⏳ Fila {queueStatus.pending} pendente{queueStatus.pending !== 1 ? "s" : ""}{queueStatus.failed ? ` · ${queueStatus.failed} falha(s)` : ""}
+        Sincronizando · {queueStatus.pending} pendente{queueStatus.pending !== 1 ? "s" : ""}{queueStatus.failed ? ` · ${queueStatus.failed} falha(s)` : ""}
       </span>
     );
   };
@@ -313,6 +313,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   });
 
   const filtered = inventario.allItens.filter((i) => {
+    if (hideFound && found.foundSet.has(i.id)) return false;
     const s = search.toLowerCase();
     return (
       !s ||
@@ -330,10 +331,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   const origemMeta = {
-    Próprio: { bg: "#dbeafe", tx: "#1d4ed8", ico: "🏛️" },
-    Doação: { bg: "#fef3c7", tx: "#92400e", ico: "🎁" },
-    Incorporado: { bg: "#d1fae5", tx: "#065f46", ico: "📋" },
-    Permuta: { bg: "#ede9fe", tx: "#6d28d9", ico: "🔄" },
+    Próprio: { bg: "#dbeafe", tx: "#1d4ed8", ico: "" },
+    Doação: { bg: "#fef3c7", tx: "#92400e", ico: "" },
+    Incorporado: { bg: "#d1fae5", tx: "#065f46", ico: "" },
+    Permuta: { bg: "#ede9fe", tx: "#6d28d9", ico: "" },
   };
 
   const inp = { width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: isMob ? 16 : 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" };
@@ -343,17 +344,16 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
   const isAdmin = auth.logado?.role === "admin";
   const navs = [
-    { id: "inventario", icon: "📦", l: "Inventário", badge: inventario.unidadesAtivas.length > 0 ? inventario.unidadesAtivas.length : null },
-    { id: "busca", icon: "🔍", l: "Busca" },
-    { id: "itens", icon: "🪑", l: "Itens" },
-    { id: "nf", icon: "🧾", l: "Notas" },
-    { id: "tombos", icon: "🔖", l: "Tombos" },
-    { id: "dash", icon: "📊", l: "Dashboard" },
-    { id: "locais", icon: "📍", l: "Locais" },
+    { id: "inventario", l: "Inventário", badge: inventario.unidadesAtivas.length > 0 ? inventario.unidadesAtivas.length : null },
+    { id: "busca", l: "Busca" },
+    { id: "itens", l: "Itens" },
+    { id: "nf", l: "Notas" },
+    { id: "tombos", l: "Tombos" },
+    { id: "dash", l: "Dashboard" },
     ...(isAdmin
       ? [
-          { id: "coordenadores", icon: "👩‍💼", l: "Coordenadores" },
-          { id: "inventariantes", icon: "👷", l: "Inventariantes" },
+          { id: "coordenadores", l: "Coordenadores" },
+          { id: "inventariantes", l: "Inventariantes" },
         ]
       : []),
   ];
@@ -393,13 +393,13 @@ function OrganizedApp({ firebaseOk, isProd }) {
     setGlobalSearching(false);
   };
 
-  const openDetModal = (item) => {
+  const openDetModal = (item, forceLocalId) => {
     const f = found.foundMap[item.id];
     formRef.current = {
       detItem: item,
       detEstado: f?.estado || "Bom",
       detSituacao: f?.situacao || "Em uso",
-      detLocal: f?.localId || "",
+      detLocal: typeof forceLocalId === "string" ? forceLocalId : f?.localId || "",
       detObs: f?.obs || "",
       detMarca: f?.marca || item.marca || "",
       detOrigem: f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
@@ -490,7 +490,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       itemId: id,
       estado: getField("manEstado") || "Bom",
       situacao: getField("manSituacao") || "Em uso",
-      localId: locais.locais[0]?.id || "",
+      localId: getField("manLocal") || locais.locais[0]?.id || "",
       obs: desc.trim(),
       marca: getField("manMarca"),
       origem: getField("manOrigem") || "Próprio",
@@ -500,7 +500,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     });
     await logAuditoria("create", "manuais", id, null, { ...item, unidadeId: unidadeAtiva?.id, fotoUrls, inventario: created });
     setModal(null);
-    showT("✓ Item adicionado!");
+    showT("Item adicionado!");
   };
 
   const gerarRelatorio = async (formato = "pdf") => {
@@ -519,9 +519,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
         XLSX.writeFile(workbook, `relatorio_${unidadeAtiva.id}_${Date.now()}.xlsx`);
       }
       await logAuditoria("export", "relatorio", unidadeAtiva.id, null, { formato });
-      showT(`✓ Relatório em ${formato.toUpperCase()} gerado`);
+      showT(`Relatório em ${formato.toUpperCase()} gerado`);
     } catch {
-      showT("⚠️ Erro ao gerar relatório");
+      showT("Erro ao gerar relatório");
     } finally {
       setBusy(false);
     }
@@ -535,9 +535,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
         message: `Backup ${backup.id} criado`,
         type: "success",
       });
-      showT(`✓ Backup criado (${(backup.tamanho / 1024).toFixed(0)}KB)`);
+      showT(`Backup criado (${(backup.tamanho / 1024).toFixed(0)}KB)`);
     } catch {
-      showT("⚠️ Erro ao criar backup");
+      showT("Erro ao criar backup");
     } finally {
       setBusy(false);
     }
@@ -563,22 +563,28 @@ function OrganizedApp({ firebaseOk, isProd }) {
     }
     if (!unidadeAtiva?.id) return;
 
-    const token = generateCoordinadorToken(unidadeAtiva.id);
-    const link = generateCoordinadorLink(token);
-    const qrUrl = await generateQRCode(link);
-    setQrCodeUrl(qrUrl);
+    const token = `conv_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+    const agora = new Date();
+    const dataExpiracao = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    const coordDoc = {
+    const convite = {
       token,
       unidadeId: unidadeAtiva.id,
       unidadeNome: unidadeAtiva.nome,
-      coordenadoraNome: nome,
-      coordenadoraMatricula: matricula,
-      criadoEm: new Date().toISOString(),
-      ativa: true,
-      link,
+      matricula,
+      nomeSugerido: nome,
+      status: "ativo",
+      dataCriacao: agora.toISOString(),
+      dataExpiracao: dataExpiracao.toISOString(),
+      dataUso: null,
     };
-    await fsSet("coordenadores", token, coordDoc);
+    await fsSet("convites", token, convite);
+
+    const base = import.meta.env.BASE_URL || "/";
+    const prefix = base.endsWith("/") ? base : `${base}/`;
+    const link = `${window.location.origin}${prefix}#/coordregistro/${token}`;
+    const qrUrl = await generateQRCode(link);
+    setQrCodeUrl(qrUrl);
 
     const pendentes = inventario.allItens.filter((i) => !found.foundSet.has(i.id));
     const dataFin = new Date().toLocaleDateString("pt-BR");
@@ -589,7 +595,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     found.setTombosNE((prev) => [...prev, ...pendentes.map((i) => ({ ...i, unidade: i.unidadeNome, dataFin, coordenadora: nome, matricula }))]);
 
     setModal("qrcode-resultado");
-    showT("✓ Coordenadora cadastrada! QR Code gerado");
+    showT("Convite criado! A coordenadora se cadastra pelo QR Code e você aprova em Coordenadores.");
   };
 
   if (auth.loading || busy)
@@ -623,7 +629,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const banner =
     found.uploading && (
       <div style={{ background: "#1e40af", color: "#fff", padding: "8px 16px", textAlign: "center", fontSize: 13, fontWeight: 600 }}>
-        ☁️ {found.uploadMsg || "Enviando fotos..."}
+        {found.uploadMsg || "Enviando fotos..."}
       </div>
     );
 
@@ -669,9 +675,11 @@ function OrganizedApp({ firebaseOk, isProd }) {
             totalPages={totalPages}
             setPage={setPage}
             setSearch={setSearch}
+            hideFound={hideFound}
+            setHideFound={setHideFound}
             openDetModal={openDetModal}
-            onOpenManual={() => {
-              formRef.current = { manEstado: "Bom", manPatrimonio: "" };
+            onOpenManual={(localId) => {
+              formRef.current = { manEstado: "Bom", manPatrimonio: "", manLocal: String(localId || "") };
               bumpFt();
               setModal("manual");
             }}
@@ -680,8 +688,13 @@ function OrganizedApp({ firebaseOk, isProd }) {
             locais={locais.locais}
             onQuickAddLocal={async (nome) => {
               await locais.createLocal({ nome });
-              showT("✓ Local adicionado!");
+              showT("Local adicionado!");
             }}
+            onDeleteLocal={async (l) => {
+              await locais.deleteLocal(l);
+              showT("Local removido");
+            }}
+            showT={showT}
             onViewImage={onViewImage}
           />
         )}
@@ -771,24 +784,6 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
         {tab === "coordenadores" && <CoordenadoresTab unidades={unidades} showT={showT} isMob={isMob} />}
         {tab === "inventariantes" && <InventariantesTab showT={showT} isMob={isMob} />}
-
-        {tab === "locais" && (
-          <LocaisPage
-            locais={locais.locais}
-            found={found.found}
-            onNew={() => {
-              formRef.current = {};
-              setModal("addLocal");
-            }}
-            onDelete={async (l) => {
-              await locais.deleteLocal(l);
-            }}
-            showT={showT}
-            isMob={isMob}
-            bp={bp}
-            cd={cd}
-          />
-        )}
       </NavBar>
 
       {modal === "camera" && (
@@ -845,7 +840,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Adicionar Manual</h2>
             <button onClick={() => { revokeBlobUrls(formRef.current.manPhotos || []); setModal(null); }} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer", padding: "4px 8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              ✕
+              Fechar
             </button>
           </div>
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Descrição *</label>
@@ -907,7 +902,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
                   color: (formRef.current.manOrigem || "Próprio") === o ? "#1e3a8a" : "#6b7280",
                 }}
               >
-                {o === "Próprio" ? "🏛️ Próprio" : o === "Doação" ? "🎁 Doação" : "🔄 Permuta"}
+                {o}
               </button>
             ))}
           </div>
@@ -939,6 +934,15 @@ function OrganizedApp({ firebaseOk, isProd }) {
           <select key="manSit" defaultValue={getField("manSituacao") || "Em uso"} onChange={(e) => setField("manSituacao", e.target.value)} style={inp}>
             {SITUACOES.map((s) => (
               <option key={s}>{s}</option>
+            ))}
+          </select>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Local</label>
+          <select key={"manLocal_" + ft} defaultValue={getField("manLocal") || ""} onChange={(e) => { setField("manLocal", e.target.value); bumpFt(); }} style={inp}>
+            <option value="">— Sem local —</option>
+            {locais.locais.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.nome}
+              </option>
             ))}
           </select>
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Fotos</label>
@@ -977,8 +981,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             </div>
           ) : (
             <button onClick={() => openCamera("manual")} style={{ width: "100%", border: "2px dashed #cbd5e1", background: "#f8fafc", borderRadius: 10, padding: 16, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 28 }}>📷</span>
-              <span style={{ fontSize: 12, color: "#64748b" }}>Abrir câmera</span>
+              <span style={{ fontSize: 12, color: "#64748b" }}>Adicionar fotos</span>
             </button>
           )}
           <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
@@ -986,7 +989,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
               Cancelar
             </button>
             <button onClick={addManual} style={{ ...bp, flex: 1 }}>
-              ✓ Criar
+              Criar
             </button>
           </div>
         </Overlay>
@@ -1009,7 +1012,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 if (!String(n || "").trim()) return;
                 await locais.createLocal({ nome: n, desc: getField("localDesc") });
                 setModal(null);
-                showT("✓ Local criado!");
+                showT("Local criado!");
               }}
               style={{ ...bp, flex: 1 }}
             >
@@ -1022,7 +1025,6 @@ function OrganizedApp({ firebaseOk, isProd }) {
       {modal === "finalizar" && (
         <Overlay isMobile={isMob} onClose={() => setModal(null)}>
           <div style={{ textAlign: "center" }}>
-            <p style={{ fontSize: 48, margin: "0 0 16px" }}>⚠️</p>
             <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700 }}>Finalizar Inventário</h2>
             <p style={{ color: "#64748b", margin: "0 0 20px" }}>{inventario.unidadesAtivas.length === 1 ? inventario.unidadesAtivas[0].nome : `${inventario.unidadesAtivas.length} unidades selecionadas`}</p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
@@ -1036,7 +1038,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
               </div>
             </div>
             <div style={{ background: "#f9f3ff", border: "1.5px solid #e9d5ff", borderRadius: 12, padding: 16, marginBottom: 16, textAlign: "left" }}>
-              <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, color: "#6b21a8" }}>📋 Dados da Coordenadora</p>
+              <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, color: "#6b21a8" }}>Dados da Coordenadora</p>
               <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Nome completo *</p>
               <TInput initial={getField("coordNome")} onVal={(v) => setField("coordNome", v)} placeholder="Ex: Maria Silva..." style={{ ...inp, marginBottom: 10 }} />
               <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Matrícula *</p>
@@ -1047,7 +1049,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 Cancelar
               </button>
               <button onClick={finalizarComCoordenadora} style={{ ...bp, flex: 1, background: "#16a34a" }}>
-                ✓ Gerar QR Code
+                Gerar QR Code
               </button>
             </div>
           </div>
@@ -1063,7 +1065,6 @@ function OrganizedApp({ firebaseOk, isProd }) {
           }}
         >
           <div style={{ textAlign: "center" }}>
-            <p style={{ fontSize: 40, margin: "0 0 16px" }}>📱</p>
             <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 700 }}>QR Code Gerado</h2>
             <p style={{ color: "#64748b", margin: "0 0 16px", fontSize: 13 }}>
               {getField("coordNome")} • {getField("coordMatricula")}
@@ -1080,7 +1081,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 }}
                 style={{ ...bs, flex: 1 }}
               >
-                ⬇️ Baixar
+                Baixar
               </button>
               <button
                 onClick={() => {
@@ -1090,7 +1091,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 }}
                 style={{ ...bp, flex: 1 }}
               >
-                ✓ Feito
+                Feito
               </button>
             </div>
           </div>
@@ -1100,10 +1101,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
       {modal === "cancelar-inventario" && (
         <Overlay isMobile={isMob} onClose={() => setModal(null)}>
           <div style={{ textAlign: "center" }}>
-            <p style={{ fontSize: 52, margin: "0 0 12px" }}>⚠️</p>
             <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700, color: "#dc2626" }}>Cancelar Inventário?</h2>
             <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 12, padding: 16, marginBottom: 20, textAlign: "left" }}>
-              <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 800, color: "#991b1b" }}>⚠️ Atenção! Se confirmar o cancelamento:</p>
+              <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 800, color: "#991b1b" }}>Atenção! Se confirmar o cancelamento:</p>
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "#991b1b", lineHeight: 1.7 }}>
                 <li>Todos os registros deste inventário serão <strong>apagados permanentemente</strong></li>
                 <li>Os itens já inventariados <strong>perderão seus dados</strong> de estado, situação e fotos</li>

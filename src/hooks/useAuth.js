@@ -77,7 +77,7 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
         await loadAfterAuth?.();
       } catch (e) {
         try {
-          showT?.(`⚠️ ${e?.message || "Erro ao iniciar"}`);
+          showT?.(e?.message || "Erro ao iniciar");
         } catch {}
       } finally {
         clearTimeout(hard);
@@ -108,17 +108,17 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
             if (invEntry) {
               if (invEntry.status === "pendente_aprovacao") {
                 clearFirebaseSession();
-                setLoginError("⏳ Sua conta está aguardando aprovação do administrador. Tente novamente em breve.");
+                setLoginError("Sua conta está aguardando aprovação do administrador. Tente novamente em breve.");
                 return null;
               }
               if (invEntry.status === "rejeitado") {
                 clearFirebaseSession();
-                setLoginError("❌ Seu acesso foi rejeitado. Entre em contato com o administrador.");
+                setLoginError("Seu acesso foi rejeitado. Entre em contato com o administrador.");
                 return null;
               }
               if (invEntry.status === "desativado") {
                 clearFirebaseSession();
-                setLoginError("🚫 Sua conta foi desativada. Entre em contato com o administrador.");
+                setLoginError("Sua conta foi desativada. Entre em contato com o administrador.");
                 return null;
               }
               user.nome = invEntry.nome || user.nome;

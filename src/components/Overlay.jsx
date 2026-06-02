@@ -88,7 +88,7 @@ export function ImageOverlay({ src, onClose }) {
           zIndex: 501,
         }}
       >
-        ✕
+        Fechar
       </button>
 
       <img

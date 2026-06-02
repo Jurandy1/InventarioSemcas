@@ -81,7 +81,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
         const prevHora = existing.hora || "";
         entry.ultimoUsuarioAnterior = prevUser || undefined;
         if (prevEmail && prevEmail !== (logado?.email || "")) {
-          showT?.(`⚠️ Item já inventariado por ${prevUser || "outro usuário"}${prevHora ? ` em ${prevHora}` : ""}`);
+          showT?.(`Item já inventariado por ${prevUser || "outro usuário"}${prevHora ? ` em ${prevHora}` : ""}`);
         }
       }
 
@@ -186,7 +186,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
           await logAuditoria("queue-save", "inventario", item.id, before, offlineEntry);
           if (descEdit || espEdit) applyDescOverride?.(item.id, descEdit, espEdit);
           closeModal?.();
-          showT?.("✓ Salvo offline (sincronizará quando voltar online)");
+          showT?.("Salvo offline (sincronizará quando voltar online)");
           return;
         }
 
@@ -199,10 +199,10 @@ export function useFound({ showT, applyDescOverride } = {}) {
             allUrls = [...allUrls, ...newUrls];
             offlineEntry.fotoUrls = allUrls;
           } catch {
-            showT?.("⚠️ Fotos não foram salvas, mas o item foi registrado");
+            showT?.("Fotos não foram salvas, mas o item foi registrado");
           }
         } else if (compressedBase64.length > 0) {
-          showT?.("⚠️ Firebase Storage não configurado — fotos não salvas");
+          showT?.("Firebase Storage não configurado — fotos não salvas");
         }
 
         const after = await markFound({
@@ -241,9 +241,9 @@ export function useFound({ showT, applyDescOverride } = {}) {
         } catch {}
 
         closeModal?.();
-        showT?.("✓ Salvo com " + (allUrls.length > existingUrls.length ? "fotos" : "sucesso") + "!");
+        showT?.("Salvo com " + (allUrls.length > existingUrls.length ? "fotos" : "sucesso") + "!");
       } catch (e) {
-        showT?.("⚠️ " + (e?.message || "Erro ao salvar"));
+        showT?.(e?.message || "Erro ao salvar");
       } finally {
         setUploading(false);
         setUploadMsg("");

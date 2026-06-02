@@ -68,7 +68,6 @@ export function CoordinadorLogin() {
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #6b21a8, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 420 }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <p style={{ fontSize: 40, margin: 0 }}>👩‍💼</p>
           <h1 style={{ margin: "12px 0 4px", fontSize: 20, fontWeight: 700 }}>Acesso Coordenadora</h1>
           <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>Inventário SEMCAS</p>
         </div>
@@ -130,7 +129,7 @@ export function CoordinadorLogin() {
           }}
           style={{ width: "100%", background: "#6b21a8", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer", opacity: firebaseOk ? 1 : 0.7 }}
         >
-          {status === "loading" ? "Entrando..." : "✓ Entrar"}
+          {status === "loading" ? "Entrando..." : "Entrar"}
         </button>
 
         <p style={{ margin: "16px 0 0", fontSize: 11, color: "#94a3b8", textAlign: "center" }}>

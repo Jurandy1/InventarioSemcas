@@ -18,7 +18,13 @@ export default defineConfig(({ command }) => {
       : undefined,
     optimizeDeps: {
       noDiscovery: true,
-      include: ["react/jsx-runtime", "react/jsx-dev-runtime"],
+      include: [
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "react/jsx-runtime",
+        "react/jsx-dev-runtime",
+      ],
       exclude: ["xlsx", "xlsx/xlsx.mjs"],
     },
     server: {

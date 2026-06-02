@@ -186,7 +186,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       setFound((prev) => [...prev.filter((f) => f.patrimonioId !== detItem.id), { ...entry, _id: detItem.id }]);
       revokeBlobUrls(detNewBase64);
       setModal(null);
-      showT("✓ Salvo");
+      showT("Salvo");
     } catch (e) {
       console.error(e);
       showT(e.message || "Erro ao salvar");
@@ -211,7 +211,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       {/* Header */}
       <div style={{ background: "#6b21a8", color: "#fff", padding: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 200 }}>
         <div>
-          <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>👩‍💼 {coordData?.coordenadoraNome}</p>
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{coordData?.coordenadoraNome}</p>
           <p style={{ margin: 0, fontSize: 11, opacity: 0.8 }}>{coordData?.unidadeNome}</p>
         </div>
         <button onClick={onLogout} style={{ background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
@@ -223,8 +223,8 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
         {/* Tab nav */}
         <div style={{ display: "flex", gap: 8, marginBottom: 20, overflowX: "auto", paddingBottom: 8 }}>
           {[
-            { id: "itens", label: "📦 Meu Inventário", count: itens.length },
-            { id: "relatorio", label: "📊 Relatório" },
+            { id: "itens", label: "Meu Inventário", count: itens.length },
+            { id: "relatorio", label: "Relatório" },
           ].map((t) => (
             <button
               key={t.id}
@@ -244,16 +244,15 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
         {/* Itens tab */}
         {tab === "itens" && (
           <div>
-            <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>📦 Itens pendentes</h2>
+            <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>Itens pendentes</h2>
 
             {pendentes.length === 0 ? (
               <div style={{ ...cd, textAlign: "center", padding: 40 }}>
-                <p style={{ fontSize: 48 }}>✅</p>
                 <p style={{ color: "#94a3b8" }}>Todos os itens foram localizados!</p>
               </div>
             ) : (
               <>
-                <TInput initial={search} onVal={setSearch} placeholder="🔍 Buscar item..." style={{ ...inp, marginBottom: 12 }} />
+                <TInput initial={search} onVal={setSearch} placeholder="Buscar item..." style={{ ...inp, marginBottom: 12 }} />
                 <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(300px,1fr))", gap: 10 }}>
                   {filteredPendentes.map((item) => (
                     <div
@@ -274,7 +273,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
             {/* Also show already-found items */}
             {inventariados.length > 0 && (
               <div style={{ marginTop: 20 }}>
-                <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "#16a34a" }}>✅ Já localizados ({inventariados.length})</h3>
+                <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "#16a34a" }}>Já localizados ({inventariados.length})</h3>
                 <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(300px,1fr))", gap: 8 }}>
                   {inventariados.map((item) => {
                     const f = foundMap[item.id];
@@ -284,7 +283,6 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
                         onClick={() => openItem(item)}
                         style={{ ...cd, cursor: "pointer", border: "1.5px solid #bbf7d0", background: "#f0fdf4", display: "flex", gap: 10, alignItems: "center" }}
                       >
-                        <span style={{ fontSize: 18, flexShrink: 0 }}>✅</span>
                         <div style={{ minWidth: 0 }}>
                           <p style={{ margin: 0, fontSize: 12, fontWeight: 700 }}>{item.descricao || item.especie || "—"}</p>
                           <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {item.id}</p>
@@ -308,7 +306,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
         {/* Relatório tab */}
         {tab === "relatorio" && (
           <div>
-            <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>📊 Relatório</h2>
+            <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>Relatório</h2>
             <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
               {[
                 { label: "Total",       valor: itens.length,         cor: "#1e3a8a" },
@@ -334,7 +332,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
               <h2 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700 }}>{detItem.descricao || detItem.especie || "—"}</h2>
               <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Nº {detItem.id}</p>
             </div>
-            <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer", padding: "4px 8px" }}>✕</button>
+            <button onClick={() => setModal(null)} style={{ background: "none", border: "none", fontSize: 12, color: "#64748b", cursor: "pointer", padding: "8px 10px", fontWeight: 700 }}>Fechar</button>
           </div>
 
           {foundMap[detItem.id] ? (
@@ -380,7 +378,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
 
           <div style={{ marginTop: 12, padding: 12, background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a" }}>📷 Fotos</p>
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a" }}>Fotos</p>
               <button onClick={() => setModal("camera")} style={{ ...bp, padding: "9px 12px", fontSize: 12 }}>
                 Tirar / adicionar
               </button>
@@ -393,7 +391,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
           <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
             <button onClick={() => { setModal(null); setDetItem(null); }} style={{ ...bs, flex: 1 }}>Cancelar</button>
             <button onClick={saveItem} disabled={saving} style={{ ...bp, flex: 1, background: "#16a34a", opacity: saving ? 0.8 : 1 }}>
-              ✓ Salvar
+              Salvar
             </button>
           </div>
         </Overlay>

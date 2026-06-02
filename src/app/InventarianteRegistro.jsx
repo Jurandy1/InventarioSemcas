@@ -152,7 +152,6 @@ export function InventarianteRegistro() {
     return (
       <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#1e3a8a,#1e40af)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
         <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 420, textAlign: "center" }}>
-          <p style={{ fontSize: 48, margin: "0 0 16px" }}>❌</p>
           <h1 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 700 }}>Link inválido</h1>
           <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 12, padding: 16, marginBottom: 24 }}>
             <p style={{ margin: 0, fontSize: 13, color: "#991b1b", fontWeight: 600, lineHeight: 1.5 }}>{error}</p>
@@ -170,13 +169,12 @@ export function InventarianteRegistro() {
     return (
       <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#1e3a8a,#1e40af)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
         <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 420, textAlign: "center" }}>
-          <p style={{ fontSize: 48, margin: "0 0 16px" }}>✅</p>
           <h1 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700 }}>Cadastro realizado!</h1>
           <p style={{ color: "#64748b", fontSize: 13, margin: "0 0 20px" }}>
             Bem-vindo(a), <strong>{formData.nome}</strong>!
           </p>
           <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 12, padding: 16, marginBottom: 24, textAlign: "left" }}>
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#1e3a8a", marginBottom: 6 }}>⏳ Próximo passo</p>
+            <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#1e3a8a", marginBottom: 6 }}>Próximo passo</p>
             <p style={{ margin: 0, fontSize: 13, color: "#1e40af", lineHeight: 1.5 }}>
               Seu cadastro foi enviado para aprovação. O administrador analisará suas informações
               e liberará o acesso em breve. Você será notificado quando puder fazer login.
@@ -201,14 +199,12 @@ export function InventarianteRegistro() {
       <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 460 }}>
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <p style={{ fontSize: 40, margin: 0 }}>👷</p>
-          <h1 style={{ margin: "12px 0 4px", fontSize: 20, fontWeight: 700 }}>Cadastro de Inventariante</h1>
+          <h1 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 700 }}>Cadastro de Inventariante</h1>
           <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>Inventário SEMCAS</p>
         </div>
 
         {/* Invite info banner */}
         <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 16 }}>✉️</span>
           <p style={{ margin: 0, fontSize: 12, color: "#065f46", fontWeight: 600 }}>
             Convite válido até {new Date(convite?.dataExpiracao).toLocaleDateString("pt-BR")}
           </p>
@@ -303,7 +299,7 @@ export function InventarianteRegistro() {
             disabled={submitting}
             style={{ width: "100%", background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 9, padding: "12px 18px", fontSize: 14, fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer", marginTop: 4, opacity: submitting ? 0.8 : 1 }}
           >
-            {submitting ? "⏳ Cadastrando..." : "✓ Criar Conta"}
+            {submitting ? "Cadastrando..." : "Criar conta"}
           </button>
         </div>
 
