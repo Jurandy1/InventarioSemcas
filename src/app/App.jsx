@@ -445,16 +445,49 @@ function OrganizedApp({ firebaseOk, isProd }) {
       showT("Selecione uma unidade");
       return;
     }
-    const manualPatrimonio = buildManualPatrimonio(getField("manPatrimonio"));
-    const id = manualPatrimonio.id;
+    const qty = Math.max(1, Math.min(50, Math.floor(Number(formRef.current.manQtd || 1) || 1)));
+    const sharePhotos = formRef.current.manSharePhotos !== false;
 
-    if ((unidadeAtiva?.itens || []).some((i) => i.id === id)) {
-      showT("Já existe um item com esse patrimônio nesta unidade");
+    const manualPatrimonioRaw = String(getField("manPatrimonio") || "").trim();
+    const manualPatrimonio = buildManualPatrimonio(manualPatrimonioRaw);
+
+    if (qty > 1 && !sharePhotos) {
+      showT("Para fotos diferentes, cadastre um item por vez");
       return;
     }
 
-    const item = {
-      id,
+    if (qty > 1 && manualPatrimonioRaw && manualPatrimonio.patrimonioLabel !== "S/T") {
+      showT("Para patrimônio informado, use quantidade 1");
+      return;
+    }
+
+    const baseNow = Date.now();
+    const existingIds = new Set((unidadeAtiva?.itens || []).map((i) => i.id));
+
+    const makeId = (kind, i) => {
+      const rand = Math.random().toString(36).slice(2, 7);
+      return `${kind}_${baseNow}_${rand}_${i + 1}`;
+    };
+
+    const kind = manualPatrimonio.patrimonioLabel === "S/T" ? "ST" : manualPatrimonioRaw ? "MAN" : "MAN";
+
+    const ids = [];
+    if (qty === 1) {
+      const id = manualPatrimonio.id;
+      if (existingIds.has(id)) {
+        showT("Já existe um item com esse patrimônio nesta unidade");
+        return;
+      }
+      ids.push(id);
+    } else {
+      for (let i = 0; i < qty; i++) {
+        let candidate = makeId(kind, i);
+        while (existingIds.has(candidate) || ids.includes(candidate)) candidate = makeId(kind, i);
+        ids.push(candidate);
+      }
+    }
+
+    const baseItem = {
       patrimonioLabel: manualPatrimonio.patrimonioLabel,
       data: new Date().toLocaleDateString("pt-BR"),
       especie: getField("manEspecie") || desc.split(" ")[0].toUpperCase(),
@@ -469,38 +502,45 @@ function OrganizedApp({ firebaseOk, isProd }) {
       isManual: true,
     };
 
-    await fsSet("manuais", id, { ...item, unidadeId: unidadeAtiva?.id });
-
     let fotoUrls = [];
     if (formRef.current.manPhotos?.length && isStorageOk()) {
       setBusy(true);
       try {
         const compressed = await compressPhotoArray(formRef.current.manPhotos);
-        fotoUrls = await uploadPhotos(compressed, id);
+        const uploadPrefix = sharePhotos && qty > 1 ? `manual/${ids[0]}` : ids[0];
+        fotoUrls = await uploadPhotos(compressed, uploadPrefix);
       } catch {} finally {
         setBusy(false);
       }
     }
 
-    const novaAtiva = { ...unidadeAtiva, itens: [...unidadeAtiva.itens, item] };
+    const newItems = ids.map((id) => ({ ...baseItem, id }));
+    for (const it of newItems) {
+      await fsSet("manuais", it.id, { ...it, unidadeId: unidadeAtiva?.id });
+    }
+
+    const novaAtiva = { ...unidadeAtiva, itens: [...unidadeAtiva.itens, ...newItems] };
     inventario.setUnidadesAtivas((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
     setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
 
-    const created = await found.markFound({
-      itemId: id,
-      estado: getField("manEstado") || "Bom",
-      situacao: getField("manSituacao") || "Em uso",
-      localId: getField("manLocal") || locais.locais[0]?.id || "",
-      obs: desc.trim(),
-      marca: getField("manMarca"),
-      origem: getField("manOrigem") || "Próprio",
-      fotoUrls,
-      unidadeAtiva,
-      logado: auth.logado,
-    });
-    await logAuditoria("create", "manuais", id, null, { ...item, unidadeId: unidadeAtiva?.id, fotoUrls, inventario: created });
+    for (const it of newItems) {
+      const created = await found.markFound({
+        itemId: it.id,
+        estado: getField("manEstado") || "Bom",
+        situacao: getField("manSituacao") || "Em uso",
+        localId: getField("manLocal") || locais.locais[0]?.id || "",
+        obs: desc.trim(),
+        marca: getField("manMarca"),
+        origem: getField("manOrigem") || "Próprio",
+        fotoUrls,
+        unidadeAtiva,
+        logado: auth.logado,
+      });
+      await logAuditoria("create", "manuais", it.id, null, { ...it, unidadeId: unidadeAtiva?.id, fotoUrls, inventario: created });
+    }
+
     setModal(null);
-    showT("Item adicionado!");
+    showT(qty > 1 ? `Itens adicionados: ${qty}` : "Item adicionado!");
   };
 
   const gerarRelatorio = async (formato = "pdf") => {
@@ -679,7 +719,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             setHideFound={setHideFound}
             openDetModal={openDetModal}
             onOpenManual={(localId) => {
-              formRef.current = { manEstado: "Bom", manPatrimonio: "", manLocal: String(localId || "") };
+              formRef.current = { manEstado: "Bom", manPatrimonio: "", manLocal: String(localId || ""), manQtd: 1, manSharePhotos: true };
               bumpFt();
               setModal("manual");
             }}
@@ -858,6 +898,25 @@ function OrganizedApp({ firebaseOk, isProd }) {
             spellCheck={false}
             style={inp}
           />
+          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Quantidade</label>
+          <input
+            key={"manQtd_" + ft}
+            defaultValue={String(formRef.current.manQtd || 1)}
+            onChange={(e) => {
+              const n = Math.max(1, Math.min(50, Math.floor(Number(e.target.value || 1) || 1)));
+              formRef.current.manQtd = n;
+              bumpFt();
+            }}
+            type="number"
+            min={1}
+            max={50}
+            step={1}
+            inputMode="numeric"
+            style={inp}
+          />
+          <p style={{ margin: "6px 0 0", fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>
+            Para economizar fotos no Firebase, uma mesma foto pode ser aplicada a todos os itens desta quantidade.
+          </p>
           <div style={{ display: "flex", gap: 8, marginTop: 8, marginBottom: 2 }}>
             <button
               onClick={() => {
@@ -946,6 +1005,19 @@ function OrganizedApp({ firebaseOk, isProd }) {
             ))}
           </select>
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Fotos</label>
+          {Number(formRef.current.manQtd || 1) > 1 && (
+            <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 8px", fontSize: 12, color: "#334155", fontWeight: 700 }}>
+              <input
+                type="checkbox"
+                checked={formRef.current.manSharePhotos !== false}
+                onChange={(e) => {
+                  formRef.current.manSharePhotos = !!e.target.checked;
+                  bumpFt();
+                }}
+              />
+              Usar as mesmas fotos para todos
+            </label>
+          )}
           {formRef.current.manPhotos?.length > 0 ? (
             <div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>

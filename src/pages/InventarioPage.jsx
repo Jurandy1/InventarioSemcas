@@ -12,6 +12,30 @@ function getDisplayDesc(item, foundEntry) {
   return foundEntry?.descricaoEdit || item.descricao || item.especie || "—";
 }
 
+function formatBRL(v) {
+  const n = Number(v || 0) || 0;
+  try {
+    return n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  } catch {
+    return String(n);
+  }
+}
+
+function buildMetaLine(item) {
+  const code = getItemCode(item);
+  const data = item?.data || "—";
+  const valor = formatBRL(item?.valor || 0);
+  return `Nº ${code} · ${data} · R$ ${valor}`;
+}
+
+function buildOrigemLine(item) {
+  const fornecedor = String(item?.fornecedor || "").trim() || "—";
+  const empenho = String(item?.empenho || "").trim() || "NÃO INFORMADO";
+  const rawNf = String(item?.nf || "").trim();
+  const nf = rawNf ? (rawNf.toLowerCase().startsWith("nf") ? rawNf : `NF ${rawNf}`) : "NF —";
+  return `${fornecedor} · ${empenho} · ${nf}`;
+}
+
 function SmartImg({ src, alt = "", style, ...rest }) {
   const [resolved, setResolved] = React.useState(src || "");
   React.useEffect(() => {
@@ -520,7 +544,12 @@ export function InventarioPage({
                           <div key={it.id} style={{ ...cd, border: "1.5px solid #e2e8f0", padding: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                             <div style={{ minWidth: 0 }}>
                               <p style={{ margin: 0, fontSize: 12, fontWeight: 800 }}>{it.descricao || it.especie || "—"}</p>
-                              <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(it)}</p>
+                              <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>{buildMetaLine(it)}</p>
+                              <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8", overflowWrap: "anywhere" }}>{buildOrigemLine(it)}</p>
+                              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                                <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
+                                <Badge label="Sem fotos" c={{ bg: "#f1f5f9", tx: "#475569" }} />
+                              </div>
                             </div>
                             <button onClick={() => openDetModal(it, localSelecionadoId)} style={{ ...bp, padding: "8px 10px", fontSize: 12 }}>
                               + Adicionar
@@ -540,14 +569,22 @@ export function InventarioPage({
                         {foundNoLocal.map(({ id, f }) => {
                           const it = itemById.get(id) || itemById.get(f.patrimonioId || "");
                           const label = it ? getDisplayDesc(it, f) : f?.descricaoEdit || f?.obs || "—";
+                          const metaLine = it ? buildMetaLine(it) : `Nº ${id}`;
+                          const origemLine = it ? buildOrigemLine(it) : "—";
+                          const fotoCount = Array.isArray(f?.fotoUrls) ? f.fotoUrls.length : 0;
                           return (
                             <div key={id} style={{ ...cd, border: "1.5px solid #bbf7d0", padding: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                               <div style={{ minWidth: 0 }}>
                                 <p style={{ margin: 0, fontSize: 12, fontWeight: 800 }}>{label}</p>
-                                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {id}</p>
+                                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>{metaLine}</p>
+                                <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8", overflowWrap: "anywhere" }}>{origemLine}</p>
                                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
                                   <Badge label={f.estado || "—"} c={EC[f.estado] || { bg: "#f1f5f9", tx: "#334155" }} />
                                   <Badge label={f.situacao || "—"} c={SC[f.situacao] || { bg: "#f1f5f9", tx: "#334155" }} />
+                                  <Badge
+                                    label={fotoCount > 0 ? `${fotoCount} foto(s)` : "Sem fotos"}
+                                    c={fotoCount > 0 ? { bg: "#eff6ff", tx: "#1d4ed8" } : { bg: "#f1f5f9", tx: "#475569" }}
+                                  />
                                 </div>
                               </div>
                               {it ? (

@@ -19,8 +19,28 @@ const renderFatal = (err) => {
   root.innerHTML = `<div style="min-height:100vh;background:#f8fafc;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial"><div style="max-width:720px;width:100%;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px"><div style="font-weight:800;font-size:14px;color:#991b1b;margin-bottom:8px">Erro ao carregar a aplicação</div><pre style="white-space:pre-wrap;margin:0;color:#0f172a;font-size:12px;line-height:1.4">${msg}</pre></div></div>`;
 };
 
-window.addEventListener("error", (e) => renderFatal(e.error || e.message));
-window.addEventListener("unhandledrejection", (e) => renderFatal(e.reason));
+const isAbortError = (err) => {
+  const name = err && typeof err === "object" && "name" in err ? String(err.name || "") : "";
+  const msg =
+    err instanceof Error
+      ? String(err.message || "")
+      : err && typeof err === "object" && "message" in err
+        ? String(err.message || "")
+        : String(err || "");
+  const m = msg.toLowerCase();
+  return name === "AbortError" || m.includes("signal is aborted") || m.includes("aborted without reason") || m.includes("the user aborted");
+};
+
+window.addEventListener("error", (e) => {
+  const err = e?.error || e?.message;
+  if (isAbortError(err)) return;
+  renderFatal(err);
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const err = e?.reason;
+  if (isAbortError(err)) return;
+  renderFatal(err);
+});
 
 async function boot() {
   const el = document.getElementById("root");
@@ -42,4 +62,7 @@ async function boot() {
   }
 }
 
-boot().catch(renderFatal);
+boot().catch((e) => {
+  if (isAbortError(e)) return;
+  renderFatal(e);
+});
