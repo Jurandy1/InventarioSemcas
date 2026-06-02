@@ -190,6 +190,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
   useEffect(() => {
     if (!auth.logado) return;
+    const paused = inventario.invSubTab === "inventariar" && inventario.unidadesAtivas.length > 0;
+    if (paused) return;
     updateQueueStatus();
 
     const unsub = setupRealtimeSync(
@@ -246,7 +248,17 @@ function OrganizedApp({ firebaseOk, isProd }) {
     return () => {
       unsub?.();
     };
-  }, [auth.logado, unidadeAtiva?.id, updateQueueStatus, found.setFound, found.foundRef, locais.setLocais, locais.locaisRef]);
+  }, [
+    auth.logado,
+    unidadeAtiva?.id,
+    inventario.invSubTab,
+    inventario.unidadesAtivas.length,
+    updateQueueStatus,
+    found.setFound,
+    found.foundRef,
+    locais.setLocais,
+    locais.locaisRef,
+  ]);
 
   const renderOfflineStatus = () => {
     if (queueStatus.isOnline && queueStatus.pending === 0 && queueStatus.failed === 0) {

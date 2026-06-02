@@ -210,6 +210,24 @@ export function InventarioPage({
 
       {invSubTab === "inventariar" && (
         <div>
+          {unidadesAtivas.length > 0 && (
+            <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #c7d2fe", background: "#eef2ff", padding: "12px 16px" }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#1e3a8a" }}>
+                Inventário pausado · {unidadesAtivas.length} unidade{unidadesAtivas.length > 1 ? "s" : ""} selecionada{unidadesAtivas.length > 1 ? "s" : ""}
+              </p>
+              <p style={{ margin: "4px 0 10px", fontSize: 12, color: "#475569" }}>
+                Retome para continuar inventariando, ou cancele para encerrar a sessão.
+              </p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={() => setInvSubTab("andamento")} style={{ ...bp, fontSize: 12, padding: "8px 12px" }}>
+                  Retomar
+                </button>
+                <button onClick={onOpenCancelar} style={{ ...bs, fontSize: 12, padding: "8px 12px", color: "#dc2626", borderColor: "#fca5a5" }}>
+                  Cancelar sessão
+                </button>
+              </div>
+            </div>
+          )}
           <div style={{ marginBottom: 8 }}>
             <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Selecione uma ou mais unidades para inventariar juntas</p>
           </div>
@@ -303,6 +321,15 @@ export function InventarioPage({
                     Finalizar
                   </button>
                 )}
+                <button
+                  onClick={() => {
+                    setInvSubTab("inventariar");
+                    showT?.("Inventário pausado");
+                  }}
+                  style={{ ...bs, fontSize: 11, padding: "6px 12px" }}
+                >
+                  Pausar
+                </button>
                 <button onClick={onOpenCancelar} style={{ ...bs, fontSize: 11, padding: "6px 12px", color: "#dc2626", borderColor: "#fca5a5" }}>
                   Cancelar
                 </button>
