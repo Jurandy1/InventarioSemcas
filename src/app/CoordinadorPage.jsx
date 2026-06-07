@@ -7,6 +7,113 @@ import { fsGetAll, fsSet } from "../services/firebase.js";
 import { uploadPhotos } from "../services/storage.js";
 import { compressPhotoArray } from "../utils/performance.js";
 import { loadUnidades } from "../utils/xlsx.js";
+import { maskTipoEntrada } from "../utils/itemHelpers.js";
+import { PhotoThumb } from "../components/PhotoThumb.jsx";
+import { getDisplayPhotoUrl } from "../services/storage.js";
+import { gerarRelatorioExcelCoord, offlineManager, queueOfflineWithPhotos } from "../services/features.js";
+import { fecharCampanha, isCampanhaFechada, loadCampanhaAtiva } from "../services/campanha.js";
+import { useOfflineQueue } from "../hooks/useOfflineQueue.js";
+
+const COORD_PER_PAGE = 30;
+
+function getInventarianteEvidence(f) {
+  if (!f) return null;
+  if (f.registroInventariante) return f.registroInventariante;
+  if (f.coordToken || f.coordenadora) return null;
+  const usuario = String(f.usuario || "").trim().toUpperCase();
+  if (usuario && usuario !== "COORDENADORA") {
+    return {
+      estado: f.estado,
+      situacao: f.situacao,
+      localId: f.localId || "",
+      obs: f.obs || "",
+      fotoUrls: f.fotoUrls || [],
+      usuario: f.usuario || "",
+      data: f.data || "",
+      hora: f.hora || "",
+    };
+  }
+  return null;
+}
+
+function InvPhoto({ src, onView }) {
+  const [url, setUrl] = useState(src || "");
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const next = await getDisplayPhotoUrl(src);
+      if (alive) setUrl(next || src || "");
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [src]);
+  if (!url) return null;
+  return (
+    <PhotoThumb
+      src={url}
+      size={72}
+      onImageClick={() => onView?.(url)}
+    />
+  );
+}
+
+function getCoordUnidadeIds(coord) {
+  if (Array.isArray(coord?.unidadeIds) && coord.unidadeIds.length) return coord.unidadeIds;
+  if (coord?.unidadeId) return [coord.unidadeId];
+  return [];
+}
+
+function coordDisplayName(coord) {
+  return coord?.nome || coord?.coordenadoraNome || "Coordenadora";
+}
+
+function coordDisplayMatricula(coord) {
+  return coord?.matricula || coord?.coordenadoraMatricula || "";
+}
+
+function isRegistroInventariante(f) {
+  if (!f) return false;
+  if (f.registroInventariante) return true;
+  if (f.coordToken || f.coordenadora) return false;
+  const usuario = String(f.usuario || "").trim().toUpperCase();
+  return Boolean(usuario && usuario !== "COORDENADORA");
+}
+
+function mergeManuais(unids, manuais) {
+  if (!Array.isArray(manuais) || manuais.length === 0) return unids;
+  const byUnit = new Map();
+  for (const m of manuais) {
+    const unidadeId = m.unidadeId;
+    if (!unidadeId) continue;
+    if (!byUnit.has(unidadeId)) byUnit.set(unidadeId, []);
+    byUnit.get(unidadeId).push({
+      id: m._id || m.id,
+      patrimonioLabel: m.patrimonioLabel ?? null,
+      data: m.data || "",
+      especie: m.especie || "",
+      descricao: m.descricao || "",
+      marca: m.marca || "",
+      fornecedor: m.fornecedor || "",
+      empenho: m.empenho || "",
+      nf: m.nf || "",
+      dataNF: m.dataNF || "",
+      tipoEntrada: m.tipoEntrada || "Próprio",
+      valor: Number(m.valor || 0) || 0,
+      valorAtual: Number(m.valorAtual || 0) || 0,
+      isManual: true,
+    });
+  }
+  for (const u of unids) {
+    const extras = byUnit.get(u.id);
+    if (!extras?.length) continue;
+    const existingIds = new Set((u.itens || []).map((i) => i.id));
+    for (const e of extras) {
+      if (!existingIds.has(e.id)) u.itens.push(e);
+    }
+  }
+  return unids;
+}
 
 // Situacoes available to coordinator — Permuta is hidden
 const SITUACOES_COORD = SITUACOES.filter((s) => s !== "Permuta");
@@ -33,6 +140,10 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
   const [detExistingUrls, setDetExistingUrls] = useState([]);
   const [detNewBase64, setDetNewBase64] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [imgViewSrc, setImgViewSrc] = useState(null);
+  const [pendPage, setPendPage] = useState(1);
+  const [campanha, setCampanha] = useState(null);
+  const { queueStatus, updateQueueStatus } = useOfflineQueue();
   const revokeBlobUrls = (arr) => {
     for (const s of arr || []) {
       const v = String(s || "");
@@ -54,7 +165,8 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
   useEffect(() => {
     if (!coordData?.uid) return;
 
-    const interval = setInterval(async () => {
+    const checkStatus = async () => {
+      if (document.visibilityState === "hidden") return;
       try {
         const { obterCoordPorUid } = await import("../services/firebase.js");
         const coord = await obterCoordPorUid(coordData?.uid);
@@ -69,24 +181,116 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       } catch (e) {
         console.error("Erro ao verificar status:", e);
       }
-    }, 30000);
+    };
 
+    checkStatus();
+    const interval = setInterval(checkStatus, 30000);
     return () => clearInterval(interval);
   }, [coordData?.uid, onLogout]);
 
   useEffect(() => {
     async function load() {
       try {
-        const unidades = await loadUnidades(false);
-        const unidade = unidades.find((u) => u.id === coordData?.unidadeId) || unidades.find((u) => u.nome === coordData?.unidadeNome);
-        const unitItems = (unidade?.itens || [])
-          .map((i) => ({ ...i, unidadeId: unidade?.id, unidadeNome: unidade?.nome }))
-          .filter((i) => i.tipoEntrada !== "Permuta");
+        const unitIds = getCoordUnidadeIds(coordData);
+        const unitIdSet = new Set(unitIds);
+
+        let unidades = await loadUnidades(false);
+        try {
+          const manuais = await fsGetAll("manuais");
+          unidades = mergeManuais(unidades, manuais);
+        } catch {}
+
+        let selectedUnits = unitIds.length
+          ? unidades.filter((u) => unitIdSet.has(u.id))
+          : [];
+        if (!selectedUnits.length && coordData?.unidadeNome) {
+          selectedUnits = unidades.filter((u) => u.nome === coordData.unidadeNome);
+        }
+        if (!selectedUnits.length && coordData?.unidadeId) {
+          const one = unidades.find((u) => u.id === coordData.unidadeId);
+          if (one) selectedUnits = [one];
+        }
+
+        const unitItems = selectedUnits.flatMap((unidade) =>
+          (unidade?.itens || []).map((i) => ({ ...i, unidadeId: unidade.id, unidadeNome: unidade.nome })),
+        );
         setItens(unitItems);
 
-        const [foundDocs, locDocs] = await Promise.all([fsGetAll("inventario"), fsGetAll("locais")]);
-        setFound(foundDocs);
-        setLocais(locDocs);
+        let foundDocs = [];
+        if (unitIds.length === 1) {
+          foundDocs = await fsGetAll("inventario", {
+            where: [{ field: "unidadeId", op: "EQUAL", value: unitIds[0] }],
+            orderBy: ["__name__"],
+            pageSize: 300,
+          });
+        } else if (unitIds.length > 1) {
+          const chunks = await Promise.all(
+            unitIds.map((uid) =>
+              fsGetAll("inventario", {
+                where: [{ field: "unidadeId", op: "EQUAL", value: uid }],
+                orderBy: ["__name__"],
+                pageSize: 300,
+              })
+            )
+          );
+          const seen = new Set();
+          for (const chunk of chunks) {
+            for (const d of chunk) {
+              const pid = d.patrimonioId || d._id;
+              if (seen.has(pid)) continue;
+              seen.add(pid);
+              foundDocs.push(d);
+            }
+          }
+        }
+
+        const itemIds = new Set(unitItems.map((i) => i.id));
+        const scopedFound = foundDocs.filter(
+          (f) => itemIds.has(f.patrimonioId) && (!f.unidadeId || unitIdSet.size === 0 || unitIdSet.has(f.unidadeId))
+        );
+        setFound(scopedFound);
+
+        let locDocs = [];
+        if (unitIds.length === 1) {
+          locDocs = await fsGetAll("locais", {
+            where: [{ field: "unidadeIds", op: "ARRAY_CONTAINS", value: unitIds[0] }],
+            pageSize: 150,
+          });
+        } else if (unitIds.length > 1) {
+          const locChunks = await Promise.all(
+            unitIds.map((uid) =>
+              fsGetAll("locais", {
+                where: [{ field: "unidadeIds", op: "ARRAY_CONTAINS", value: uid }],
+                pageSize: 150,
+              })
+            )
+          );
+          const locSeen = new Set();
+          for (const chunk of locChunks) {
+            for (const d of chunk) {
+              const lid = d._id || d.id;
+              if (locSeen.has(lid)) continue;
+              locSeen.add(lid);
+              locDocs.push(d);
+            }
+          }
+        }
+
+        const usedLocalIds = new Set(scopedFound.map((f) => f.localId).filter(Boolean));
+        const scopedLocais = locDocs
+          .map((d) => ({ ...d, id: d._id || d.id }))
+          .filter((l) => {
+            const id = l.id || l._id;
+            if (usedLocalIds.has(id)) return true;
+            const lu = Array.isArray(l.unidadeIds) ? l.unidadeIds : [];
+            if (lu.length && unitIdSet.size) return lu.some((uid) => unitIdSet.has(uid));
+            return false;
+          });
+        setLocais(scopedLocais);
+
+        try {
+          setCampanha(await loadCampanhaAtiva());
+        } catch {}
       } catch (e) {
         console.error("Erro ao carregar:", e);
         showT("Erro ao carregar dados");
@@ -135,14 +339,15 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
 
   const openItem = (item) => {
     const f = foundMap[item.id];
+    const fromInv = isRegistroInventariante(f);
+    const ev = getInventarianteEvidence(f);
     setDetItem(item);
     setDetEstado(f?.estado || "Bom");
-    // Mask permuta: coordinator never sees "Permuta" situacao
     setDetSituacao(maskSituacao(f?.situacao || "Em uso"));
-    setDetLocal(f?.localId || "");
-    setDetObs(f?.obs || "");
-    setDetMarca(f?.marca || item.marca || "");
-    setDetExistingUrls((f?.fotoUrls || []).slice());
+    setDetLocal(fromInv && !f?.coordToken ? "" : f?.localId || "");
+    setDetObs("");
+    setDetMarca(fromInv && !f?.coordToken ? item.marca || "" : f?.marca || item.marca || "");
+    setDetExistingUrls(f?.coordToken || f?.coordenadora ? (f?.fotoUrls || []).slice() : []);
     revokeBlobUrls(detNewBase64);
     setDetNewBase64([]);
     setModal("detalhe");
@@ -150,40 +355,82 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
 
   const saveItem = async () => {
     if (!detItem) return;
+    if (isCampanhaFechada(campanha)) {
+      showT("Inventário fechado — alterações não permitidas");
+      return;
+    }
     setSaving(true);
     try {
-      let fotoUrls = [...(detExistingUrls || [])];
+      const prev = foundMap[detItem.id];
+      const fromInv = isRegistroInventariante(prev);
+      const isPermutaItem = prev?.situacao === "Permuta" || detItem?.tipoEntrada === "Permuta";
+      let fotoUrls = fromInv ? [] : [...(detExistingUrls || [])];
+
+      const now = new Date();
+      const registroInventariante =
+        prev?.registroInventariante ||
+        getInventarianteEvidence(prev) ||
+        (fromInv
+          ? {
+              estado: prev.estado,
+              situacao: prev.situacao,
+              localId: prev.localId || "",
+              obs: prev.obs || "",
+              fotoUrls: prev.fotoUrls || [],
+              usuario: prev.usuario || "",
+              data: prev.data || "",
+              hora: prev.hora || "",
+            }
+          : null);
+
+      const entry = {
+        patrimonioId: detItem.id,
+        unidadeId: coordData?.unidadeId || detItem?.unidadeId || prev?.unidadeId || "",
+        unidadeNome: coordData?.unidadeNome || detItem?.unidadeNome || prev?.unidadeNome || "",
+        estado: detEstado,
+        situacao: isPermutaItem ? "Permuta" : detSituacao,
+        localId: detLocal || "",
+        obs: detObs || "",
+        marca: detMarca || "",
+        origem: isPermutaItem ? "Permuta" : detItem.tipoEntrada || prev?.origem || "Próprio",
+        fotoUrls,
+        data: now.toLocaleDateString("pt-BR"),
+        hora: now.toLocaleTimeString("pt-BR"),
+        usuario: coordDisplayName(coordData),
+        email: coordData?.email || "",
+        ultimaAtualizacao: now.toISOString(),
+        coordenadora: coordDisplayName(coordData),
+        matricula: coordDisplayMatricula(coordData),
+        coordToken: token,
+        ...(registroInventariante ? { registroInventariante } : {}),
+      };
+
+      if (!navigator.onLine) {
+        await queueOfflineWithPhotos({
+          type: "save",
+          data: { collection: "inventario", docId: detItem.id, content: entry },
+          photos: detNewBase64,
+          uploadPrefix: `coord/${token}/${detItem.id}_${Date.now()}`,
+        });
+        updateQueueStatus();
+        setFound((prevList) => [...prevList.filter((f) => f.patrimonioId !== detItem.id), { ...entry, _id: detItem.id }]);
+        revokeBlobUrls(detNewBase64);
+        setDetNewBase64([]);
+        setModal(null);
+        showT("Na fila (offline)");
+        return;
+      }
+
       if (detNewBase64.length > 0) {
         const prefix = `coord/${token}/${detItem.id}_${Date.now()}`;
         const compressed = await compressPhotoArray(detNewBase64);
         const uploaded = await uploadPhotos(compressed, prefix);
         fotoUrls = [...fotoUrls, ...uploaded];
+        entry.fotoUrls = fotoUrls;
       }
 
-      const now = new Date();
-      const entry = {
-        patrimonioId: detItem.id,
-        unidadeId: coordData?.unidadeId || detItem?.unidadeId || "",
-        unidadeNome: coordData?.unidadeNome || detItem?.unidadeNome || "",
-        estado: detEstado,
-        situacao: detSituacao,
-        localId: detLocal || "",
-        obs: detObs || "",
-        marca: detMarca || "",
-        origem: detItem.tipoEntrada || "Próprio",
-        fotoUrls,
-        data: now.toLocaleDateString("pt-BR"),
-        hora: now.toLocaleTimeString("pt-BR"),
-        usuario: coordData?.coordenadoraNome || "COORDENADORA",
-        email: "",
-        ultimaAtualizacao: now.toISOString(),
-        coordenadora: coordData?.coordenadoraNome || "",
-        matricula: coordData?.coordenadoraMatricula || "",
-        coordToken: token,
-      };
-
       await fsSet("inventario", detItem.id, entry);
-      setFound((prev) => [...prev.filter((f) => f.patrimonioId !== detItem.id), { ...entry, _id: detItem.id }]);
+      setFound((prevList) => [...prevList.filter((f) => f.patrimonioId !== detItem.id), { ...entry, _id: detItem.id }]);
       revokeBlobUrls(detNewBase64);
       setModal(null);
       showT("Salvo");
@@ -192,6 +439,20 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       showT(e.message || "Erro ao salvar");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const exportExcel = async () => {
+    try {
+      const nome =
+        Array.isArray(coordData?.unidadeNomes) && coordData.unidadeNomes.length
+          ? coordData.unidadeNomes.join(", ")
+          : coordData?.unidadeNome || "";
+      const { workbook, XLSX } = await gerarRelatorioExcelCoord(itens, foundMap, nome);
+      XLSX.writeFile(workbook, `inventario_coord_${Date.now()}.xlsx`);
+      showT("Excel exportado");
+    } catch (e) {
+      showT(e.message || "Erro ao exportar");
     }
   };
 
@@ -206,13 +467,45 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
     );
   }, [pendentes, search]);
 
+  const pendTotalPages = Math.max(1, Math.ceil(filteredPendentes.length / COORD_PER_PAGE));
+  const pagedPendentes = filteredPendentes.slice((pendPage - 1) * COORD_PER_PAGE, pendPage * COORD_PER_PAGE);
+
+  useEffect(() => {
+    setPendPage(1);
+  }, [search]);
+
+  const campanhaFechada = isCampanhaFechada(campanha);
+
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
       {/* Header */}
       <div style={{ background: "#6b21a8", color: "#fff", padding: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 200 }}>
         <div>
-          <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{coordData?.coordenadoraNome}</p>
-          <p style={{ margin: 0, fontSize: 11, opacity: 0.8 }}>{coordData?.unidadeNome}</p>
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{coordDisplayName(coordData)}</p>
+          <p style={{ margin: 0, fontSize: 11, opacity: 0.8 }}>
+            {Array.isArray(coordData?.unidadeNomes) && coordData.unidadeNomes.length > 1
+              ? `${coordData.unidadeNomes.length} unidades`
+              : coordData?.unidadeNome}
+          </p>
+          {(queueStatus.pending > 0 || queueStatus.failed > 0 || !queueStatus.isOnline) && (
+            <p style={{ margin: "4px 0 0", fontSize: 10, opacity: 0.9 }}>
+              {!queueStatus.isOnline
+                ? `Offline · ${queueStatus.pending} na fila`
+                : `${queueStatus.pending} pendente(s)${queueStatus.failed ? ` · ${queueStatus.failed} falha(s)` : ""}`}
+              {queueStatus.isOnline && (queueStatus.pending > 0 || queueStatus.failed > 0) ? (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await offlineManager.retrySync();
+                    updateQueueStatus();
+                  }}
+                  style={{ marginLeft: 6, background: "rgba(255,255,255,.2)", border: "none", borderRadius: 4, color: "#fff", fontSize: 10, cursor: "pointer", padding: "1px 6px" }}
+                >
+                  Sync
+                </button>
+              ) : null}
+            </p>
+          )}
         </div>
         <button onClick={onLogout} style={{ background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
           Sair
@@ -220,6 +513,11 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       </div>
 
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: isMob ? 12 : 24 }}>
+        {campanhaFechada && (
+          <div style={{ background: "#991b1b", color: "#fff", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12, fontWeight: 600 }}>
+            Inventário fechado — apenas consulta
+          </div>
+        )}
         {/* Tab nav */}
         <div style={{ display: "flex", gap: 8, marginBottom: 20, overflowX: "auto", paddingBottom: 8 }}>
           {[
@@ -254,7 +552,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
               <>
                 <TInput initial={search} onVal={setSearch} placeholder="Buscar item..." style={{ ...inp, marginBottom: 12 }} />
                 <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(300px,1fr))", gap: 10 }}>
-                  {filteredPendentes.map((item) => (
+                  {pagedPendentes.map((item) => (
                     <div
                       key={item.id}
                       onClick={() => openItem(item)}
@@ -262,11 +560,26 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
                     >
                       <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{item.descricao || item.especie || "—"}</p>
                       <p style={{ margin: "4px 0 0", fontSize: 11, color: "#64748b" }}>Nº {item.id}</p>
-                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>{item.fornecedor || "—"}</p>
+                      {item.tipoEntrada && item.tipoEntrada !== "Permuta" && (
+                        <p style={{ margin: "2px 0 0", fontSize: 10, color: "#94a3b8" }}>{maskTipoEntrada(item.tipoEntrada)}</p>
+                      )}
                       <p style={{ margin: "10px 0 0", fontSize: 11, fontWeight: 700, color: "#dc2626" }}>Pendente</p>
                     </div>
                   ))}
                 </div>
+                {pendTotalPages > 1 && (
+                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 14 }}>
+                    <button disabled={pendPage <= 1} onClick={() => setPendPage((p) => Math.max(1, p - 1))} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
+                      ‹
+                    </button>
+                    <span style={{ fontSize: 12, color: "#64748b" }}>
+                      Pág {pendPage}/{pendTotalPages} · {filteredPendentes.length} pendentes
+                    </span>
+                    <button disabled={pendPage >= pendTotalPages} onClick={() => setPendPage((p) => Math.min(pendTotalPages, p + 1))} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
+                      ›
+                    </button>
+                  </div>
+                )}
               </>
             )}
 
@@ -307,6 +620,24 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
         {tab === "relatorio" && (
           <div>
             <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>Relatório</h2>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+              <button onClick={exportExcel} style={{ ...bp, fontSize: 12, background: "#0f766e" }}>
+                Exportar Excel
+              </button>
+              {!campanhaFechada && (
+                <button
+                  onClick={async () => {
+                    if (!window.confirm("Fechar o inventário? Inventariantes não poderão registrar novos itens.")) return;
+                    await fecharCampanha(coordData?.email || coordDisplayName(coordData));
+                    setCampanha(await loadCampanhaAtiva());
+                    showT("Inventário fechado");
+                  }}
+                  style={{ ...bs, fontSize: 12, color: "#991b1b", borderColor: "#fca5a5" }}
+                >
+                  Fechar inventário
+                </button>
+              )}
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
               {[
                 { label: "Total",       valor: itens.length,         cor: "#1e3a8a" },
@@ -336,11 +667,48 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
           </div>
 
           {foundMap[detItem.id] ? (
-            <div style={{ marginTop: 10, marginBottom: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
-              <Badge label="Inventariado" c={{ bg: "#d1fae5", tx: "#065f46" }} />
-              <span style={{ fontSize: 11, color: "#64748b", alignSelf: "center" }}>
-                {foundMap[detItem.id].data} {foundMap[detItem.id].hora || ""}
-              </span>
+            <div style={{ marginTop: 10, marginBottom: 10 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <Badge label="Inventariado" c={{ bg: "#d1fae5", tx: "#065f46" }} />
+                {isRegistroInventariante(foundMap[detItem.id]) && (
+                  <Badge label="Aguardando verificação" c={{ bg: "#dbeafe", tx: "#1e40af" }} />
+                )}
+              </div>
+              {(() => {
+                const ev = getInventarianteEvidence(foundMap[detItem.id]);
+                if (!ev) return null;
+                const invPhotos = Array.isArray(ev.fotoUrls) ? ev.fotoUrls : [];
+                return (
+                  <div style={{ marginTop: 10, padding: 12, background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+                    <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#475569" }}>Registro do inventariante</p>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <Badge label={ev.estado || "—"} c={EC[ev.estado] || EC.Bom} />
+                      <Badge label={maskSituacao(ev.situacao)} c={SC[maskSituacao(ev.situacao)] || SC["Em uso"]} />
+                    </div>
+                    <p style={{ margin: "8px 0 0", fontSize: 11, color: "#64748b" }}>
+                      Local: {locais.find((l) => l.id === ev.localId)?.nome || "—"}
+                    </p>
+                    {ev.obs ? (
+                      <p style={{ margin: "6px 0 0", fontSize: 11, color: "#334155", lineHeight: 1.45 }}>
+                        <strong>Obs:</strong> {ev.obs}
+                      </p>
+                    ) : null}
+                    <p style={{ margin: "6px 0 0", fontSize: 10, color: "#94a3b8" }}>
+                      {ev.usuario || "Inventariante"}{ev.data ? ` · ${ev.data}` : ""}{ev.hora ? ` ${ev.hora}` : ""}
+                    </p>
+                    {invPhotos.length > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#475569" }}>Fotos do inventariante ({invPhotos.length})</p>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {invPhotos.map((ph, i) => (
+                            <InvPhoto key={i} src={ph} onView={setImgViewSrc} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             <div style={{ marginTop: 10, marginBottom: 10 }}>
@@ -373,12 +741,16 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
           <p style={{ margin: "12px 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Marca</p>
           <TInput initial={detMarca} onVal={setDetMarca} placeholder="Marca..." style={inp} />
 
-          <p style={{ margin: "12px 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Observação</p>
-          <TArea initial={detObs} onVal={setDetObs} rows={3} placeholder="Obs..." style={{ ...inp, resize: "none" }} />
+          <p style={{ margin: "12px 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>
+            {isRegistroInventariante(foundMap[detItem.id]) ? "Observação da verificação" : "Observação"}
+          </p>
+          <TArea initial={detObs} onVal={setDetObs} rows={3} placeholder="Sua observação..." style={{ ...inp, resize: "none" }} />
 
           <div style={{ marginTop: 12, padding: 12, background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a" }}>Fotos</p>
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a" }}>
+                {isRegistroInventariante(foundMap[detItem.id]) ? "Fotos da verificação" : "Fotos"}
+              </p>
               <button onClick={() => setModal("camera")} style={{ ...bp, padding: "9px 12px", fontSize: 12 }}>
                 Tirar / adicionar
               </button>
@@ -408,6 +780,15 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       {toast && (
         <div style={{ position: "fixed", bottom: "calc(24px + env(safe-area-inset-bottom, 0px))", left: "50%", transform: "translateX(-50%)", background: "#6b21a8", color: "#fff", padding: "11px 24px", borderRadius: 24, fontSize: 13, fontWeight: 600, zIndex: 400, boxShadow: "0 4px 16px rgba(0,0,0,.25)", maxWidth: "92vw" }}>
           {toast}
+        </div>
+      )}
+
+      {imgViewSrc && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.88)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          onClick={() => setImgViewSrc(null)}
+        >
+          <img src={imgViewSrc} alt="" style={{ maxWidth: "100%", maxHeight: "90vh", borderRadius: 8 }} />
         </div>
       )}
     </div>

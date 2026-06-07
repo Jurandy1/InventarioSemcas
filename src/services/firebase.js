@@ -46,6 +46,21 @@ export function getFirebaseSession() {
   return { token: authToken, uid: authUid };
 }
 
+export function mapFirebaseAuthError(code) {
+  const c = String(code || "").trim();
+  if (c === "ADMIN_ONLY_OPERATION") {
+    return "Cadastro bloqueado no Firebase. Ative E-mail/Senha em Authentication → Sign-in method (Firebase Console).";
+  }
+  if (c === "OPERATION_NOT_ALLOWED") {
+    return "Este método de login não está habilitado no Firebase Console.";
+  }
+  if (c === "EMAIL_EXISTS") return "E-mail já cadastrado";
+  if (c === "EMAIL_NOT_FOUND") return "E-mail não encontrado";
+  if (c === "INVALID_PASSWORD") return "Senha incorreta";
+  if (c === "INVALID_LOGIN_CREDENTIALS") return "E-mail ou senha incorretos";
+  return c || "Erro de autenticação";
+}
+
 export async function refreshAuthToken(storedRefreshToken) {
   assertFirebaseConfigured();
   const body = new URLSearchParams({
@@ -77,15 +92,7 @@ export async function fbLogin(email, password) {
   }, 12000);
   const d = await r.json();
   if (d.error) {
-    throw new Error(
-      d.error.message === "EMAIL_NOT_FOUND"
-        ? "Email não encontrado"
-        : d.error.message === "INVALID_PASSWORD"
-          ? "Senha incorreta"
-          : d.error.message === "INVALID_LOGIN_CREDENTIALS"
-            ? "Email ou senha incorretos"
-            : d.error.message,
-    );
+    throw new Error(mapFirebaseAuthError(d.error.message));
   }
   authToken = d.idToken;
   authUid = d.localId;
@@ -106,7 +113,7 @@ export async function fbAnonymousLogin() {
     body: JSON.stringify({ returnSecureToken: true }),
   }, 12000);
   const d = await r.json();
-  if (d.error) throw new Error(d.error.message);
+  if (d.error) throw new Error(mapFirebaseAuthError(d.error.message));
   authToken = d.idToken;
   authUid = d.localId;
   return { uid: d.localId, token: d.idToken, refreshToken: d.refreshToken };
@@ -121,7 +128,7 @@ export async function fbRegister(email, password) {
   }, 12000);
   const d = await r.json();
   if (d.error) {
-    throw new Error(d.error.message === "EMAIL_EXISTS" ? "Email já cadastrado" : d.error.message);
+    throw new Error(mapFirebaseAuthError(d.error.message));
   }
   authToken = d.idToken;
   authUid = d.localId;
@@ -169,6 +176,44 @@ function fromFsDoc(doc) {
   const obj = {};
   for (const k in doc.fields) obj[k] = fromFsValue(doc.fields[k]);
   return obj;
+}
+
+export async function fsGetDocPublic(collection, docId) {
+  assertFirebaseConfigured();
+  const id = String(docId || "").trim();
+  if (!id) return null;
+  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
+  const r = await fetchWithTimeout(`${FS_URL}/${collection}/${encodeURIComponent(id)}?key=${FB.apiKey}`, {}, 12000);
+  if (r.status === 404) return null;
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const msg = String(d?.error?.message || d?.error?.status || "");
+    if (r.status === 403 || msg.includes("PERMISSION_DENIED") || msg.toLowerCase().includes("permission")) {
+      throw new Error(
+        "Convite bloqueado pelas regras do Firestore. Confirme que publicou as regras em Firestore → Rules (não são avisos de CSS no console)."
+      );
+    }
+    throw new Error(msg || `Falha ao validar convite (HTTP ${r.status})`);
+  }
+  return { _id: d.name.split("/").pop(), ...fromFsDoc(d) };
+}
+
+export async function fsGetDoc(collection, docId) {
+  assertFirebaseConfigured();
+  if (!authToken) return null;
+  const id = String(docId || "").trim();
+  if (!id) return null;
+  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
+  const r = await fetchWithTimeout(
+    `${FS_URL}/${collection}/${encodeURIComponent(id)}?key=${FB.apiKey}`,
+    { headers: { Authorization: `Bearer ${authToken}` } },
+    12000
+  );
+  if (r.status === 404) return null;
+  if (!r.ok) return null;
+  const d = await r.json().catch(() => ({}));
+  if (!d?.name) return null;
+  return { _id: d.name.split("/").pop(), ...fromFsDoc(d) };
 }
 
 function buildStructuredWhere(where) {

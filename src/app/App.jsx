@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { CameraModal } from "../components/CameraModal.jsx";
 import { TArea, TInput } from "../components/FormFields.jsx";
@@ -7,13 +7,18 @@ import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, set
 import { getDisplayPhotoUrl, uploadPhotos, isStorageOk, deletePhoto } from "../services/storage.js";
 import { generateQRCode } from "../services/qr-service.js";
 import { criarBackupManual, logAuditoria, setupRealtimeSync } from "../services/audit.js";
-import { EVENTOS, gerarRelatorioExcel, gerarRelatorioPDF, notificationService, offlineManager } from "../services/features.js";
+import { EVENTOS, gerarRelatorioExcel, gerarRelatorioPDF, notificationService, offlineManager, queueOfflineWithPhotos } from "../services/features.js";
+import { garantirCampanhaAberta } from "../services/campanha.js";
 import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "./categories.js";
-import { compressPhotoArray, getCachedData, perfMonitor, setCachedData } from "../utils/performance.js";
+import { compressPhotoArray, getCachedData, bumpCacheBuster, perfMonitor, setCachedData } from "../utils/performance.js";
 import { loadUnidades } from "../utils/xlsx.js";
 import { gerarTodasSugestoes } from "../utils/suggestions.js";
-import { CoordenadoresTab } from "./CoordenadoresTab.jsx";
-import { InventariantesTab } from "./InventariantesTab.jsx";
+import { defaultEstadoForItem, inferEspecieFromDesc, parseBrDate, sortByDataNF } from "../utils/itemHelpers.js";
+import { detectTombosDuplicados } from "../utils/tomboDup.js";
+import { buildFormSnapshot, buildItemSnapshot, clearUiResume, loadUiResume, saveUiResume } from "../utils/uiResume.js";
+import { filterLocaisForSession } from "../utils/inventorySession.js";
+import { isSemTomboItem } from "../utils/semTombo.js";
+import { SmartImg } from "../components/SmartImg.jsx";
 import { ImageOverlay, Overlay } from "../components/Overlay.jsx";
 import { ToastNotification } from "../components/ToastNotification.jsx";
 import { NavBar } from "../components/NavBar.jsx";
@@ -23,14 +28,21 @@ import { InventarioPage } from "../pages/InventarioPage.jsx";
 import { BuscaPage } from "../pages/BuscaPage.jsx";
 import { ItensPage } from "../pages/ItensPage.jsx";
 import { NotasFiscaisPage } from "../pages/NotasFiscaisPage.jsx";
-import { TombosPage } from "../pages/TombosPage.jsx";
-import { DashboardPage } from "../pages/DashboardPage.jsx";
 import { useAuth } from "../hooks/useAuth.js";
 import { useUnidades } from "../hooks/useUnidades.js";
 import { useLocais } from "../hooks/useLocais.js";
 import { useFound } from "../hooks/useFound.js";
 import { useInventario } from "../hooks/useInventario.js";
+import { useCampanha } from "../hooks/useCampanha.js";
 import { useOfflineQueue } from "../hooks/useOfflineQueue.js";
+
+const tabFallback = (
+  <div style={{ padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>Carregando aba…</div>
+);
+const LazyTombosPage = React.lazy(() => import("../pages/TombosPage.jsx").then((m) => ({ default: m.TombosPage })));
+const LazyDashboardPage = React.lazy(() => import("../pages/DashboardPage.jsx").then((m) => ({ default: m.DashboardPage })));
+const LazyCoordenadoresTab = React.lazy(() => import("./CoordenadoresTab.jsx").then((m) => ({ default: m.CoordenadoresTab })));
+const LazyInventariantesTab = React.lazy(() => import("./InventariantesTab.jsx").then((m) => ({ default: m.InventariantesTab })));
 
 function getItemCode(item) {
   return item?.patrimonioLabel || item?.id || "—";
@@ -51,23 +63,6 @@ function buildManualPatrimonio(rawValue) {
   };
 }
 
-function SmartImg({ src, alt = "", style, ...rest }) {
-  const [resolved, setResolved] = useState(src || "");
-  useEffect(() => {
-    let alive = true;
-    setResolved(src || "");
-    (async () => {
-      const next = await getDisplayPhotoUrl(src);
-      if (!alive) return;
-      setResolved(next || src || "");
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [src]);
-  return <img src={resolved} alt={alt} style={style} loading="lazy" decoding="async" {...rest} />;
-}
-
 // ─── helpers to show edited description/especie ────────────────────────────
 function getDisplayDesc(item, foundEntry) {
   return foundEntry?.descricaoEdit || item.descricao || item.especie || "—";
@@ -83,6 +78,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const [toast, setToast] = useState(null);
   const [modal, setModal] = useState(null);
   const [qrCodeUrl, setQrCodeUrl] = useState(null);
+  const [coordRegistroLink, setCoordRegistroLink] = useState("");
   const [cameraTarget, setCameraTarget] = useState(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -96,9 +92,12 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const [nfPage, setNfPage] = useState(1);
   const [ft, setFt] = useState(0);
   const [imgViewSrc, setImgViewSrc] = useState(null);
+  const [overlayBackdropSuppressMs, setOverlayBackdropSuppressMs] = useState(0);
 
   const formRef = useRef({});
   const manualPatrimonioRef = useRef(null);
+  const resumeRestoredRef = useRef(false);
+  const cameraTargetRef = useRef(null);
 
   const bumpFt = () => setFt((t) => t + 1);
   const setField = (k, v) => {
@@ -154,11 +153,115 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const inventario = useInventario({ unidades, foundSet: found.foundSet });
   const unidadeAtiva = inventario.unidadesAtivas[0] || null;
 
+  const sessionLocais = useMemo(
+    () =>
+      filterLocaisForSession(
+        locais.locais,
+        inventario.sessionId,
+        inventario.unidadesAtivas.map((u) => u.id)
+      ),
+    [locais.locais, inventario.sessionId, inventario.unidadesAtivas]
+  );
+
+  const createSessionLocal = React.useCallback(
+    async (nome, desc = "") => {
+      if (!inventario.sessionId) {
+        showT("Inicie o inventário antes de criar locais");
+        return null;
+      }
+      return locais.createLocal({
+        nome,
+        desc,
+        sessionId: inventario.sessionId,
+        unidadeIds: inventario.unidadesAtivas.map((u) => u.id),
+      }, { updateQueueStatus });
+    },
+    [inventario.sessionId, inventario.unidadesAtivas, locais.createLocal, showT, updateQueueStatus]
+  );
+
   const loadAfterAuth = React.useCallback(async () => {
-    await Promise.all([loadXlsx(false), found.loadFoundAndTombos(), locais.loadLocais()]);
+    await loadXlsx(false);
+    await Promise.all([found.loadFoundAndTombos([]), locais.loadLocais([])]);
   }, [loadXlsx, found.loadFoundAndTombos, locais.loadLocais]);
 
   const auth = useAuth({ firebaseOk, loadAfterAuth, showT });
+  const campanhaState = useCampanha({ logado: auth.logado });
+
+  useEffect(() => {
+    if (!auth.logado) return;
+    campanhaState.refresh?.();
+    if (auth.logado.role === "admin") {
+      garantirCampanhaAberta([], auth.logado.email || "").catch(() => {});
+    }
+  }, [auth.logado?.uid, auth.logado?.role]);
+
+  const assertCampanhaAberta = React.useCallback(() => {
+    if (campanhaState.fechada) {
+      showT("Inventário fechado — alterações não permitidas");
+      return false;
+    }
+    return true;
+  }, [campanhaState.fechada, showT]);
+
+  useEffect(() => {
+    if (!auth.logado) return;
+    const ids = inventario.unidadesAtivas.map((u) => u.id).filter(Boolean);
+    if (!ids.length) return;
+    found.loadFoundAndTombos(ids);
+  }, [auth.logado, inventario.unidadesAtivas.map((u) => u.id).join(","), found.loadFoundAndTombos]);
+
+  const saveSessionResume = React.useCallback(
+    (patch = {}) => {
+      const prev = loadUiResume() || {};
+      const item = formRef.current.detItem;
+      saveUiResume({
+        modal: patch.modal ?? prev.modal ?? "detalhe",
+        cameraTarget: patch.cameraTarget ?? cameraTargetRef.current ?? prev.cameraTarget ?? "detalhe",
+        itemId: patch.itemId ?? item?.id ?? prev.itemId ?? "",
+        itemSnapshot: patch.itemSnapshot ?? (item ? buildItemSnapshot(item) : prev.itemSnapshot ?? null),
+        formSnapshot: patch.formSnapshot ?? buildFormSnapshot(formRef),
+        unidadeId: patch.unidadeId ?? item?.unidadeId ?? unidadeAtiva?.id ?? prev.unidadeId ?? "",
+        tab: patch.tab ?? tab,
+        invSubTab: patch.invSubTab ?? inventario.invSubTab,
+        pendingPhotos: patch.pendingPhotos ?? prev.pendingPhotos ?? [],
+      });
+    },
+    [tab, inventario.invSubTab, unidadeAtiva?.id]
+  );
+
+  const persistCameraSession = React.useCallback(
+    async (photos) => {
+      const item = formRef.current.detItem;
+      const serialized = [];
+      for (const p of photos || []) {
+        const s = String(p || "");
+        if (!s) continue;
+        if (s.startsWith("data:")) {
+          serialized.push(s);
+          continue;
+        }
+        if (s.startsWith("blob:")) {
+          try {
+            const blob = await fetch(s).then((r) => r.blob());
+            const dataUrl = await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result || ""));
+              reader.onerror = () => reject(new Error("read fail"));
+              reader.readAsDataURL(blob);
+            });
+            if (dataUrl) serialized.push(dataUrl);
+          } catch {}
+        }
+      }
+      saveSessionResume({
+        modal: serialized.length ? "detalhe" : "camera",
+        cameraTarget: cameraTargetRef.current || "detalhe",
+        pendingPhotos: serialized,
+        itemSnapshot: item ? buildItemSnapshot(item) : undefined,
+      });
+    },
+    [saveSessionResume]
+  );
 
   useEffect(() => {
     const h = () => setIsMob(window.innerWidth < 768);
@@ -242,7 +345,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
           await setCachedData("locais", nextLocais);
         }
       },
-      null
+      null,
+      { inventarioMs: 45000, locaisMs: 90000 }
     );
 
     return () => {
@@ -261,59 +365,101 @@ function OrganizedApp({ firebaseOk, isProd }) {
   ]);
 
   const renderOfflineStatus = () => {
+    const retry = async (e) => {
+      e?.stopPropagation?.();
+      await offlineManager.retrySync();
+      updateQueueStatus();
+      showT("Sincronização iniciada");
+    };
+
     if (queueStatus.isOnline && queueStatus.pending === 0 && queueStatus.failed === 0) {
       return <span style={{ fontSize: 12, color: "#dcfce7", fontWeight: 700 }}>Online</span>;
     }
+
+    const btnStyle = {
+      marginLeft: 8,
+      background: "rgba(255,255,255,.2)",
+      color: "#fff",
+      border: "none",
+      borderRadius: 6,
+      padding: "2px 8px",
+      fontSize: 11,
+      fontWeight: 700,
+      cursor: "pointer",
+    };
 
     if (!queueStatus.isOnline) {
       return (
         <span style={{ fontSize: 12, color: "#fef3c7", fontWeight: 700 }}>
           Offline · {queueStatus.pending} pendente{queueStatus.pending !== 1 ? "s" : ""}
+          {queueStatus.photoPending ? ` · ${queueStatus.photoPending} c/ fotos` : ""}
         </span>
       );
     }
 
     return (
-      <span style={{ fontSize: 12, color: "#fde68a", fontWeight: 700 }}>
-        Sincronizando · {queueStatus.pending} pendente{queueStatus.pending !== 1 ? "s" : ""}{queueStatus.failed ? ` · ${queueStatus.failed} falha(s)` : ""}
+      <span style={{ fontSize: 12, color: "#fde68a", fontWeight: 700, display: "inline-flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+        {queueStatus.isSyncing ? "Sincronizando" : "Fila"} · {queueStatus.pending} pendente{queueStatus.pending !== 1 ? "s" : ""}
+        {queueStatus.photoPending ? ` · ${queueStatus.photoPending} c/ fotos` : ""}
+        {queueStatus.failed ? ` · ${queueStatus.failed} falha(s)` : ""}
+        {(queueStatus.pending > 0 || queueStatus.failed > 0) && !queueStatus.isSyncing ? (
+          <button type="button" onClick={retry} style={btnStyle}>
+            Tentar novamente
+          </button>
+        ) : null}
       </span>
     );
   };
 
-  const todosItens = React.useMemo(() => unidades.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeNome: u.nome, unidadeId: u.id }))), [unidades]);
-  const sugestoes = React.useMemo(() => gerarTodasSugestoes(todosItens), [todosItens]);
+  const todosItens = React.useMemo(
+    () => unidades.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeNome: u.nome, unidadeId: u.id }))),
+    [unidades]
+  );
 
-  const parseNFDate = (s) => {
-    if (!s) return new Date(0);
-    const parts = String(s).split("/");
-    if (parts.length !== 3) return new Date(0);
-    const [d, m, y] = parts;
-    return new Date(+y, +m - 1, +d);
-  };
+  const sugestoes = React.useMemo(() => {
+    const base =
+      inventario.unidadesAtivas.length > 0
+        ? inventario.unidadesAtivas.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeNome: u.nome, unidadeId: u.id })))
+        : todosItens.slice(0, 800);
+    return gerarTodasSugestoes(base);
+  }, [inventario.unidadesAtivas, todosItens]);
 
-  const nfDataMap = {};
-  for (const item of todosItens) {
-    const nf = (item.nf || "").trim();
-    if (!nf) continue;
-    if (!nfDataMap[nf]) {
-      nfDataMap[nf] = {
-        nf,
-        dataNF: item.dataNF || "",
-        fornecedor: item.fornecedor || "",
-        tipoEntrada: item.tipoEntrada || "Próprio",
-        itens: [],
-        valorTotal: 0,
-        valorAtualTotal: 0,
-      };
+  const tombosDup = React.useMemo(
+    () => detectTombosDuplicados(todosItens, found.found),
+    [todosItens, found.found]
+  );
+
+  const parseNFDate = parseBrDate;
+
+  const nfDataMap = React.useMemo(() => {
+    const map = {};
+    for (const item of todosItens) {
+      const nf = (item.nf || "").trim();
+      if (!nf) continue;
+      if (!map[nf]) {
+        map[nf] = {
+          nf,
+          dataNF: item.dataNF || "",
+          fornecedor: item.fornecedor || "",
+          tipoEntrada: item.tipoEntrada || "Próprio",
+          itens: [],
+          valorTotal: 0,
+          valorAtualTotal: 0,
+        };
+      }
+      map[nf].itens.push(item);
+      map[nf].valorTotal += Number(item.valor || 0) || 0;
+      map[nf].valorAtualTotal += Number(item.valorAtual || 0) || 0;
+      if (!map[nf].dataNF && item.dataNF) map[nf].dataNF = item.dataNF;
+      if (!map[nf].fornecedor && item.fornecedor) map[nf].fornecedor = item.fornecedor;
+      if (!map[nf].tipoEntrada && item.tipoEntrada) map[nf].tipoEntrada = item.tipoEntrada;
     }
-    nfDataMap[nf].itens.push(item);
-    nfDataMap[nf].valorTotal += Number(item.valor || 0) || 0;
-    nfDataMap[nf].valorAtualTotal += Number(item.valorAtual || 0) || 0;
-    if (!nfDataMap[nf].dataNF && item.dataNF) nfDataMap[nf].dataNF = item.dataNF;
-    if (!nfDataMap[nf].fornecedor && item.fornecedor) nfDataMap[nf].fornecedor = item.fornecedor;
-    if (!nfDataMap[nf].tipoEntrada && item.tipoEntrada) nfDataMap[nf].tipoEntrada = item.tipoEntrada;
-  }
-  const nfDataList = Object.values(nfDataMap).sort((a, b) => parseNFDate(b.dataNF) - parseNFDate(a.dataNF));
+    return map;
+  }, [todosItens]);
+  const nfDataList = React.useMemo(
+    () => Object.values(nfDataMap).sort((a, b) => parseNFDate(b.dataNF) - parseNFDate(a.dataNF)),
+    [nfDataMap, parseNFDate]
+  );
   const NF_PER_PAGE = 15;
 
   const xlsxCorrompidos = todosItens.filter((i) => {
@@ -324,23 +470,26 @@ function OrganizedApp({ firebaseOk, isProd }) {
     return noText && noNums && noDocs && noDate;
   });
 
-  const filtered = inventario.allItens.filter((i) => {
-    if (hideFound && found.foundSet.has(i.id)) return false;
+  const filtered = React.useMemo(() => {
     const s = search.toLowerCase();
-    return (
-      !s ||
-      getItemCode(i).toLowerCase().includes(s) ||
-      (i.id || "").toLowerCase().includes(s) ||
-      (i.especie || "").toLowerCase().includes(s) ||
-      (i.descricao || "").toLowerCase().includes(s) ||
-      (i.fornecedor || "").toLowerCase().includes(s) ||
-      (found.foundMap[i.id]?.descricaoEdit || "").toLowerCase().includes(s) ||
-      (found.foundMap[i.id]?.permutaDesc || "").toLowerCase().includes(s) ||
-      (found.foundMap[i.id]?.permutaMarca || "").toLowerCase().includes(s)
-    );
-  });
-  const totalPages = Math.ceil(filtered.length / PER_PAGE);
-  const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+    return inventario.allItens.filter((i) => {
+      if (hideFound && found.foundSet.has(i.id)) return false;
+      return (
+        !s ||
+        getItemCode(i).toLowerCase().includes(s) ||
+        (i.id || "").toLowerCase().includes(s) ||
+        (i.especie || "").toLowerCase().includes(s) ||
+        (i.descricao || "").toLowerCase().includes(s) ||
+        (i.fornecedor || "").toLowerCase().includes(s) ||
+        (found.foundMap[i.id]?.descricaoEdit || "").toLowerCase().includes(s) ||
+        (found.foundMap[i.id]?.permutaDesc || "").toLowerCase().includes(s) ||
+        (found.foundMap[i.id]?.permutaMarca || "").toLowerCase().includes(s)
+      );
+    });
+  }, [inventario.allItens, hideFound, found.foundSet, found.foundMap, search]);
+  const sortedFiltered = useMemo(() => [...filtered].sort(sortByDataNF), [filtered]);
+  const totalPages = Math.ceil(sortedFiltered.length / PER_PAGE);
+  const paged = sortedFiltered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   const origemMeta = {
     Próprio: { bg: "#dbeafe", tx: "#1d4ed8", ico: "" },
@@ -407,9 +556,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
   const openDetModal = (item, forceLocalId) => {
     const f = found.foundMap[item.id];
+    const estadoDefault = f?.estado || defaultEstadoForItem(item);
     formRef.current = {
       detItem: item,
-      detEstado: f?.estado || "Bom",
+      detEstado: estadoDefault,
       detSituacao: f?.situacao || "Em uso",
       detLocal: typeof forceLocalId === "string" ? forceLocalId : f?.localId || "",
       detObs: f?.obs || "",
@@ -423,31 +573,219 @@ function OrganizedApp({ firebaseOk, isProd }) {
       detPermutaDesc: f?.permutaDesc || "",
       detPermutaMarca: f?.permutaMarca || "",
       detPermutaEstado: f?.permutaEstado || "Bom",
+      detTomboRef: f?.tomboReferencia || "",
     };
     bumpFt();
+    resumeRestoredRef.current = true;
+    saveSessionResume({
+      modal: "detalhe",
+      cameraTarget: "detalhe",
+      pendingPhotos: [],
+      itemSnapshot: buildItemSnapshot(item),
+    });
     setModal("detalhe");
   };
 
+  const openNextPending = React.useCallback(() => {
+    const next = sortedFiltered.find((i) => !found.foundSet.has(i.id));
+    if (!next) {
+      showT("Nenhum item pendente nos filtros atuais");
+      return;
+    }
+    openDetModal(next);
+  }, [sortedFiltered, found.foundSet, showT]);
+
   const openCamera = (target) => {
+    cameraTargetRef.current = target;
+    resumeRestoredRef.current = true;
+    saveSessionResume({
+      modal: "camera",
+      cameraTarget: target,
+      pendingPhotos: [],
+    });
     setCameraTarget(target);
     setModal("camera");
   };
 
-  const onCameraCapture = (photoArray) => {
-    if (cameraTarget === "manual") {
+  const ensureDetFormFromResume = (resume) => {
+    if (formRef.current.detItem?.id) return;
+    const snap = resume?.itemSnapshot;
+    if (!snap?.id) return;
+    const fs = resume?.formSnapshot || {};
+    const f = found.foundMap[snap.id];
+    formRef.current = {
+      detItem: snap,
+      detEstado: fs.detEstado || f?.estado || defaultEstadoForItem(snap),
+      detSituacao: fs.detSituacao || f?.situacao || "Em uso",
+      detLocal: fs.detLocal || f?.localId || "",
+      detObs: fs.detObs || f?.obs || "",
+      detMarca: fs.detMarca || f?.marca || snap.marca || "",
+      detOrigem: fs.detOrigem || f?.origem || (snap.isManual ? "Próprio" : snap.tipoEntrada || "Próprio"),
+      detOrigemLocked: fs.detOrigemLocked ?? !snap.isManual,
+      detExistingUrls: fs.detExistingUrls?.length ? fs.detExistingUrls : f?.fotoUrls || [],
+      detNewBase64: formRef.current.detNewBase64 || [],
+      detDescricao: fs.detDescricao || f?.descricaoEdit || snap.descricao || "",
+      detEspecie: fs.detEspecie || f?.especieEdit || snap.especie || "",
+      detPermutaDesc: fs.detPermutaDesc || f?.permutaDesc || "",
+      detPermutaMarca: fs.detPermutaMarca || f?.permutaMarca || "",
+      detPermutaEstado: fs.detPermutaEstado || f?.permutaEstado || "Bom",
+    };
+  };
+
+  const onCameraCapture = async (photoArray) => {
+    const resume = loadUiResume();
+    const target = cameraTargetRef.current || resume?.cameraTarget || "detalhe";
+    ensureDetFormFromResume(resume);
+
+    if (target === "manual") {
       revokeBlobUrls(formRef.current.manPhotos || []);
-      formRef.current.manPhotos = photoArray;
+      formRef.current.manPhotos = photoArray || [];
+    } else if (target === "semTombo") {
+      revokeBlobUrls(formRef.current.stPhotos || []);
+      formRef.current.stPhotos = photoArray || [];
+      cameraTargetRef.current = null;
       setCameraTarget(null);
-      setModal("manual");
+      setOverlayBackdropSuppressMs(1200);
+      setModal("semTombo");
+      bumpFt();
+      return;
     } else {
-      formRef.current.detNewBase64 = [...(formRef.current.detNewBase64 || []), ...photoArray];
-      setCameraTarget(null);
-      setModal("detalhe");
+      revokeBlobUrls(formRef.current.detNewBase64 || []);
+      formRef.current.detNewBase64 = photoArray || [];
     }
+
+    cameraTargetRef.current = null;
+    setCameraTarget(null);
+    setOverlayBackdropSuppressMs(1200);
+    resumeRestoredRef.current = true;
+    setModal(target === "manual" ? "manual" : "detalhe");
+    bumpFt();
+
+    const photos = target === "manual" ? formRef.current.manPhotos : formRef.current.detNewBase64;
+    await persistCameraSession(photos);
     bumpFt();
   };
 
+  const closeCameraModal = () => {
+    const target = cameraTargetRef.current || cameraTarget;
+    cameraTargetRef.current = null;
+    setCameraTarget(null);
+    setOverlayBackdropSuppressMs(1200);
+    ensureDetFormFromResume(loadUiResume());
+    setModal(target === "manual" ? "manual" : target === "semTombo" ? "semTombo" : formRef.current.detItem ? "detalhe" : null);
+    bumpFt();
+    if (!formRef.current.detItem) clearUiResume();
+  };
+
+  const applyUiResume = React.useCallback(
+    (resume) => {
+      if (!resume?.itemId && !resume?.itemSnapshot?.id) return false;
+
+      let item = resume.itemSnapshot?.id ? resume.itemSnapshot : null;
+      if (!item && unidades.length > 0) {
+        for (const u of unidades) {
+          const hit = u.itens.find((i) => i.id === resume.itemId || i.patrimonioLabel === resume.itemId);
+          if (hit) {
+            item = { ...hit, unidadeId: u.id, unidadeNome: u.nome };
+            break;
+          }
+        }
+      }
+      if (!item?.id) return false;
+
+      if (resume.tab) setTab(resume.tab);
+      if (resume.invSubTab) inventario.setInvSubTab(resume.invSubTab);
+
+      const fs = resume.formSnapshot || {};
+      const f = found.foundMap[item.id];
+      const pending = Array.isArray(resume.pendingPhotos) ? resume.pendingPhotos : [];
+      const existingNew = formRef.current.detNewBase64 || [];
+      const restoredPhotos =
+        pending.length > 0
+          ? pending
+          : existingNew.length > 0
+            ? existingNew
+            : [];
+
+      formRef.current = {
+        detItem: item,
+        detEstado: fs.detEstado || f?.estado || defaultEstadoForItem(item),
+        detSituacao: fs.detSituacao || f?.situacao || "Em uso",
+        detLocal: fs.detLocal || f?.localId || "",
+        detObs: fs.detObs || f?.obs || "",
+        detMarca: fs.detMarca || f?.marca || item.marca || "",
+        detOrigem: fs.detOrigem || f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
+        detOrigemLocked: fs.detOrigemLocked ?? !item.isManual,
+        detExistingUrls: fs.detExistingUrls?.length ? fs.detExistingUrls : f?.fotoUrls || [],
+        detNewBase64: resume.cameraTarget === "manual" ? [] : restoredPhotos,
+        detDescricao: fs.detDescricao || f?.descricaoEdit || item.descricao || "",
+        detEspecie: fs.detEspecie || f?.especieEdit || item.especie || "",
+        detPermutaDesc: fs.detPermutaDesc || f?.permutaDesc || "",
+        detPermutaMarca: fs.detPermutaMarca || f?.permutaMarca || "",
+        detPermutaEstado: fs.detPermutaEstado || f?.permutaEstado || "Bom",
+      };
+
+      if (pending.length && resume.cameraTarget === "manual") {
+        formRef.current.manPhotos = pending;
+      }
+
+      const reopenCamera = resume.modal === "camera" && !pending.length;
+      if (reopenCamera) {
+        cameraTargetRef.current = resume.cameraTarget || "detalhe";
+        setCameraTarget(resume.cameraTarget || "detalhe");
+        setModal("camera");
+      } else {
+        setModal(resume.cameraTarget === "manual" ? "manual" : "detalhe");
+      }
+      bumpFt();
+      return true;
+    },
+    [unidades, found.foundMap, inventario]
+  );
+
+  const tryRestoreUi = React.useCallback(() => {
+    if (!auth.logado || resumeRestoredRef.current) return;
+    const resume = loadUiResume();
+    if (!resume?.itemId && !resume?.itemSnapshot?.id) return;
+    if (applyUiResume(resume)) resumeRestoredRef.current = true;
+  }, [auth.logado, applyUiResume]);
+
+  React.useLayoutEffect(() => {
+    tryRestoreUi();
+  }, [tryRestoreUi]);
+
+  useEffect(() => {
+    const onPageShow = () => tryRestoreUi();
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, [tryRestoreUi]);
+
+  useEffect(() => {
+    const persistOnHide = () => {
+      if (modal !== "camera" && modal !== "detalhe" && modal !== "manual") return;
+      saveSessionResume({
+        modal,
+        cameraTarget: cameraTargetRef.current || "detalhe",
+      });
+    };
+    const onVis = () => {
+      if (document.visibilityState === "hidden") persistOnHide();
+    };
+    window.addEventListener("pagehide", persistOnHide);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("pagehide", persistOnHide);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [modal, saveSessionResume]);
+
+  useEffect(() => {
+    if (!auth.logado || resumeRestoredRef.current) return;
+    tryRestoreUi();
+  }, [auth.logado, unidades, found.foundMap, tryRestoreUi]);
+
   const addManual = async () => {
+    if (!assertCampanhaAberta()) return;
     const desc = getField("manDesc");
     if (!desc.trim()) {
       showT("Descrição obrigatória");
@@ -514,6 +852,71 @@ function OrganizedApp({ firebaseOk, isProd }) {
       isManual: true,
     };
 
+    const newItems = ids.map((id) => ({ ...baseItem, id }));
+    const manLocalId = getField("manLocal") || sessionLocais[0]?.id || "";
+    const manEstado = getField("manEstado") || "Bom";
+    const manSituacao = getField("manSituacao") || "Em uso";
+    const manOrigem = getField("manOrigem") || "Próprio";
+    const manMarca = getField("manMarca") || "";
+
+    const buildManualInvEntry = (it, urls = []) => {
+      const now = new Date();
+      return {
+        patrimonioId: it.id,
+        unidadeId: unidadeAtiva?.id || "",
+        unidadeNome: unidadeAtiva?.nome || "",
+        estado: manEstado,
+        situacao: manSituacao,
+        localId: manLocalId,
+        obs: desc.trim(),
+        marca: manMarca,
+        origem: manOrigem,
+        fotoUrls: urls,
+        data: now.toLocaleDateString("pt-BR"),
+        hora: now.toLocaleTimeString("pt-BR"),
+        usuario: auth.logado?.nome || "",
+        email: auth.logado?.email || "",
+        ultimaAtualizacao: now.toISOString(),
+        user: auth.logado?.nome || "",
+      };
+    };
+
+    if (!navigator.onLine) {
+      const steps = [];
+      for (const it of newItems) {
+        steps.push({ collection: "manuais", docId: it.id, content: { ...it, unidadeId: unidadeAtiva?.id } });
+        steps.push({ collection: "inventario", docId: it.id, content: buildManualInvEntry(it), usePhotos: Boolean(formRef.current.manPhotos?.length) });
+      }
+      await queueOfflineWithPhotos({
+        type: "batch",
+        data: { steps, uploadPrefix: sharePhotos && qty > 1 ? `manual/${ids[0]}` : ids[0] },
+        photos: formRef.current.manPhotos || [],
+      });
+      updateQueueStatus();
+      const novaAtiva = { ...unidadeAtiva, itens: [...unidadeAtiva.itens, ...newItems] };
+      inventario.setUnidadesAtivas((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+      setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+      for (const it of newItems) {
+        await found.markFound({
+          itemId: it.id,
+          estado: manEstado,
+          situacao: manSituacao,
+          localId: manLocalId,
+          obs: desc.trim(),
+          marca: manMarca,
+          origem: manOrigem,
+          fotoUrls: [],
+          unidadeAtiva,
+          logado: auth.logado,
+          localOnly: true,
+        });
+      }
+      setModal(null);
+      showT(qty > 1 ? `${qty} itens na fila (offline)` : "Na fila (offline)");
+      notificationService.notify(EVENTOS.ITEM_ENCONTRADO, { message: "Item enfileirado offline", type: "info" });
+      return;
+    }
+
     let fotoUrls = [];
     if (formRef.current.manPhotos?.length && isStorageOk()) {
       setBusy(true);
@@ -526,7 +929,6 @@ function OrganizedApp({ firebaseOk, isProd }) {
       }
     }
 
-    const newItems = ids.map((id) => ({ ...baseItem, id }));
     for (const it of newItems) {
       await fsSet("manuais", it.id, { ...it, unidadeId: unidadeAtiva?.id });
     }
@@ -540,7 +942,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         itemId: it.id,
         estado: getField("manEstado") || "Bom",
         situacao: getField("manSituacao") || "Em uso",
-        localId: getField("manLocal") || locais.locais[0]?.id || "",
+        localId: getField("manLocal") || sessionLocais[0]?.id || "",
         obs: desc.trim(),
         marca: getField("manMarca"),
         origem: getField("manOrigem") || "Próprio",
@@ -552,7 +954,414 @@ function OrganizedApp({ firebaseOk, isProd }) {
     }
 
     setModal(null);
-    showT(qty > 1 ? `Itens adicionados: ${qty}` : "Item adicionado!");
+    showT(qty > 1 ? `Itens adicionados: ${qty}` : "Salvo!");
+    notificationService.notify(EVENTOS.ITEM_ENCONTRADO, { message: "Item manual salvo", type: "success" });
+  };
+
+  const addSemTomboItem = async () => {
+    if (!assertCampanhaAberta()) return;
+    const desc = String(getField("stDesc") || "").trim();
+    if (!desc) {
+      showT("Informe o nome do item");
+      return;
+    }
+    const localId = String(getField("stLocal") || "").trim();
+    if (!localId) {
+      showT("Selecione um local da sessão");
+      return;
+    }
+    const unitId = String(getField("stUnidadeId") || unidadeAtiva?.id || "").trim();
+    const unit = inventario.unidadesAtivas.find((u) => u.id === unitId) || unidadeAtiva;
+    if (!unit) {
+      showT("Unidade não encontrada");
+      return;
+    }
+    if (!formRef.current.stPhotos?.length) {
+      showT("Tire pelo menos uma foto do item");
+      return;
+    }
+
+    const id = `ST_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const item = {
+      id,
+      patrimonioLabel: "S/T",
+      data: new Date().toLocaleDateString("pt-BR"),
+      especie: desc.split(" ")[0].toUpperCase().slice(0, 40),
+      descricao: desc,
+      marca: "",
+      fornecedor: "",
+      empenho: "",
+      nf: "",
+      dataNF: "",
+      valor: 0,
+      valorAtual: 0,
+      isManual: true,
+      semTombo: true,
+      identificadoPorFoto: true,
+    };
+
+    const stExtras = {
+      semTombo: true,
+      identificadoPorFoto: true,
+      descricaoEdit: desc,
+      tomboReferencia: String(getField("stTomboRef") || "").trim(),
+    };
+    const stEstado = getField("stEstado") || "Bom";
+    const stObs = String(getField("stObs") || "").trim();
+
+    if (!navigator.onLine) {
+      const now = new Date();
+      const invEntry = {
+        patrimonioId: id,
+        unidadeId: unit.id,
+        unidadeNome: unit.nome,
+        estado: stEstado,
+        situacao: "Em uso",
+        localId,
+        obs: stObs,
+        marca: "",
+        origem: "Próprio",
+        fotoUrls: [],
+        data: now.toLocaleDateString("pt-BR"),
+        hora: now.toLocaleTimeString("pt-BR"),
+        usuario: auth.logado?.nome || "",
+        email: auth.logado?.email || "",
+        ultimaAtualizacao: now.toISOString(),
+        user: auth.logado?.nome || "",
+        ...stExtras,
+      };
+      await queueOfflineWithPhotos({
+        type: "batch",
+        data: {
+          steps: [
+            { collection: "manuais", docId: id, content: { ...item, unidadeId: unit.id } },
+            { collection: "inventario", docId: id, content: invEntry, usePhotos: true },
+          ],
+          uploadPrefix: id,
+        },
+        photos: formRef.current.stPhotos || [],
+      });
+      updateQueueStatus();
+      const novaAtiva = { ...unit, itens: [...unit.itens, item] };
+      inventario.setUnidadesAtivas((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+      setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+      await found.markFound({
+        itemId: id,
+        estado: stEstado,
+        situacao: "Em uso",
+        localId,
+        obs: stObs,
+        marca: "",
+        origem: "Próprio",
+        fotoUrls: [],
+        extras: stExtras,
+        unidadeAtiva: unit,
+        logado: auth.logado,
+        localOnly: true,
+      });
+      revokeBlobUrls(formRef.current.stPhotos || []);
+      setModal(null);
+      showT("Na fila (offline)");
+      return;
+    }
+
+    let fotoUrls = [];
+    if (isStorageOk()) {
+      setBusy(true);
+      try {
+        const compressed = await compressPhotoArray(formRef.current.stPhotos);
+        fotoUrls = await uploadPhotos(compressed, id);
+      } catch {
+        showT("Erro ao enviar fotos");
+        setBusy(false);
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    await fsSet("manuais", id, { ...item, unidadeId: unit.id });
+    const novaAtiva = { ...unit, itens: [...unit.itens, item] };
+    inventario.setUnidadesAtivas((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+    setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+
+    await found.markFound({
+      itemId: id,
+      estado: stEstado,
+      situacao: "Em uso",
+      localId,
+      obs: stObs,
+      marca: "",
+      origem: "Próprio",
+      fotoUrls,
+      extras: stExtras,
+      unidadeAtiva: unit,
+      logado: auth.logado,
+    });
+
+    revokeBlobUrls(formRef.current.stPhotos || []);
+    setModal(null);
+    showT("Salvo!");
+  };
+
+  const addSemTomboPendentes = async () => {
+    if (!assertCampanhaAberta()) return;
+    const selected = Array.isArray(formRef.current.stSelectedIds) ? formRef.current.stSelectedIds : [];
+    if (!selected.length) {
+      showT("Selecione ao menos um item pendente");
+      return;
+    }
+    const localId = String(getField("stLocal") || "").trim();
+    if (!localId) {
+      showT("Selecione um local da sessão");
+      return;
+    }
+    if (!formRef.current.stPhotos?.length) {
+      showT("Tire pelo menos uma foto");
+      return;
+    }
+
+    const estado = getField("stEstado") || "Bom";
+    const stObsBatch = String(getField("stObs") || "").trim();
+    const batchExtras = { alocadoManualmente: true, fotoCompartilhada: true };
+
+    if (!navigator.onLine) {
+      const steps = [];
+      let count = 0;
+      for (const itemId of selected) {
+        const item = inventario.allItens.find((i) => i.id === itemId);
+        if (!item || found.foundSet.has(itemId)) continue;
+        const unit = inventario.unidadesAtivas.find((u) => u.id === item.unidadeId) || unidadeAtiva;
+        const now = new Date();
+        steps.push({
+          collection: "inventario",
+          docId: itemId,
+          usePhotos: count === 0,
+          content: {
+            patrimonioId: itemId,
+            unidadeId: unit?.id || "",
+            unidadeNome: unit?.nome || "",
+            estado: defaultEstadoForItem(item) === "Novo" ? "Novo" : estado,
+            situacao: item.tipoEntrada === "Permuta" ? "Permuta" : "Em uso",
+            localId,
+            obs: stObsBatch,
+            marca: item.marca || "",
+            origem: item.tipoEntrada === "Permuta" ? "Permuta" : item.tipoEntrada || "Próprio",
+            fotoUrls: [],
+            data: now.toLocaleDateString("pt-BR"),
+            hora: now.toLocaleTimeString("pt-BR"),
+            usuario: auth.logado?.nome || "",
+            email: auth.logado?.email || "",
+            ultimaAtualizacao: now.toISOString(),
+            user: auth.logado?.nome || "",
+            ...batchExtras,
+          },
+        });
+        await found.markFound({
+          itemId,
+          estado: defaultEstadoForItem(item) === "Novo" ? "Novo" : estado,
+          situacao: item.tipoEntrada === "Permuta" ? "Permuta" : "Em uso",
+          localId,
+          obs: stObsBatch,
+          marca: item.marca || "",
+          origem: item.tipoEntrada === "Permuta" ? "Permuta" : item.tipoEntrada || "Próprio",
+          fotoUrls: [],
+          extras: batchExtras,
+          unidadeAtiva: unit,
+          logado: auth.logado,
+          localOnly: true,
+        });
+        count++;
+      }
+      if (count > 0) {
+        await queueOfflineWithPhotos({
+          type: "batch",
+          data: { steps, uploadPrefix: `batch/${Date.now()}_${selected[0]}` },
+          photos: formRef.current.stPhotos || [],
+        });
+        updateQueueStatus();
+      }
+      revokeBlobUrls(formRef.current.stPhotos || []);
+      setModal(null);
+      showT(count > 1 ? `${count} itens na fila (offline)` : count ? "Na fila (offline)" : "Nenhum item válido");
+      return;
+    }
+
+    let fotoUrls = [];
+    if (isStorageOk()) {
+      setBusy(true);
+      try {
+        const compressed = await compressPhotoArray(formRef.current.stPhotos);
+        const prefix = `batch/${Date.now()}_${selected[0]}`;
+        fotoUrls = await uploadPhotos(compressed, prefix);
+      } catch {
+        showT("Erro ao enviar fotos");
+        setBusy(false);
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    const estadoBatch = getField("stEstado") || "Bom";
+    let count = 0;
+    for (const itemId of selected) {
+      const item = inventario.allItens.find((i) => i.id === itemId);
+      if (!item || found.foundSet.has(itemId)) continue;
+      const unit = inventario.unidadesAtivas.find((u) => u.id === item.unidadeId) || unidadeAtiva;
+      await found.markFound({
+        itemId,
+        estado: defaultEstadoForItem(item) === "Novo" ? "Novo" : estadoBatch,
+        situacao: item.tipoEntrada === "Permuta" ? "Permuta" : "Em uso",
+        localId,
+        obs: stObsBatch,
+        marca: item.marca || "",
+        origem: item.tipoEntrada === "Permuta" ? "Permuta" : item.tipoEntrada || "Próprio",
+        fotoUrls,
+        extras: batchExtras,
+        unidadeAtiva: unit,
+        logado: auth.logado,
+        updateQueueStatus,
+      });
+      count++;
+    }
+
+    revokeBlobUrls(formRef.current.stPhotos || []);
+    setModal(null);
+    showT(count > 1 ? `${count} itens registrados com a mesma foto` : "Salvo!");
+  };
+
+  const openLinkTomboModal = (stItem, stFound) => {
+    formRef.current = {
+      ...formRef.current,
+      ajusteStId: stItem?.id || "",
+      ajusteStItem: stItem,
+      ajusteStFound: stFound,
+      ajusteSearch: "",
+      ajusteRealId: "",
+    };
+    bumpFt();
+    setModal("ajusteLink");
+  };
+
+  const linkSemTomboToTombo = async () => {
+    const stId = String(formRef.current.ajusteStId || "").trim();
+    const realId = String(formRef.current.ajusteRealId || "").trim();
+    if (!stId || !realId) {
+      showT("Selecione o tombo de destino");
+      return;
+    }
+    if (stId === realId) {
+      showT("Selecione um tombo diferente");
+      return;
+    }
+    if (found.foundSet.has(realId)) {
+      showT("Este tombo já foi inventariado");
+      return;
+    }
+
+    const stFound = found.foundMap[stId];
+    if (!stFound) {
+      showT("Registro sem tombo não encontrado");
+      return;
+    }
+
+    let realItem = null;
+    let realUnit = null;
+    for (const u of unidades) {
+      const hit = u.itens.find((i) => i.id === realId);
+      if (hit) {
+        realItem = hit;
+        realUnit = u;
+        break;
+      }
+    }
+    if (!realItem) {
+      showT("Tombo de destino não encontrado no patrimônio");
+      return;
+    }
+    if (isSemTomboItem(realItem, found.foundMap[realId])) {
+      showT("Destino também é item sem tombo");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const stItem = inventario.allItens.find((i) => i.id === stId) || formRef.current.ajusteStItem;
+      const unit = inventario.unidadesAtivas.find((u) => u.id === (stFound.unidadeId || stItem?.unidadeId)) || unidadeAtiva;
+      const entry = {
+        ...stFound,
+        patrimonioId: realId,
+        unidadeId: realUnit.id,
+        unidadeNome: realUnit.nome,
+        vinculadoDeSemTombo: true,
+        alocadoManualmente: true,
+        semTomboOrigemId: stId,
+        semTomboOrigemDesc: stFound.descricaoEdit || stItem?.descricao || "",
+        semTombo: false,
+        identificadoPorFoto: false,
+        ultimaAtualizacao: new Date().toISOString(),
+      };
+      delete entry._id;
+
+      await fsSet("inventario", realId, entry);
+      await fsDel("inventario", stId);
+      try {
+        await fsDel("manuais", stId);
+      } catch {}
+
+      const nextFound = found.found.filter((f) => f.patrimonioId !== stId);
+      nextFound.push({ ...entry, _id: realId, patrimonioId: realId });
+      found.setFound(nextFound);
+      bumpCacheBuster();
+      await setCachedData("inventario", nextFound);
+
+      setUnidades((prev) =>
+        prev.map((u) => ({
+          ...u,
+          itens: u.itens.filter((i) => i.id !== stId),
+        })),
+      );
+      inventario.setUnidadesAtivas((prev) =>
+        prev.map((u) => ({
+          ...u,
+          itens: u.itens.filter((i) => i.id !== stId),
+        })),
+      );
+
+      await logAuditoria("link-tombo", "inventario", realId, stFound, entry);
+      setModal(null);
+      showT(`Vinculado ao tombo ${realItem.patrimonioLabel || realId}`);
+    } catch (e) {
+      showT(e?.message || "Erro ao vincular tombo");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const getSemTomboPendentes = () => {
+    const q = String(formRef.current.stPendSearch || "").trim().toLowerCase();
+    return inventario.allItens.filter((i) => {
+      if (found.foundSet.has(i.id)) return false;
+      if (isSemTomboItem(i, found.foundMap[i.id])) return false;
+      if (!q) return true;
+      return (
+        String(i.id || "").toLowerCase().includes(q) ||
+        String(i.descricao || "").toLowerCase().includes(q) ||
+        String(i.especie || "").toLowerCase().includes(q) ||
+        String(i.fornecedor || "").toLowerCase().includes(q) ||
+        String(i.marca || "").toLowerCase().includes(q) ||
+        String(i.nf || "").toLowerCase().includes(q)
+      );
+    });
+  };
+
+  const toggleStPending = (id) => {
+    const cur = new Set(formRef.current.stSelectedIds || []);
+    if (cur.has(id)) cur.delete(id);
+    else cur.add(id);
+    formRef.current.stSelectedIds = [...cur];
+    bumpFt();
   };
 
   const gerarRelatorio = async (formato = "pdf") => {
@@ -613,16 +1422,23 @@ function OrganizedApp({ firebaseOk, isProd }) {
       showT("Preencha nome e matrícula da coordenadora");
       return;
     }
-    if (!unidadeAtiva?.id) return;
+    if (inventario.unidadesAtivas.length === 0) {
+      showT("Nenhuma unidade em inventário");
+      return;
+    }
 
     const token = `conv_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
     const agora = new Date();
     const dataExpiracao = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const unidadeIds = inventario.unidadesAtivas.map((u) => u.id);
+    const unidadeNomes = inventario.unidadesAtivas.map((u) => u.nome);
 
     const convite = {
       token,
-      unidadeId: unidadeAtiva.id,
-      unidadeNome: unidadeAtiva.nome,
+      unidadeId: unidadeAtiva?.id || unidadeIds[0],
+      unidadeNome: unidadeAtiva?.nome || unidadeNomes[0],
+      unidadeIds,
+      unidadeNomes,
       matricula,
       nomeSugerido: nome,
       status: "ativo",
@@ -635,6 +1451,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     const base = import.meta.env.BASE_URL || "/";
     const prefix = base.endsWith("/") ? base : `${base}/`;
     const link = `${window.location.origin}${prefix}#/coordregistro/${token}`;
+    setCoordRegistroLink(link);
     const qrUrl = await generateQRCode(link);
     setQrCodeUrl(qrUrl);
 
@@ -650,7 +1467,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     showT("Convite criado! A coordenadora se cadastra pelo QR Code e você aprova em Coordenadores.");
   };
 
-  if (auth.loading || busy)
+  if (auth.loading)
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f1f5f9", gap: 16 }}>
         <style>{`@keyframes sp{to{transform:rotate(360deg)}}`}</style>
@@ -664,15 +1481,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
       <LoginPage
         firebaseOk={firebaseOk}
         isProd={isProd}
-        loginMode={auth.loginMode}
         loginError={auth.loginError}
         onEmail={(v) => setField("email", v)}
         onSenha={(v) => setField("senha", v)}
         onSubmit={() => auth.login(getField("email"), getField("senha"))}
-        onToggleMode={() => {
-          auth.setLoginMode((m) => (m === "login" ? "register" : "login"));
-          auth.setLoginError("");
-        }}
         inp={inp}
         bp={bp}
       />
@@ -687,6 +1499,12 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
+      <style>{`@keyframes sp{to{transform:rotate(360deg)}}`}</style>
+      {campanhaState.fechada && (
+        <div style={{ background: "#991b1b", color: "#fff", padding: "8px 16px", textAlign: "center", fontSize: 13, fontWeight: 600 }}>
+          Inventário fechado — apenas consulta. Novos registros estão bloqueados.
+        </div>
+      )}
       <NavBar
         navs={navs}
         activeTab={tab}
@@ -726,24 +1544,51 @@ function OrganizedApp({ firebaseOk, isProd }) {
             page={page}
             totalPages={totalPages}
             setPage={setPage}
+            search={search}
             setSearch={setSearch}
             hideFound={hideFound}
             setHideFound={setHideFound}
             openDetModal={openDetModal}
             onOpenManual={(localId) => {
-              formRef.current = { manEstado: "Bom", manPatrimonio: "", manLocal: String(localId || ""), manQtd: 1, manSharePhotos: true };
+              formRef.current = {
+                manEstado: defaultEstadoForItem({ data: new Date().toLocaleDateString("pt-BR") }),
+                manPatrimonio: "",
+                manLocal: String(localId || ""),
+                manQtd: 1,
+                manSharePhotos: true,
+              };
               bumpFt();
               setModal("manual");
             }}
+            onOpenSemTombo={(localId) => {
+              formRef.current = {
+                stMode: "novo",
+                stDesc: "",
+                stLocal: String(localId || sessionLocais[0]?.id || ""),
+                stUnidadeId: unidadeAtiva?.id || inventario.unidadesAtivas[0]?.id || "",
+                stEstado: "Bom",
+                stObs: "",
+                stTomboRef: "",
+                stPhotos: [],
+                stSelectedIds: [],
+                stPendSearch: "",
+              };
+              bumpFt();
+              setModal("semTombo");
+            }}
+            onOpenLinkTombo={openLinkTomboModal}
             onOpenFinalizar={() => setModal("finalizar")}
             onOpenCancelar={() => setModal("cancelar-inventario")}
-            locais={locais.locais}
+            sessionId={inventario.sessionId}
+            locais={sessionLocais}
+            onOpenNextPending={openNextPending}
+            campanhaFechada={campanhaState.fechada}
             onQuickAddLocal={async (nome) => {
-              await locais.createLocal({ nome });
-              showT("Local adicionado!");
+              const entry = await createSessionLocal(nome);
+              if (entry) showT("Local da sessão adicionado");
             }}
             onDeleteLocal={async (l) => {
-              await locais.deleteLocal(l);
+              await locais.deleteLocal(l, { updateQueueStatus });
               showT("Local removido");
             }}
             showT={showT}
@@ -812,50 +1657,78 @@ function OrganizedApp({ firebaseOk, isProd }) {
           />
         )}
 
-        {tab === "tombos" && <TombosPage tombosNE={found.tombosNE} tombosDup={found.tombosDup} tombosTab={tombosTab} setTombosTab={setTombosTab} isMob={isMob} bp={bp} bs={bs} cd={cd} />}
-
-        {tab === "dash" && (
-          <DashboardPage
-            totalBens={inventario.totalBens}
-            totalFound={inventario.totalFound}
-            progresso={inventario.progresso}
-            gerarRelatorio={gerarRelatorio}
-            fazerBackup={fazerBackup}
-            found={found.found}
-            xlsxCorrompidos={xlsxCorrompidos}
-            unidades={unidades}
-            saveAtiva={inventario.saveAtiva}
-            setTab={setTab}
-            showT={showT}
-            isMob={isMob}
-            bp={bp}
-            bs={bs}
-            cd={cd}
-          />
+        {tab === "tombos" && (
+          <Suspense fallback={tabFallback}>
+            <LazyTombosPage tombosNE={found.tombosNE} tombosDup={tombosDup} tombosTab={tombosTab} setTombosTab={setTombosTab} isMob={isMob} bp={bp} bs={bs} cd={cd} />
+          </Suspense>
         )}
 
-        {tab === "coordenadores" && <CoordenadoresTab unidades={unidades} showT={showT} isMob={isMob} />}
-        {tab === "inventariantes" && <InventariantesTab showT={showT} isMob={isMob} />}
+        {tab === "dash" && (
+          <Suspense fallback={tabFallback}>
+            <LazyDashboardPage
+              totalBens={inventario.totalBens}
+              totalFound={inventario.totalFound}
+              progresso={inventario.progresso}
+              gerarRelatorio={gerarRelatorio}
+              fazerBackup={fazerBackup}
+              found={found.found}
+              xlsxCorrompidos={xlsxCorrompidos}
+              unidades={unidades}
+              saveAtiva={inventario.saveAtiva}
+              setTab={setTab}
+              showT={showT}
+              isMob={isMob}
+              bp={bp}
+              bs={bs}
+              cd={cd}
+              campanha={campanhaState.campanha}
+              campanhaFechada={campanhaState.fechada}
+              onFecharCampanha={campanhaState.fechar}
+              onReabrirCampanha={campanhaState.reabrir}
+              isAdmin={isAdmin}
+            />
+          </Suspense>
+        )}
+
+        {tab === "coordenadores" && (
+          <Suspense fallback={tabFallback}>
+            <LazyCoordenadoresTab unidades={unidades} showT={showT} isMob={isMob} />
+          </Suspense>
+        )}
+        {tab === "inventariantes" && (
+          <Suspense fallback={tabFallback}>
+            <LazyInventariantesTab showT={showT} isMob={isMob} />
+          </Suspense>
+        )}
       </NavBar>
 
       {modal === "camera" && (
         <CameraModal
-          existingPhotos={cameraTarget === "manual" ? formRef.current.manPhotos || [] : formRef.current.detNewBase64 || []}
+          existingPhotos={
+            cameraTarget === "manual"
+              ? formRef.current.manPhotos || []
+              : cameraTarget === "semTombo"
+                ? formRef.current.stPhotos || []
+                : formRef.current.detNewBase64 || []
+          }
           onCapture={onCameraCapture}
-          onClose={() => {
-            setCameraTarget(null);
-            setModal(cameraTarget === "manual" ? "manual" : formRef.current.detItem ? "detalhe" : null);
-          }}
+          onClose={closeCameraModal}
+          onPhotosChange={persistCameraSession}
+          onBeforeNativeCapture={() => saveSessionResume({ modal: "camera", cameraTarget: cameraTargetRef.current || "detalhe" })}
         />
       )}
 
       {modal === "detalhe" && formRef.current.detItem && (
-        <Overlay isMobile={isMob} onClose={() => { revokeBlobUrls(formRef.current.detNewBase64 || []); setModal(null); }}>
+        <Overlay
+          isMobile={isMob}
+          suppressBackdropMs={isMob ? Math.max(overlayBackdropSuppressMs, 1200) : overlayBackdropSuppressMs}
+          onClose={() => { revokeBlobUrls(formRef.current.detNewBase64 || []); clearUiResume(); setModal(null); }}
+        >
           <ItemDetailModal
             item={formRef.current.detItem}
             foundEntry={found.foundMap[formRef.current.detItem.id]}
             foundSet={found.foundSet}
-            locais={locais.locais}
+            locais={sessionLocais.length > 0 ? sessionLocais : locais.locais}
             origemMeta={origemMeta}
             isMobile={isMob}
             ft={ft}
@@ -866,17 +1739,18 @@ function OrganizedApp({ firebaseOk, isProd }) {
             sugestoes={sugestoes}
             onOpenCamera={openCamera}
             onViewImage={onViewImage}
-            onClose={() => { revokeBlobUrls(formRef.current.detNewBase64 || []); setModal(null); }}
-            onSave={() =>
+            onClose={() => { revokeBlobUrls(formRef.current.detNewBase64 || []); clearUiResume(); setModal(null); }}
+            onSave={() => {
+              if (!assertCampanhaAberta()) return;
               found.saveDetail({
                 formRef,
                 getField,
                 unidadeAtiva: unidadeAtiva || { id: formRef.current.detItem.unidadeId, nome: formRef.current.detItem.unidadeNome },
                 logado: auth.logado,
                 updateQueueStatus,
-                closeModal: () => { revokeBlobUrls(formRef.current.detNewBase64 || []); setModal(null); },
-              })
-            }
+                closeModal: () => { revokeBlobUrls(formRef.current.detNewBase64 || []); clearUiResume(); setModal(null); },
+              });
+            }}
             onDelete={async () => {
               await found.deleteFound(formRef.current.detItem.id);
               revokeBlobUrls(formRef.current.detNewBase64 || []);
@@ -888,15 +1762,32 @@ function OrganizedApp({ firebaseOk, isProd }) {
       )}
 
       {modal === "manual" && (
-        <Overlay isMobile={isMob} onClose={() => { revokeBlobUrls(formRef.current.manPhotos || []); setModal(null); }}>
+        <Overlay
+          isMobile={isMob}
+          suppressBackdropMs={isMob ? Math.max(overlayBackdropSuppressMs, 400) : overlayBackdropSuppressMs}
+          onClose={() => { revokeBlobUrls(formRef.current.manPhotos || []); clearUiResume(); setModal(null); }}
+        >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Adicionar Manual</h2>
-            <button onClick={() => { revokeBlobUrls(formRef.current.manPhotos || []); setModal(null); }} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer", padding: "4px 8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={() => { revokeBlobUrls(formRef.current.manPhotos || []); clearUiResume(); setModal(null); }} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer", padding: "4px 8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
               Fechar
             </button>
           </div>
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Descrição *</label>
-          <TArea key="manDesc" initial={getField("manDesc")} onVal={(v) => setField("manDesc", v)} rows={3} placeholder="Descreva o item..." style={{ ...inp, resize: "none" }} />
+          <TInput
+            key={"manDesc_" + ft}
+            initial={getField("manDesc")}
+            onVal={(v) => {
+              setField("manDesc", v);
+              if (!String(getField("manEspecie") || "").trim()) {
+                setField("manEspecie", inferEspecieFromDesc(v, sugestoes.especies));
+                bumpFt();
+              }
+            }}
+            placeholder="Descreva o item..."
+            suggestions={sugestoes.descricoes}
+            style={inp}
+          />
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Nº do Patrimônio</label>
           <input
             ref={manualPatrimonioRef}
@@ -1009,8 +1900,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
           </select>
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Local</label>
           <select key={"manLocal_" + ft} defaultValue={getField("manLocal") || ""} onChange={(e) => { setField("manLocal", e.target.value); bumpFt(); }} style={inp}>
-            <option value="">— Sem local —</option>
-            {locais.locais.map((l) => (
+            <option value="">{sessionLocais.length ? "— Selecione —" : "— Crie um local na sessão —"}</option>
+            {sessionLocais.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.nome}
               </option>
@@ -1069,7 +1960,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             </button>
           )}
           <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
-            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
+            <button onClick={() => { revokeBlobUrls(formRef.current.manPhotos || []); clearUiResume(); setModal(null); }} style={{ ...bs, flex: 1 }}>
               Cancelar
             </button>
             <button onClick={addManual} style={{ ...bp, flex: 1 }}>
@@ -1094,9 +1985,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
               onClick={async () => {
                 const n = getField("localNome");
                 if (!String(n || "").trim()) return;
-                await locais.createLocal({ nome: n, desc: getField("localDesc") });
+                await createSessionLocal(n);
                 setModal(null);
-                showT("Local criado!");
+                showT("Local criado");
               }}
               style={{ ...bp, flex: 1 }}
             >
@@ -1108,32 +1999,39 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
       {modal === "finalizar" && (
         <Overlay isMobile={isMob} onClose={() => setModal(null)}>
-          <div style={{ textAlign: "center" }}>
-            <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700 }}>Finalizar Inventário</h2>
-            <p style={{ color: "#64748b", margin: "0 0 20px" }}>{inventario.unidadesAtivas.length === 1 ? inventario.unidadesAtivas[0].nome : `${inventario.unidadesAtivas.length} unidades selecionadas`}</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
-              <div style={{ background: "#f0fdf4", borderRadius: 10, padding: 12 }}>
-                <p style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "#16a34a" }}>{inventario.totalFound}</p>
-                <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Encontrados</p>
+          <div>
+            <h2 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 700 }}>Finalizar inventário</h2>
+            <p style={{ color: "#64748b", margin: "0 0 16px", fontSize: 13, lineHeight: 1.5 }}>
+              {inventario.unidadesAtivas.length === 1
+                ? inventario.unidadesAtivas[0].nome
+                : `${inventario.unidadesAtivas.length} unidades em inventário`}
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12 }}>
+                <p style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#15803d" }}>{inventario.totalFound}</p>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>Encontrados</p>
               </div>
-              <div style={{ background: "#fef2f2", borderRadius: 10, padding: 12 }}>
-                <p style={{ margin: 0, fontSize: 24, fontWeight: 700, color: "#dc2626" }}>{inventario.totalBens - inventario.totalFound}</p>
-                <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Não encontrados</p>
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12 }}>
+                <p style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#b91c1c" }}>{inventario.totalBens - inventario.totalFound}</p>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>Não encontrados</p>
               </div>
             </div>
-            <div style={{ background: "#f9f3ff", border: "1.5px solid #e9d5ff", borderRadius: 12, padding: 16, marginBottom: 16, textAlign: "left" }}>
-              <p style={{ margin: "0 0 12px", fontSize: 13, fontWeight: 700, color: "#6b21a8" }}>Dados da Coordenadora</p>
-              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Nome completo *</p>
-              <TInput initial={getField("coordNome")} onVal={(v) => setField("coordNome", v)} placeholder="Ex: Maria Silva..." style={{ ...inp, marginBottom: 10 }} />
-              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Matrícula *</p>
-              <TInput initial={getField("coordMatricula")} onVal={(v) => setField("coordMatricula", v)} placeholder="Ex: 123456..." style={inp} />
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 14, marginBottom: 16 }}>
+              <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: "#0f172a" }}>Dados da coordenadora</p>
+              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 600, color: "#475569" }}>Nome completo</p>
+              <TInput initial={getField("coordNome")} onVal={(v) => setField("coordNome", v)} placeholder="Ex: Maria Silva" style={{ ...inp, marginBottom: 10 }} />
+              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 600, color: "#475569" }}>Matrícula</p>
+              <TInput initial={getField("coordMatricula")} onVal={(v) => setField("coordMatricula", v)} placeholder="Ex: 123456" style={inp} />
+              <p style={{ margin: "10px 0 0", fontSize: 11, color: "#64748b", lineHeight: 1.45 }}>
+                Será gerado um link e QR Code. A coordenadora se cadastra pelo link; o administrador aprova em Coordenadores.
+              </p>
             </div>
             <div style={{ display: "flex", gap: 9 }}>
               <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
                 Cancelar
               </button>
-              <button onClick={finalizarComCoordenadora} style={{ ...bp, flex: 1, background: "#16a34a" }}>
-                Gerar QR Code
+              <button onClick={finalizarComCoordenadora} style={{ ...bp, flex: 1 }}>
+                Gerar link e QR Code
               </button>
             </div>
           </div>
@@ -1146,71 +2044,301 @@ function OrganizedApp({ firebaseOk, isProd }) {
           onClose={() => {
             setModal(null);
             setQrCodeUrl(null);
+            setCoordRegistroLink("");
           }}
         >
           <div style={{ textAlign: "center" }}>
-            <h2 style={{ margin: "0 0 4px", fontSize: 18, fontWeight: 700 }}>QR Code Gerado</h2>
-            <p style={{ color: "#64748b", margin: "0 0 16px", fontSize: 13 }}>
-              {getField("coordNome")} • {getField("coordMatricula")}
+            <h2 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700 }}>Acesso da coordenadora</h2>
+            <p style={{ color: "#64748b", margin: "0 0 12px", fontSize: 13 }}>
+              {getField("coordNome")} · matr. {getField("coordMatricula")}
             </p>
-            <img src={qrCodeUrl} alt="QR Code" style={{ width: 280, height: 280, margin: "16px auto", border: "2px solid #e2e8f0", borderRadius: 12 }} />
-            <p style={{ color: "#64748b", margin: "16px 0 0", fontSize: 12 }}>A coordenadora pode escanear este código com o celular para acessar e gerenciar a unidade.</p>
-            <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
+            <img src={qrCodeUrl} alt="QR Code" style={{ width: 240, height: 240, margin: "0 auto", border: "1px solid #e2e8f0", borderRadius: 8 }} />
+            {coordRegistroLink && (
+              <div style={{ marginTop: 12, textAlign: "left", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10 }}>
+                <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#475569" }}>Link de cadastro (válido por 7 dias)</p>
+                <p style={{ margin: 0, fontSize: 11, color: "#0f172a", wordBreak: "break-all", lineHeight: 1.4 }}>{coordRegistroLink}</p>
+              </div>
+            )}
+            <p style={{ color: "#64748b", margin: "12px 0 0", fontSize: 12, lineHeight: 1.45, textAlign: "left" }}>
+              1. Envie o QR Code ou o link para a coordenadora.<br />
+              2. Ela abre no celular, cria a senha e aguarda aprovação.<br />
+              3. Aprove o cadastro na aba Coordenadores.<br />
+              4. Depois ela entra em /coord com e-mail e senha.
+            </p>
+            <div style={{ display: "flex", gap: 9, marginTop: 16, flexDirection: isMob ? "column" : "row" }}>
+              {coordRegistroLink && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(coordRegistroLink);
+                      showT("Link copiado");
+                    } catch {
+                      showT("Copie o link manualmente");
+                    }
+                  }}
+                  style={{ ...bs, flex: 1 }}
+                >
+                  Copiar link
+                </button>
+              )}
               <button
                 onClick={() => {
                   const a = document.createElement("a");
                   a.href = qrCodeUrl;
-                  a.download = `qr_${unidadeAtiva?.id || "unidade"}.png`;
+                  a.download = `qr_coord_${Date.now()}.png`;
+                  a.target = "_blank";
+                  a.rel = "noopener";
                   a.click();
                 }}
                 style={{ ...bs, flex: 1 }}
               >
-                Baixar
+                Baixar QR
               </button>
               <button
                 onClick={() => {
                   setModal(null);
                   setQrCodeUrl(null);
+                  setCoordRegistroLink("");
                   inventario.clearAtivas();
                 }}
                 style={{ ...bp, flex: 1 }}
               >
-                Feito
+                Concluir
               </button>
             </div>
           </div>
         </Overlay>
       )}
 
+      {modal === "semTombo" && (
+        <Overlay isMobile={isMob} onClose={() => { revokeBlobUrls(formRef.current.stPhotos || []); setModal(null); }}>
+          <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>Item sem tombo</h2>
+          <p style={{ margin: "0 0 14px", fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
+            Registre por foto ou marque vários pendentes com a mesma foto.
+          </p>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            {[
+              { id: "novo", label: "Novo sem tombo" },
+              { id: "pendentes", label: "Marcar pendentes" },
+            ].map((m) => (
+              <button
+                key={m.id}
+                onClick={() => {
+                  formRef.current.stMode = m.id;
+                  bumpFt();
+                }}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  borderRadius: 9,
+                  border: `2px solid ${(formRef.current.stMode || "novo") === m.id ? "#1e3a8a" : "#e2e8f0"}`,
+                  background: (formRef.current.stMode || "novo") === m.id ? "#dbeafe" : "#fff",
+                  color: (formRef.current.stMode || "novo") === m.id ? "#1e3a8a" : "#64748b",
+                  fontWeight: 700,
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>Local da sessão *</label>
+          <select key={"stLoc_" + ft} defaultValue={getField("stLocal")} onChange={(e) => setField("stLocal", e.target.value)} style={inp}>
+            <option value="">— Selecione —</option>
+            {sessionLocais.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.nome}
+              </option>
+            ))}
+          </select>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Fotos *</label>
+          {formRef.current.stPhotos?.length > 0 ? (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              {formRef.current.stPhotos.map((ph, i) => (
+                <img key={i} src={ph} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", border: "1px solid #e2e8f0" }} />
+              ))}
+            </div>
+          ) : null}
+          <button onClick={() => openCamera("semTombo")} style={{ width: "100%", border: "1.5px dashed #cbd5e1", background: "#f8fafc", borderRadius: 8, padding: 12, cursor: "pointer", fontSize: 13, color: "#334155", fontWeight: 600, marginBottom: 12 }}>
+            {formRef.current.stPhotos?.length ? "Tirar outra foto" : "Tirar foto"}
+          </button>
+
+          {(formRef.current.stMode || "novo") === "novo" ? (
+            <>
+              <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: 10, marginBottom: 14 }}>
+                <p style={{ margin: 0, fontSize: 12, color: "#92400e", fontWeight: 600 }}>Será marcado como item sem tombo (identificado por foto).</p>
+              </div>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>Nome / descrição do item *</label>
+              <TArea key={"stDesc_" + ft} initial={getField("stDesc")} onVal={(v) => setField("stDesc", v)} rows={2} placeholder="Ex: Cadeira giratória preta..." style={{ ...inp, resize: "none" }} />
+              {inventario.unidadesAtivas.length > 1 && (
+                <>
+                  <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Unidade</label>
+                  <select key={"stUn_" + ft} defaultValue={getField("stUnidadeId")} onChange={(e) => setField("stUnidadeId", e.target.value)} style={inp}>
+                    {inventario.unidadesAtivas.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.nome}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+              <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Tombamento sugerido (opcional)</label>
+              <TInput key={"stRef_" + ft} initial={getField("stTomboRef")} onVal={(v) => setField("stTomboRef", v)} placeholder="Número se souber..." style={inp} />
+            </>
+          ) : (
+            <>
+              <p style={{ margin: "0 0 8px", fontSize: 12, color: "#64748b" }}>Busque itens pendentes e selecione vários para usar a mesma foto.</p>
+              <TInput
+                key={"stPendS_" + ft}
+                initial={getField("stPendSearch")}
+                onVal={(v) => {
+                  setField("stPendSearch", v);
+                  bumpFt();
+                }}
+                placeholder="Buscar por tombo, descrição, fornecedor..."
+                style={{ ...inp, marginBottom: 8 }}
+              />
+              <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, padding: 8, marginBottom: 8 }}>
+                {getSemTomboPendentes().slice(0, 40).map((it) => {
+                  const sel = (formRef.current.stSelectedIds || []).includes(it.id);
+                  return (
+                    <label key={it.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 6px", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
+                      <input type="checkbox" checked={sel} onChange={() => toggleStPending(it.id)} style={{ marginTop: 3 }} />
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>{it.descricao || it.especie || "—"}</span>
+                        <span style={{ display: "block", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(it)} · {it.fornecedor || "—"}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+                {getSemTomboPendentes().length === 0 && (
+                  <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", textAlign: "center", padding: 12 }}>Nenhum pendente encontrado.</p>
+                )}
+              </div>
+              <p style={{ margin: 0, fontSize: 11, color: "#64748b" }}>
+                Selecionados: {(formRef.current.stSelectedIds || []).length}
+              </p>
+            </>
+          )}
+
+          <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
+            <button onClick={() => { revokeBlobUrls(formRef.current.stPhotos || []); setModal(null); }} style={{ ...bs, flex: 1 }}>
+              Cancelar
+            </button>
+            <button
+              onClick={(formRef.current.stMode || "novo") === "pendentes" ? addSemTomboPendentes : addSemTomboItem}
+              style={{ ...bp, flex: 1 }}
+            >
+              Registrar
+            </button>
+          </div>
+        </Overlay>
+      )}
+
+      {modal === "ajusteLink" && formRef.current.ajusteStItem && (
+        <Overlay isMobile={isMob} onClose={() => setModal(null)}>
+          <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>Vincular ao tombo correto</h2>
+          <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
+            Item sem tombo: <strong>{formRef.current.ajusteStItem.descricao || formRef.current.ajusteStFound?.descricaoEdit || "—"}</strong>
+          </p>
+          <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: 10, marginBottom: 12 }}>
+            <p style={{ margin: 0, fontSize: 11, color: "#92400e" }}>
+              Após vincular, as fotos ficarão no tombo real com aviso de alocação manual (sem tombo).
+            </p>
+          </div>
+          <TInput
+            key={"ajS_" + ft}
+            initial={getField("ajusteSearch")}
+            onVal={(v) => {
+              setField("ajusteSearch", v);
+              bumpFt();
+            }}
+            placeholder="Buscar tombo pendente..."
+            style={{ ...inp, marginBottom: 8 }}
+          />
+          <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10 }}>
+            {(() => {
+              const stUnitId = formRef.current.ajusteStItem?.unidadeId || formRef.current.ajusteStFound?.unidadeId;
+              const q = String(formRef.current.ajusteSearch || "").trim().toLowerCase();
+              const candidates = inventario.allItens.filter((i) => {
+                if (i.id === formRef.current.ajusteStId) return false;
+                if (isSemTomboItem(i, found.foundMap[i.id])) return false;
+                if (String(i.id || "").startsWith("ST_") || String(i.id || "").startsWith("MAN_")) return false;
+                if (found.foundSet.has(i.id)) return false;
+                if (stUnitId && i.unidadeId && i.unidadeId !== stUnitId) return false;
+                if (!q) return true;
+                return (
+                  String(i.id || "").toLowerCase().includes(q) ||
+                  String(i.patrimonioLabel || "").toLowerCase().includes(q) ||
+                  String(i.descricao || "").toLowerCase().includes(q) ||
+                  String(i.especie || "").toLowerCase().includes(q) ||
+                  String(i.fornecedor || "").toLowerCase().includes(q)
+                );
+              }).slice(0, 40);
+              if (!candidates.length) {
+                return <p style={{ margin: 0, padding: 16, fontSize: 12, color: "#94a3b8", textAlign: "center" }}>Nenhum tombo pendente encontrado.</p>;
+              }
+              return candidates.map((it) => {
+                const sel = formRef.current.ajusteRealId === it.id;
+                return (
+                  <button
+                    key={it.id}
+                    type="button"
+                    onClick={() => {
+                      formRef.current.ajusteRealId = it.id;
+                      bumpFt();
+                    }}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      border: "none",
+                      borderBottom: "1px solid #f1f5f9",
+                      background: sel ? "#eff6ff" : "#fff",
+                      padding: "10px 12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>{it.descricao || it.especie || "—"}</span>
+                    <span style={{ display: "block", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(it)} · {it.fornecedor || "—"}</span>
+                  </button>
+                );
+              });
+            })()}
+          </div>
+          <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
+            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>Cancelar</button>
+            <button onClick={linkSemTomboToTombo} style={{ ...bp, flex: 1 }}>Vincular</button>
+          </div>
+        </Overlay>
+      )}
+
       {modal === "cancelar-inventario" && (
         <Overlay isMobile={isMob} onClose={() => setModal(null)}>
-          <div style={{ textAlign: "center" }}>
-            <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700, color: "#dc2626" }}>Cancelar Inventário?</h2>
-            <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 12, padding: 16, marginBottom: 20, textAlign: "left" }}>
-              <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 800, color: "#991b1b" }}>Atenção! Se confirmar o cancelamento:</p>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "#991b1b", lineHeight: 1.7 }}>
-                <li>Todos os registros deste inventário serão <strong>apagados permanentemente</strong></li>
-                <li>Os itens já inventariados <strong>perderão seus dados</strong> de estado, situação e fotos</li>
-                <li>Esta ação <strong>não pode ser desfeita</strong></li>
-              </ul>
+          <div>
+            <h2 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 700, color: "#b91c1c" }}>Encerrar sessão de inventário?</h2>
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: 14, marginBottom: 16 }}>
+              <p style={{ margin: 0, fontSize: 13, color: "#991b1b", lineHeight: 1.55 }}>
+                Isso remove as unidades selecionadas desta sessão e oculta os locais criados nela. Os itens já inventariados <strong>permanecem salvos</strong> no sistema.
+              </p>
             </div>
-            <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 20px" }}>
+            <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 16px" }}>
               {inventario.unidadesAtivas.length} unidade{inventario.unidadesAtivas.length > 1 ? "s" : ""} · {inventario.totalFound} item{inventario.totalFound !== 1 ? "ns" : ""} registrado{inventario.totalFound !== 1 ? "s" : ""}
             </p>
             <div style={{ display: "flex", gap: 9 }}>
-              <button onClick={() => setModal(null)} style={{ ...bp, flex: 2, background: "#1e3a8a" }}>
-                ← Voltar ao inventário
+              <button onClick={() => setModal(null)} style={{ ...bp, flex: 2 }}>
+                Voltar ao inventário
               </button>
               <button
                 onClick={() => {
                   inventario.clearAtivas();
                   inventario.setInvSubTab("inventariar");
                   setModal(null);
-                  showT("Sessão de inventário encerrada");
+                  showT("Sessão encerrada");
                 }}
-                style={{ ...bs, flex: 1, color: "#dc2626", border: "1px solid #fca5a5" }}
+                style={{ ...bs, flex: 1, color: "#b91c1c", borderColor: "#fca5a5" }}
               >
-                Cancelar
+                Encerrar sessão
               </button>
             </div>
           </div>
@@ -1218,6 +2346,13 @@ function OrganizedApp({ firebaseOk, isProd }) {
       )}
 
       {imgViewSrc && <ImageOverlay src={imgViewSrc} onClose={() => setImgViewSrc(null)} />}
+
+      {busy && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(241,245,249,.72)", zIndex: 600, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24 }}>
+          <div style={{ width: 40, height: 40, border: "4px solid #e2e8f0", borderTopColor: "#1e3a8a", borderRadius: "50%", animation: "sp .8s linear infinite" }} />
+          <p style={{ color: "#64748b", fontSize: 13, fontWeight: 600, textAlign: "center" }}>Processando...</p>
+        </div>
+      )}
 
       <ToastNotification message={toast} isMobile={isMob} />
     </div>

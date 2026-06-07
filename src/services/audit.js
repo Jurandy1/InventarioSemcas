@@ -40,14 +40,30 @@ function computaDiferencas(antes, depois) {
 }
 
 export async function obterHistorico(entidade, entidadeId) {
+  return obterHistoricoItem(entidadeId, 50, entidade);
+}
+
+export async function obterHistoricoItem(entidadeId, limit = 25, entidade = null) {
+  if (!entidadeId) return [];
   try {
-    const todosLogs = await fsGetAll("auditoria");
-    return todosLogs
-      .filter((log) => log.entidade === entidade && log.entidadeId === entidadeId)
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const rows = await fsGetAll("auditoria", {
+      where: [{ field: "entidadeId", op: "EQUAL", value: String(entidadeId) }],
+      orderBy: [{ field: "timestamp", direction: "DESCENDING" }],
+      limit: Math.max(1, Math.min(100, limit)),
+    });
+    const filtered = entidade ? rows.filter((log) => log.entidade === entidade) : rows;
+    return filtered.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   } catch (e) {
     console.error("Erro ao obter historico:", e);
-    return [];
+    try {
+      const todosLogs = await fsGetAll("auditoria", { limit: 500 });
+      return todosLogs
+        .filter((log) => log.entidadeId === entidadeId && (!entidade || log.entidade === entidade))
+        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+        .slice(0, limit);
+    } catch {
+      return [];
+    }
   }
 }
 

@@ -20,32 +20,71 @@ function canvasToJpegObjectUrl(canvas, quality = 0.8) {
   });
 }
 
+function isLocalHost() {
+  if (typeof window === "undefined") return false;
+  const host = String(window.location.hostname || "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+}
+
+function canUseLiveCamera() {
+  if (typeof navigator === "undefined" || typeof window === "undefined") return false;
+  if (!window.isSecureContext && !isLocalHost()) return false;
+  return !!resolveGetUserMedia();
+}
+
+function resolveGetUserMedia() {
+  if (typeof navigator === "undefined") return null;
+  if (navigator.mediaDevices?.getUserMedia) {
+    return (constraints) => navigator.mediaDevices.getUserMedia(constraints);
+  }
+  const legacy =
+    navigator.getUserMedia ||
+    navigator.webkitGetUserMedia ||
+    navigator.mozGetUserMedia ||
+    navigator.msGetUserMedia;
+  if (!legacy) return null;
+  return (constraints) =>
+    new Promise((resolve, reject) => {
+      legacy.call(navigator, constraints, resolve, reject);
+    });
+}
+
 async function compressPhoto(file) {
-  return new Promise((res) => {
+  return new Promise((resolve, reject) => {
     const r = new FileReader();
+    r.onerror = () => reject(new Error("Não foi possível ler a imagem selecionada."));
     r.onload = (e) => {
       const img = new Image();
+      img.onerror = () => reject(new Error("Formato de imagem não suportado. Tente JPG ou PNG."));
       img.onload = () => {
-        const maxW = 1600;
-        const maxH = 1200;
-        let w = img.width;
-        let h = img.height;
-        if (w > maxW) {
-          h = h * (maxW / w);
-          w = maxW;
+        try {
+          const maxW = 1600;
+          const maxH = 1200;
+          let w = img.width;
+          let h = img.height;
+          if (w > maxW) {
+            h = h * (maxW / w);
+            w = maxW;
+          }
+          if (h > maxH) {
+            w = w * (maxH / h);
+            h = maxH;
+          }
+          const c = document.createElement("canvas");
+          c.width = Math.max(1, Math.round(w));
+          c.height = Math.max(1, Math.round(h));
+          const ctx = c.getContext("2d");
+          if (!ctx) {
+            reject(new Error("Não foi possível processar a imagem."));
+            return;
+          }
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(img, 0, 0, c.width, c.height);
+          canvasToJpegObjectUrl(c, 0.8).then(resolve).catch(reject);
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error("Erro ao comprimir imagem."));
         }
-        if (h > maxH) {
-          w = w * (maxH / h);
-          h = maxH;
-        }
-        const c = document.createElement("canvas");
-        c.width = w;
-        c.height = h;
-        const ctx = c.getContext("2d");
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
-        ctx.drawImage(img, 0, 0, w, h);
-        canvasToJpegObjectUrl(c, 0.8).then(res);
       };
       img.src = e.target.result;
     };
@@ -53,7 +92,7 @@ async function compressPhoto(file) {
   });
 }
 
-export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
+export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosChange, onBeforeNativeCapture }) {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const aliveRef = useRef(true);
@@ -64,8 +103,11 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
   const [flashOn, setFlashOn] = useState(false);
   const [preview, setPreview] = useState(null);
   const [captured, setCaptured] = useState([...existingPhotos]);
+  const capturedRef = useRef([...existingPhotos]);
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const [camError, setCamError] = useState("");
+  const [useNativeCapture, setUseNativeCapture] = useState(() => !canUseLiveCamera());
   const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
   const stopStream = () => {
@@ -94,14 +136,35 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
     const seq = ++startSeqRef.current;
     if (aliveRef.current) setCamError("");
     stopStream();
-    try {
-      if (!navigator?.mediaDevices?.getUserMedia) {
-        if (aliveRef.current && seq === startSeqRef.current) setCamError("Este navegador não suporta acesso à câmera. Use a opção de galeria.");
-        return;
+
+    const getUserMedia = resolveGetUserMedia();
+    if (!getUserMedia || (!window.isSecureContext && !isLocalHost())) {
+      if (aliveRef.current && seq === startSeqRef.current) {
+        setUseNativeCapture(true);
+        if (!window.isSecureContext && !isLocalHost()) {
+          setCamError(
+            "A câmera ao vivo exige HTTPS. Use os botões abaixo para tirar foto ou escolher da galeria — funciona normalmente no celular."
+          );
+        } else {
+          setCamError("Este navegador não abre a câmera ao vivo. Use os botões abaixo para tirar foto ou escolher da galeria.");
+        }
       }
-      const s = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
-      });
+      return;
+    }
+
+    try {
+      let s;
+      try {
+        s = await getUserMedia({
+          video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        });
+      } catch (firstErr) {
+        if (firstErr?.name === "OverconstrainedError" || facing === "environment") {
+          s = await getUserMedia({ video: true });
+        } else {
+          throw firstErr;
+        }
+      }
 
       if (!aliveRef.current || seq !== startSeqRef.current) {
         try {
@@ -111,6 +174,8 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
       }
       streamRef.current = s;
       setStream(s);
+      setUseNativeCapture(false);
+      setCamError("");
       if (videoRef.current) {
         videoRef.current.srcObject = s;
         try {
@@ -127,14 +192,32 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
         } catch {}
       }
     } catch (e) {
-      if (aliveRef.current && seq === startSeqRef.current) setCamError(explainCameraError(e));
+      if (aliveRef.current && seq === startSeqRef.current) {
+        setUseNativeCapture(true);
+        setCamError(`${explainCameraError(e)} Você pode tirar foto pelo botão abaixo.`);
+      }
       stopStream();
     }
   };
 
   useEffect(() => {
+    capturedRef.current = captured;
+  }, [captured]);
+
+  useEffect(() => {
     aliveRef.current = true;
-    startCamera(facingMode);
+    if (canUseLiveCamera()) {
+      startCamera(facingMode);
+    } else {
+      setUseNativeCapture(true);
+      if (!window.isSecureContext && !isLocalHost()) {
+        setCamError(
+          "A câmera ao vivo exige HTTPS. Use os botões abaixo para tirar foto ou escolher da galeria — funciona normalmente no celular."
+        );
+      } else {
+        setCamError("Use os botões abaixo para tirar foto ou escolher da galeria.");
+      }
+    }
     return () => {
       aliveRef.current = false;
       startSeqRef.current++;
@@ -162,6 +245,10 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
   const takePhoto = () => {
     if (!videoRef.current) return;
     const v = videoRef.current;
+    if (!v.videoWidth || !v.videoHeight) {
+      setCamError("Aguarde a câmera carregar completamente antes de tirar a foto.");
+      return;
+    }
     const c = document.createElement("canvas");
     c.width = v.videoWidth;
     c.height = v.videoHeight;
@@ -189,7 +276,9 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
     const snapshot = preview;
     setCaptured((arr) => {
       if (arr.includes(snapshot)) return arr;
-      return [...arr, snapshot];
+      const next = [...arr, snapshot];
+      persistPhotos(next);
+      return next;
     });
     setPreview(null);
     setTimeout(() => {
@@ -207,28 +296,59 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
     setPreview(null);
   };
 
-  const handleFileSelect = async (e) => {
+  const persistPhotos = (photos) => {
+    onPhotosChange?.(photos);
+  };
+
+  const flushPersist = (photos) => {
+    persistPhotos(photos);
+  };
+
+  const openNativeCamera = () => {
+    onBeforeNativeCapture?.();
+    flushPersist(captured);
+    cameraInputRef.current?.click();
+  };
+
+  const openGallery = () => {
+    flushPersist(captured);
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelect = async (e, source = "gallery") => {
     const f = e.target.files?.[0];
+    e.target.value = "";
     if (!f) return;
     if (f.size > MAX_FILE_BYTES) {
       setCamError(`Arquivo muito grande (${Math.round(f.size / (1024 * 1024))}MB). Selecione até 8MB.`);
-      e.target.value = "";
       return;
     }
-    const d = await compressPhoto(f);
-    setCaptured((p) => [...p, d]);
-    e.target.value = "";
+    try {
+      setCamError("");
+      const d = await compressPhoto(f);
+      const next = [...capturedRef.current, d];
+      capturedRef.current = next;
+      setCaptured(next);
+      await Promise.resolve(onPhotosChange?.(next));
+      if (source === "camera") {
+        finishCapture(next);
+      }
+    } catch (err) {
+      setCamError(err?.message || "Erro ao processar a foto. Tente outra imagem.");
+    }
   };
 
-  const done = () => {
+  const finishCapture = (photos) => {
     stopStream();
     if (String(preview || "").startsWith("blob:")) {
       try {
         URL.revokeObjectURL(String(preview));
       } catch {}
     }
-    onCapture(captured);
+    onCapture(Array.isArray(photos) ? photos : captured);
   };
+
+  const done = () => finishCapture(captured);
 
   const cancel = () => {
     stopStream();
@@ -245,16 +365,32 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: "rgba(0,0,0,.8)", zIndex: 1 }}>
         <button onClick={cancel} style={{ background: "none", border: "none", color: "#fff", fontSize: 14, cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
         <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{captured.length} foto(s)</span>
-        <button onClick={toggleFlash} style={{ background: flashOn ? "#fbbf24" : "rgba(255,255,255,.2)", border: "none", color: flashOn ? "#000" : "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Flash: {flashOn ? "ON" : "OFF"}</button>
+        {!useNativeCapture && stream ? (
+          <button onClick={toggleFlash} style={{ background: flashOn ? "#fbbf24" : "rgba(255,255,255,.2)", border: "none", color: flashOn ? "#000" : "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>Flash: {flashOn ? "ON" : "OFF"}</button>
+        ) : (
+          <span style={{ width: 72 }} />
+        )}
       </div>
 
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
         {preview ? (
           <img src={preview} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+        ) : useNativeCapture || !stream ? (
+          <div style={{ textAlign: "center", padding: 24, color: "#fff", maxWidth: 320 }}>
+            <p style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 800 }}>Adicionar fotos</p>
+            <p style={{ margin: 0, fontSize: 13, opacity: 0.85, lineHeight: 1.5 }}>
+              Toque em <strong>Tirar foto</strong> para abrir a câmera do celular, ou em <strong>Galeria</strong> para escolher uma imagem existente.
+            </p>
+            {captured.length > 0 && (
+              <p style={{ margin: "12px 0 0", fontSize: 12, color: "#86efac", fontWeight: 700 }}>
+                {captured.length} foto(s) pronta(s) — toque Concluir quando terminar.
+              </p>
+            )}
+          </div>
         ) : (
           <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         )}
-        {!preview && (
+        {!preview && !useNativeCapture && stream && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
             <div style={{ width: "80%", maxWidth: 300, aspectRatio: "4/3", border: "2px solid rgba(255,255,255,.3)", borderRadius: 12 }} />
           </div>
@@ -274,7 +410,11 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
                       URL.revokeObjectURL(String(old));
                     } catch {}
                   }
-                  setCaptured((p) => p.filter((_, j) => j !== i));
+                  setCaptured((p) => {
+                    const next = p.filter((_, j) => j !== i);
+                    persistPhotos(next);
+                    return next;
+                  });
                 }}
                 style={{ position: "absolute", top: -4, right: -4, background: "#dc2626", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
               >
@@ -297,9 +437,24 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
               Usar foto
             </button>
           </>
+        ) : useNativeCapture || !stream ? (
+          <>
+            <button
+              onClick={openGallery}
+              style={{ flex: 1, background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 12, padding: "14px 12px", fontSize: 14, cursor: "pointer", fontWeight: 700 }}
+            >
+              Galeria
+            </button>
+            <button
+              onClick={openNativeCamera}
+              style={{ flex: 1, background: "#fff", border: "none", color: "#0f172a", borderRadius: 12, padding: "14px 12px", fontSize: 14, cursor: "pointer", fontWeight: 800 }}
+            >
+              Tirar foto
+            </button>
+          </>
         ) : (
           <>
-            <button onClick={() => fileInputRef.current?.click()} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 12, padding: "10px 14px", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>Galeria</button>
+            <button onClick={openGallery} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 12, padding: "10px 14px", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>Galeria</button>
             <button onClick={takePhoto} style={{ background: "#fff", border: "4px solid rgba(255,255,255,.3)", borderRadius: "50%", width: 72, height: 72, cursor: "pointer" }}>
               <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: "#fff" }} />
             </button>
@@ -310,14 +465,19 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
 
       {camError && (
         <div style={{ margin: "0 16px 16px", background: "rgba(0,0,0,.7)", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, padding: 12, color: "#fff" }}>
-          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>Erro ao acessar câmera</div>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6 }}>{useNativeCapture ? "Como adicionar fotos" : "Erro ao acessar câmera"}</div>
           <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 10 }}>{camError}</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => startCamera(facingMode)} style={{ background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-              Tentar novamente
+            {!useNativeCapture && canUseLiveCamera() && (
+              <button onClick={() => startCamera(facingMode)} style={{ background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                Tentar novamente
+              </button>
+            )}
+            <button onClick={openNativeCamera} style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              Tirar foto
             </button>
-            <button onClick={() => fileInputRef.current?.click()} style={{ background: "rgba(255,255,255,.18)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-              Usar galeria
+            <button onClick={openGallery} style={{ background: "rgba(255,255,255,.18)", color: "#fff", border: "none", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              Galeria
             </button>
           </div>
         </div>
@@ -329,7 +489,8 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [] }) {
         </button>
       )}
 
-      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFileSelect} />
+      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handleFileSelect(e, "gallery")} />
+      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => handleFileSelect(e, "camera")} />
     </div>
   );
 }

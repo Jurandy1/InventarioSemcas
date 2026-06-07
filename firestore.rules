@@ -1,0 +1,140 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function invDoc() {
+      return get(/databases/$(database)/documents/inventariantes/$(request.auth.uid));
+    }
+
+    function coordDoc() {
+      return get(/databases/$(database)/documents/coordenadores/$(request.auth.uid));
+    }
+
+    function isInventarianteAtivo() {
+      return isAuth() && exists(invDoc()) && invDoc().data.status == 'aprovado';
+    }
+
+    function isCoordAprovada() {
+      return isAuth() && exists(coordDoc()) && coordDoc().data.status == 'aprovada';
+    }
+
+    function isAdminUser() {
+      return isAuth() && !exists(invDoc()) && !exists(coordDoc());
+    }
+
+    function unidadePermitidaInv(unidadeId) {
+      return isInventarianteAtivo() && (
+        (invDoc().data.unidadeIds is list && unidadeId in invDoc().data.unidadeIds) ||
+        invDoc().data.unidadeId == unidadeId
+      );
+    }
+
+    function unidadePermitidaCoord(unidadeId) {
+      return isCoordAprovada() && (
+        (coordDoc().data.unidadeIds is list && unidadeId in coordDoc().data.unidadeIds) ||
+        coordDoc().data.unidadeId == unidadeId
+      );
+    }
+
+    function podeUnidade(unidadeId) {
+      return isAdminUser() || unidadePermitidaInv(unidadeId) || unidadePermitidaCoord(unidadeId);
+    }
+
+    function campanhaFechada() {
+      return exists(/databases/$(database)/documents/campanhas/ativa) &&
+        get(/databases/$(database)/documents/campanhas/ativa).data.status == 'fechada';
+    }
+
+    function writesPermitidos() {
+      return !campanhaFechada() || isAdminUser();
+    }
+
+    match /convites/{conviteId} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if isAdminUser();
+      allow delete: if false;
+    }
+
+    match /convites_inventariantes/{conviteId} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if isAdminUser();
+      allow delete: if false;
+    }
+
+    match /campanhas/{docId} {
+      allow read: if isAuth();
+      allow create, update: if isAdminUser() || isCoordAprovada();
+      allow delete: if isAdminUser();
+    }
+
+    match /coordenadores/{uid} {
+      allow create: if isAuth() && request.auth.uid == uid;
+      allow read: if isAuth() && (request.auth.uid == uid || isAdminUser());
+      allow update: if isAuth() && (request.auth.uid == uid || isAdminUser());
+    }
+
+    match /inventariantes/{uid} {
+      allow create: if isAuth() && request.auth.uid == uid;
+      allow read: if isAuth() && (request.auth.uid == uid || isAdminUser());
+      allow update: if isAuth() && (request.auth.uid == uid || isAdminUser());
+    }
+
+    match /inventario/{docId} {
+      allow read: if isAuth() && (
+        isAdminUser() ||
+        podeUnidade(resource.data.unidadeId) ||
+        resource.data.email == request.auth.token.email
+      );
+      allow create, update: if writesPermitidos() && isAuth() && (
+        isAdminUser() ||
+        unidadePermitidaInv(request.resource.data.unidadeId) ||
+        unidadePermitidaCoord(request.resource.data.unidadeId)
+      );
+      allow delete: if isAdminUser();
+    }
+
+    match /manuais/{docId} {
+      allow read: if isAuth();
+      allow create, update: if writesPermitidos() && isAuth() && (
+        isAdminUser() || unidadePermitidaInv(request.resource.data.unidadeId)
+      );
+      allow delete: if isAdminUser();
+    }
+
+    match /locais/{docId} {
+      allow read: if isAuth();
+      allow create, update: if writesPermitidos() && isAuth() && (
+        isAdminUser() || isInventarianteAtivo() || isCoordAprovada()
+      );
+      allow delete: if isAuth() && (isAdminUser() || isInventarianteAtivo());
+    }
+
+    match /tombosNE/{docId} {
+      allow read: if isAuth();
+      allow write: if isAuth() && (isAdminUser() || isCoordAprovada());
+    }
+
+    match /auditoria/{docId} {
+      allow read: if isAdminUser();
+      allow create: if isAuth();
+      allow update, delete: if isAdminUser();
+    }
+
+    match /aprovacoes/{docId} {
+      allow read, write: if isAuth();
+    }
+
+    match /rejeicoes/{docId} {
+      allow read, write: if isAuth();
+    }
+
+    match /{document=**} {
+      allow read, write: if isAdminUser();
+    }
+  }
+}

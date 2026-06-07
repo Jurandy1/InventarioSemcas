@@ -12,6 +12,7 @@ export function useOfflineQueue() {
         prev.total === next.total &&
         prev.pending === next.pending &&
         prev.failed === next.failed &&
+        prev.lastError === next.lastError &&
         prev.isOnline === next.isOnline &&
         prev.isSyncing === next.isSyncing
       ) {

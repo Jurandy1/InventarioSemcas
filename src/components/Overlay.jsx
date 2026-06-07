@@ -1,7 +1,20 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { getDisplayPhotoUrl } from "../services/storage.js";
 
-export function Overlay({ children, onClose, isMobile }) {
+export function Overlay({ children, onClose, isMobile, suppressBackdropMs = 0 }) {
+  const mountedAt = useRef(Date.now());
+
+  useEffect(() => {
+    mountedAt.current = Date.now();
+  }, [children, suppressBackdropMs]);
+
+  const handleBackdropClick = (e) => {
+    if (e.target !== e.currentTarget) return;
+    const blockUntil = mountedAt.current + Math.max(0, suppressBackdropMs);
+    if (Date.now() < blockUntil) return;
+    onClose?.();
+  };
+
   return (
     <div
       style={{
@@ -13,9 +26,7 @@ export function Overlay({ children, onClose, isMobile }) {
         alignItems: isMobile ? "flex-end" : "center",
         justifyContent: "center",
       }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose?.();
-      }}
+      onClick={handleBackdropClick}
     >
       <div
         onClick={(e) => e.stopPropagation()}

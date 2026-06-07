@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#1e3a8a" />
     <meta name="description" content="Sistema de Inventário SEMCAS" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' font-weight='bold' fill='%231e3a8a'>📦</text></svg>" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='16' fill='%231e3a8a'/><text x='50' y='62' text-anchor='middle' font-size='42' font-weight='700' fill='white' font-family='system-ui'>S</text></svg>" />
     <link rel="stylesheet" href="/src/styles/global.css" />
     <title>Inventário SEMCAS</title>
     <style>
@@ -26,23 +26,25 @@
         padding-right: env(safe-area-inset-right, 0);
       }
 
-      /* Scrollbar customizada */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
+      /* Scrollbar (somente Chromium/WebKit) */
+      @supports selector(::-webkit-scrollbar) {
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
 
-      ::-webkit-scrollbar-track {
-        background: #f1f5f9;
-      }
+        ::-webkit-scrollbar-track {
+          background: #f1f5f9;
+        }
 
-      ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 4px;
-      }
+        ::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 4px;
+        }
 
-      ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
+        ::-webkit-scrollbar-thumb:hover {
+          background: #94a3b8;
+        }
       }
 
       /* Selection color */

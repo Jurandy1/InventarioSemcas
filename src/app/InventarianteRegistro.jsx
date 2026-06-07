@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { fsGetAll, fsSet, isFirebaseConfigured, fbRegister, setFirebaseSession } from "../services/firebase.js";
+import { fsGetDocPublic, fsSetStrict, isFirebaseConfigured, fbRegister, setFirebaseSession } from "../services/firebase.js";
 import { TInput } from "../components/FormFields.jsx";
 
 function getTokenFromLocation() {
@@ -36,8 +36,7 @@ export function InventarianteRegistro() {
   const validateToken = async (tok) => {
     setError("");
     try {
-      const convites = await fsGetAll("convites_inventariantes");
-      const found = convites.find((c) => c?._id === tok || c?.token === tok);
+      const found = await fsGetDocPublic("convites_inventariantes", tok);
 
       if (!found) {
         setStatus("erro");
@@ -118,10 +117,10 @@ export function InventarianteRegistro() {
         conviteToken: token,
         criadoEm: new Date().toISOString(),
       };
-      await fsSet("inventariantes", user.uid, invData);
+      await fsSetStrict("inventariantes", user.uid, invData);
 
       // Mark invite as used
-      await fsSet("convites_inventariantes", token, { ...convite, status: "usado", dataUso: new Date().toISOString(), usadoPor: user.uid });
+      await fsSetStrict("convites_inventariantes", token, { ...convite, status: "usado", dataUso: new Date().toISOString(), usadoPor: user.uid });
 
       setStatus("sucesso");
     } catch (err) {

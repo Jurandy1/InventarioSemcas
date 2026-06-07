@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { fsGetAll, fsSet, isFirebaseConfigured, fbAnonymousLogin, fbRegister, setFirebaseSession } from "../services/firebase.js";
+import { fsGetDocPublic, fsSetStrict, isFirebaseConfigured, fbRegister, setFirebaseSession } from "../services/firebase.js";
 import { TInput } from "../components/FormFields.jsx";
 
 function getTokenFromLocation() {
@@ -29,8 +29,7 @@ export function CoordinadorRegistro() {
   const validateToken = async (tok) => {
     try {
       setError("");
-      const convites = await fsGetAll("convites");
-      const found = convites.find((c) => c?._id === tok || c?.token === tok);
+      const found = await fsGetDocPublic("convites", tok);
 
       if (!found) {
         setStatus("erro");
@@ -68,7 +67,7 @@ export function CoordinadorRegistro() {
     } catch (err) {
       console.error("Erro ao validar token:", err);
       setStatus("erro");
-      setError("Erro ao validar acesso");
+      setError(err?.message || "Erro ao validar acesso");
     }
   };
 
@@ -77,14 +76,6 @@ export function CoordinadorRegistro() {
       if (!firebaseOk) {
         setStatus("erro");
         setError("Firebase não configurado");
-        return;
-      }
-
-      try {
-        await fbAnonymousLogin();
-      } catch (e) {
-        setStatus("erro");
-        setError(e?.message || "Falha ao iniciar sessão");
         return;
       }
 
@@ -137,16 +128,26 @@ export function CoordinadorRegistro() {
         matricula: formData.matricula.trim(),
         unidadeId: convite.unidadeId,
         unidadeNome: convite.unidadeNome,
+        unidadeIds: Array.isArray(convite.unidadeIds) && convite.unidadeIds.length
+          ? convite.unidadeIds
+          : convite.unidadeId
+            ? [convite.unidadeId]
+            : [],
+        unidadeNomes: Array.isArray(convite.unidadeNomes) && convite.unidadeNomes.length
+          ? convite.unidadeNomes
+          : convite.unidadeNome
+            ? [convite.unidadeNome]
+            : [],
         status: "pendente_aprovacao",
         dataCriacao: new Date().toISOString(),
         conviteToken: token,
         criadoEm: new Date().toISOString(),
       };
 
-      await fsSet("coordenadores", user.uid, coordData);
+      await fsSetStrict("coordenadores", user.uid, coordData);
 
       const conviteAtualizado = { ...convite, status: "usado", dataUso: new Date().toISOString() };
-      await fsSet("convites", token, conviteAtualizado);
+      await fsSetStrict("convites", token, conviteAtualizado);
 
       setStatus("sucesso");
     } catch (err) {

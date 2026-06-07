@@ -1,4 +1,7 @@
-import { fsGetAll, fsSet, fsSetStrict } from "./firebase.js";
+import { fsDel, fsGetAll, fsSet, fsSetStrict } from "./firebase.js";
+import { isStorageOk, uploadPhotos } from "./storage.js";
+import { compressPhotoArray } from "../utils/performance.js";
+import { deleteOfflinePhotos, loadOfflinePhotos, saveOfflinePhotos } from "../utils/offlineStore.js";
 
 export class OfflineManager {
   constructor() {
@@ -6,6 +9,7 @@ export class OfflineManager {
     this.isOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
     this.isSyncing = false;
     this.syncInterval = null;
+    this.lastError = "";
     this.loadQueue();
     if (typeof window !== "undefined") {
       window.addEventListener("online", () => this.onOnline());
@@ -76,12 +80,54 @@ export class OfflineManager {
     return { queued: true, id: op.id };
   }
 
+  async uploadOfflinePhotos(photoOpId, uploadPrefix, existingUrls = []) {
+    if (!photoOpId) return existingUrls;
+    const pending = await loadOfflinePhotos(photoOpId);
+    let urls = [...(existingUrls || [])];
+    if (pending.length > 0 && isStorageOk()) {
+      const compressed = await compressPhotoArray(pending);
+      const uploaded = await uploadPhotos(compressed, uploadPrefix || photoOpId);
+      urls = [...urls, ...uploaded];
+    }
+    await deleteOfflinePhotos(photoOpId);
+    return urls;
+  }
+
   async executeOperation(op) {
     try {
       switch (op.type) {
-        case "save":
-          await fsSetStrict(op.data.collection, op.data.docId, op.data.content);
+        case "save": {
+          let content = { ...(op.data.content || {}) };
+          if (op.data.photoOpId) {
+            content.fotoUrls = await this.uploadOfflinePhotos(
+              op.data.photoOpId,
+              content.patrimonioId || op.data.docId,
+              content.fotoUrls || []
+            );
+          }
+          await fsSetStrict(op.data.collection, op.data.docId, content);
           break;
+        }
+        case "delete":
+          await fsDel(op.data.collection, op.data.docId);
+          break;
+        case "batch": {
+          let sharedUrls = [];
+          if (op.data.photoOpId) {
+            sharedUrls = await this.uploadOfflinePhotos(
+              op.data.photoOpId,
+              op.data.uploadPrefix || op.data.steps?.[0]?.docId || "batch"
+            );
+          }
+          for (const step of op.data.steps || []) {
+            let content = { ...(step.content || {}) };
+            if (step.usePhotos && sharedUrls.length) {
+              content.fotoUrls = [...(content.fotoUrls || []), ...sharedUrls];
+            }
+            await fsSetStrict(step.collection, step.docId, content);
+          }
+          break;
+        }
         case "approve":
           await fsSetStrict("coordenadores", op.data.uid, op.data.coordData);
           break;
@@ -90,11 +136,14 @@ export class OfflineManager {
       }
 
       op.status = "synced";
+      this.lastError = "";
       this.queue = this.queue.filter((o) => o.id !== op.id);
       this.persistQueue();
       return { success: true };
     } catch (e) {
+      this.lastError = e?.message || String(e);
       op.retries = (op.retries || 0) + 1;
+      op.lastError = this.lastError;
       if (op.retries >= 5) {
         op.status = "failed";
         console.error(`Operação ${op.id} falhou após 5 tentativas:`, e);
@@ -102,7 +151,7 @@ export class OfflineManager {
         op.status = "pending";
       }
       this.persistQueue();
-      return { success: false, error: e.message, retries: op.retries };
+      return { success: false, error: this.lastError, retries: op.retries };
     }
   }
 
@@ -122,13 +171,29 @@ export class OfflineManager {
     }
   }
 
+  async retrySync() {
+    for (const op of this.queue) {
+      if (op.status === "failed") {
+        op.status = "pending";
+        op.retries = 0;
+      }
+    }
+    this.persistQueue();
+    this.lastError = "";
+    return this.syncQueue();
+  }
+
   getQueueStatus() {
+    const photoPending = this.queue.filter((o) => o.data?.photoOpId && (o.status === "pending" || o.status === "failed")).length;
+    const failedOps = this.queue.filter((o) => o.status === "failed");
     return {
       total: this.queue.length,
       pending: this.queue.filter((o) => o.status === "pending").length,
-      failed: this.queue.filter((o) => o.status === "failed").length,
+      failed: failedOps.length,
+      photoPending,
       isOnline: this.isOnline,
       isSyncing: this.isSyncing,
+      lastError: this.lastError || failedOps[failedOps.length - 1]?.lastError || "",
     };
   }
 
@@ -256,6 +321,70 @@ export async function gerarRelatorioPDF(unidadeId, unidades, found) {
     console.error("Erro ao gerar PDF:", e);
     throw e;
   }
+}
+
+export async function gerarRelatorioExcelCoord(itens, foundMap, unidadeNome = "") {
+  try {
+    const XLSX = await import("xlsx/xlsx.mjs");
+    const worksheetData = [
+      ["RELATORIO DE INVENTARIO - COORDENADORA"],
+      [`Unidade(s): ${unidadeNome}`],
+      [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
+      [],
+      [
+        "N Patrimonio",
+        "Descricao",
+        "Especie",
+        "Status",
+        "Estado",
+        "Situacao",
+        "Local",
+        "Obs",
+        "Inv. Usuario",
+        "Inv. Data",
+        "Inv. Fotos",
+        "Coord. Estado",
+        "Coord. Obs",
+      ],
+    ];
+
+    for (const item of itens) {
+      const f = foundMap[item.id];
+      const ev = f?.registroInventariante;
+      worksheetData.push([
+        item.id,
+        item.descricao || "",
+        item.especie || "",
+        f ? "Localizado" : "Pendente",
+        f?.estado || "-",
+        f?.situacao || "-",
+        f?.localId || "",
+        f?.obs || "",
+        ev?.usuario || f?.usuario || "",
+        ev?.data ? `${ev.data} ${ev.hora || ""}`.trim() : "",
+        (ev?.fotoUrls || f?.fotoUrls || []).length,
+        f?.coordenadora ? f.estado : "",
+        f?.coordenadora ? f.obs : "",
+      ]);
+    }
+
+    const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Inventario");
+    return { workbook, XLSX };
+  } catch (e) {
+    console.error("Erro ao gerar Excel coord:", e);
+    throw e;
+  }
+}
+
+export async function queueOfflineWithPhotos({ type, data, photos, uploadPrefix }) {
+  let photoOpId = data?.photoOpId || null;
+  if (photos?.length && !photoOpId) {
+    photoOpId = `ph_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await saveOfflinePhotos(photoOpId, photos);
+  }
+  return offlineManager.queueOperation(type, { ...data, photoOpId, uploadPrefix });
 }
 
 export async function gerarRelatorioExcel(unidadeId, unidades, found) {

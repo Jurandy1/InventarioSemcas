@@ -2,23 +2,11 @@ import React, { useEffect, useState } from "react";
 import { TArea, TInput } from "./FormFields.jsx";
 import { EC, ESTADOS, SITUACOES } from "../constants/inventory.js";
 import { deletePhoto, getDisplayPhotoUrl } from "../services/storage.js";
-
-function SmartImg({ src, alt = "", style, ...rest }) {
-  const [resolved, setResolved] = useState(src || "");
-  useEffect(() => {
-    let alive = true;
-    setResolved(src || "");
-    (async () => {
-      const next = await getDisplayPhotoUrl(src);
-      if (!alive) return;
-      setResolved(next || src || "");
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [src]);
-  return <img src={resolved} alt={alt} style={style} loading="lazy" decoding="async" {...rest} />;
-}
+import { isSemTomboItem, showFotoManualBadge } from "../utils/semTombo.js";
+import { ItemHistory } from "./ItemHistory.jsx";
+import { inferEspecieFromDesc } from "../utils/itemHelpers.js";
+import { PhotoThumb } from "./PhotoThumb.jsx";
+import { SmartImg } from "./SmartImg.jsx";
 
 export function ItemDetailModal({
   item,
@@ -40,6 +28,7 @@ export function ItemDetailModal({
   onDelete,
 }) {
   if (!item) return null;
+  const semTombo = isSemTomboItem(item, foundEntry);
   const Lbl = ({ children }) => <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>{children}</label>;
 
   const EGrid = ({ fk }) => (
@@ -97,14 +86,30 @@ export function ItemDetailModal({
         </p>
       )}
 
-      <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
-        <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 800, color: "#0369a1" }}>Dados Editáveis do Item</p>
+      {semTombo && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#92400e" }}>Item sem tombo</p>
+          <p style={{ margin: "4px 0 0", fontSize: 11, color: "#78350f", lineHeight: 1.45 }}>
+            Identificado por foto e descrição. Informe o tombo sugerido abaixo para facilitar a vinculação posterior.
+          </p>
+        </div>
+      )}
+
+      <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 14px", marginBottom: 14 }}>
+        <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Dados editáveis do item</p>
         <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Descrição</p>
         <TInput
           key={`detDesc_${ft}`}
           initial={formRef.current.detDescricao}
-          onVal={(v) => setField("detDescricao", v)}
+          onVal={(v) => {
+            setField("detDescricao", v);
+            if (!String(formRef.current.detEspecie || "").trim()) {
+              setField("detEspecie", inferEspecieFromDesc(v, sugestoes?.especies));
+              bumpFt();
+            }
+          }}
           placeholder="Descrição do item..."
+          suggestions={sugestoes?.descricoes}
           style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none", marginBottom: 10 }}
         />
         <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Espécie / Tipo</p>
@@ -116,30 +121,42 @@ export function ItemDetailModal({
           suggestions={sugestoes?.especies}
           style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" }}
         />
-        <p style={{ margin: "8px 0 0", fontSize: 10, color: "#64748b" }}>Tombo, Fornecedor, NF e Valor não podem ser alterados.</p>
+        <p style={{ margin: "8px 0 0", fontSize: 10, color: "#64748b" }}>Tombo, fornecedor, NF e valor não podem ser alterados.</p>
       </div>
+
+      {semTombo && (
+        <>
+          <Lbl>Tombamento sugerido / referência</Lbl>
+          <TInput
+            key={`detTomboRef_${ft}`}
+            initial={formRef.current.detTomboRef}
+            onVal={(v) => setField("detTomboRef", v)}
+            placeholder="Número do patrimônio, se souber..."
+            style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" }}
+          />
+        </>
+      )}
 
       {(() => {
         const photoList = [...(formRef.current.detExistingUrls || []), ...(formRef.current.detNewBase64 || [])];
         return (
-          <div style={{ marginBottom: 14 }}>
+          <div key={`photos_${ft}`} style={{ marginBottom: 14 }}>
             {photoList.length > 0 ? (
               <div>
                 <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
                   {photoList.map((ph, i) => (
                     <div key={i} style={{ position: "relative", flexShrink: 0 }}>
-                      <SmartImg
+                      <PhotoThumb
                         src={ph}
-                        alt=""
-                        style={{
+                        badge={showFotoManualBadge(item, foundEntry)}
+                        size={photoList.length === 1 ? (isMobile ? 160 : 200) : isMobile ? 160 : 200}
+                        imgStyle={{
                           width: photoList.length === 1 ? "100%" : isMobile ? 160 : 200,
                           height: photoList.length === 1 ? 180 : isMobile ? 120 : 140,
-                          objectFit: "cover",
                           borderRadius: 10,
                           border: "1px solid #e2e8f0",
-                          cursor: "zoom-in",
                         }}
-                        onClick={() => onViewImage?.(ph)}
+                        onImageClick={() => onViewImage?.(ph)}
                       />
                       <button
                         onClick={() => {
@@ -367,6 +384,8 @@ export function ItemDetailModal({
         placeholder="Anotações..."
         style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none", resize: "none" }}
       />
+
+      <ItemHistory itemId={item.id} />
 
       <div style={{ display: "flex", gap: 9, marginTop: 16, flexDirection: isMobile ? "column" : "row" }}>
         <button

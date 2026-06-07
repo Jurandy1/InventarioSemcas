@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { fsDel, fsGetAll, fsSet } from "../services/firebase.js";
 import { deletePhoto, isStorageOk, uploadPhotos } from "../services/storage.js";
-import { EVENTOS, notificationService, offlineManager } from "../services/features.js";
+import { EVENTOS, notificationService, offlineManager, queueOfflineWithPhotos } from "../services/features.js";
 import { logAuditoria } from "../services/audit.js";
 import { bumpCacheBuster, compressPhotoArray, getCachedData, perfMonitor, setCachedData } from "../utils/performance.js";
+import { saveOfflinePhotos } from "../utils/offlineStore.js";
 
 export function useFound({ showT, applyDescOverride } = {}) {
   const [found, setFound] = useState([]);
@@ -27,13 +28,42 @@ export function useFound({ showT, applyDescOverride } = {}) {
   const foundSet = useMemo(() => new Set(found.map((f) => f.patrimonioId)), [found]);
   const foundMap = useMemo(() => found.reduce((m, f) => ((m[f.patrimonioId] = f), m), {}), [found]);
 
-  const loadFoundAndTombos = useCallback(async () => {
+  const loadFoundAndTombos = useCallback(async (unitIds = []) => {
     try {
       const [cachedFound, cachedTombos] = await Promise.all([getCachedData("inventario"), getCachedData("tombosNE")]);
       if (Array.isArray(cachedFound) && cachedFound.length > 0) syncFoundRef(cachedFound);
       if (Array.isArray(cachedTombos) && cachedTombos.length > 0) setTombosNE(cachedTombos);
 
-      const [foundDocs, neDocs] = await Promise.all([fsGetAll("inventario"), fsGetAll("tombosNE")]);
+      const ids = Array.isArray(unitIds) ? unitIds.filter(Boolean) : [];
+      let foundDocs = [];
+      if (ids.length === 1) {
+        foundDocs = await fsGetAll("inventario", {
+          where: [{ field: "unidadeId", op: "EQUAL", value: ids[0] }],
+          orderBy: ["__name__"],
+        });
+      } else if (ids.length > 1) {
+        const chunks = await Promise.all(
+          ids.map((uid) =>
+            fsGetAll("inventario", {
+              where: [{ field: "unidadeId", op: "EQUAL", value: uid }],
+              orderBy: ["__name__"],
+            })
+          )
+        );
+        const seen = new Set();
+        for (const chunk of chunks) {
+          for (const d of chunk) {
+            const pid = d.patrimonioId || d._id;
+            if (seen.has(pid)) continue;
+            seen.add(pid);
+            foundDocs.push(d);
+          }
+        }
+      } else {
+        foundDocs = await fsGetAll("inventario", { pageSize: 300 });
+      }
+
+      const neDocs = await fsGetAll("tombosNE", { pageSize: 200 });
       const nextFound = foundDocs.map((d) => ({ ...d, patrimonioId: d.patrimonioId || d._id }));
       const nextTombos = neDocs.map((d) => ({ ...d, id: d._id }));
 
@@ -48,7 +78,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
   }, [syncFoundRef]);
 
   const markFound = useCallback(
-    async ({ itemId, estado, situacao, localId, obs, marca, origem, fotoUrls = [], extras = {}, unidadeAtiva, logado }) => {
+    async ({ itemId, estado, situacao, localId, obs, marca, origem, fotoUrls = [], extras = {}, unidadeAtiva, logado, updateQueueStatus, offlinePhotos = null, localOnly = false }) => {
       const now = new Date();
       const entryUnidadeId = unidadeAtiva?.id || "";
       const entryUnidadeNome = unidadeAtiva?.nome || "";
@@ -85,16 +115,35 @@ export function useFound({ showT, applyDescOverride } = {}) {
         }
       }
 
+      const applyLocal = async () => {
+        const idx = foundPosRef.current.get(itemId);
+        const nextFound = currentFound.slice();
+        const nextEntry = { ...entry, _id: itemId };
+        if (typeof idx === "number") nextFound[idx] = nextEntry;
+        else nextFound.push(nextEntry);
+        syncFoundRef(nextFound);
+        bumpCacheBuster();
+        await setCachedData("inventario", nextFound);
+        return entry;
+      };
+
+      if (localOnly) {
+        return applyLocal();
+      }
+
+      if (!navigator.onLine) {
+        await queueOfflineWithPhotos({
+          type: "save",
+          data: { collection: "inventario", docId: itemId, content: entry },
+          photos: Array.isArray(offlinePhotos) ? offlinePhotos : null,
+          uploadPrefix: itemId,
+        });
+        updateQueueStatus?.();
+        return applyLocal();
+      }
+
       await fsSet("inventario", itemId, entry);
-      const idx = foundPosRef.current.get(itemId);
-      const nextFound = currentFound.slice();
-      const nextEntry = { ...entry, _id: itemId };
-      if (typeof idx === "number") nextFound[idx] = nextEntry;
-      else nextFound.push(nextEntry);
-      syncFoundRef(nextFound);
-      bumpCacheBuster();
-      await setCachedData("inventario", nextFound);
-      return entry;
+      return applyLocal();
     },
     [showT, syncFoundRef]
   );
@@ -116,6 +165,12 @@ export function useFound({ showT, applyDescOverride } = {}) {
       const item = formRef.current.detItem;
       if (!item) return;
 
+      const localId = String(getField("detLocal") || "").trim();
+      if (!localId) {
+        showT?.("Selecione um local antes de salvar");
+        return;
+      }
+
       perfMonitor.start("saveDetail");
 
       const before = foundMap[item.id] || null;
@@ -134,6 +189,13 @@ export function useFound({ showT, applyDescOverride } = {}) {
         extras.permutaDesc = String(getField("detPermutaDesc") || "").trim();
         extras.permutaMarca = String(getField("detPermutaMarca") || "").trim();
         extras.permutaEstado = getField("detPermutaEstado") || "Bom";
+      }
+
+      if (before?.semTombo || item?.semTombo || before?.identificadoPorFoto) {
+        extras.semTombo = true;
+        extras.identificadoPorFoto = true;
+        const tomboRef = String(formRef.current.detTomboRef || "").trim();
+        if (tomboRef) extras.tomboReferencia = tomboRef;
       }
 
       try {
@@ -168,10 +230,16 @@ export function useFound({ showT, applyDescOverride } = {}) {
         };
 
         if (!navigator.onLine) {
+          let photoOpId = null;
+          if (newBase64.length > 0) {
+            photoOpId = `ph_${item.id}_${Date.now()}`;
+            await saveOfflinePhotos(photoOpId, newBase64);
+          }
           await offlineManager.queueOperation("save", {
             collection: "inventario",
             docId: item.id,
             content: offlineEntry,
+            photoOpId,
           });
           const base = foundRef.current || [];
           const idx = foundPosRef.current.get(item.id);
@@ -186,7 +254,8 @@ export function useFound({ showT, applyDescOverride } = {}) {
           await logAuditoria("queue-save", "inventario", item.id, before, offlineEntry);
           if (descEdit || espEdit) applyDescOverride?.(item.id, descEdit, espEdit);
           closeModal?.();
-          showT?.("Salvo offline (sincronizará quando voltar online)");
+          showT?.(photoOpId ? "Na fila (offline)" : "Na fila (offline)");
+          notificationService.notify(EVENTOS.ITEM_ENCONTRADO, { message: "Salvo na fila offline", type: "info" });
           return;
         }
 

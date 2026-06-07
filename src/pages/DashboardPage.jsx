@@ -18,10 +18,51 @@ export function DashboardPage({
   bp,
   bs,
   cd,
+  campanha,
+  campanhaFechada,
+  onFecharCampanha,
+  onReabrirCampanha,
+  isAdmin,
 }) {
   return (
     <div>
       <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>Dashboard</h2>
+
+      {isAdmin && (
+        <div style={{ ...cd, marginBottom: 16, border: campanhaFechada ? "1.5px solid #fecaca" : "1.5px solid #bbf7d0", background: campanhaFechada ? "#fef2f2" : "#f0fdf4" }}>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: campanhaFechada ? "#991b1b" : "#166534" }}>
+            Campanha: {campanha?.nome || "Inventário atual"} · {campanhaFechada ? "Fechada" : "Aberta"}
+          </p>
+          {campanha?.fim && campanhaFechada && (
+            <p style={{ margin: "4px 0 0", fontSize: 11, color: "#64748b" }}>Fechada em {new Date(campanha.fim).toLocaleString("pt-BR")}</p>
+          )}
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            {!campanhaFechada ? (
+              <button
+                onClick={async () => {
+                  if (!window.confirm("Fechar o inventário? Ninguém poderá registrar novos itens.")) return;
+                  await onFecharCampanha?.();
+                  showT("Inventário fechado");
+                }}
+                style={{ ...bs, fontSize: 12, color: "#991b1b", borderColor: "#fca5a5" }}
+              >
+                Fechar inventário
+              </button>
+            ) : (
+              <button
+                onClick={async () => {
+                  if (!window.confirm("Reabrir o inventário para novos registros?")) return;
+                  await onReabrirCampanha?.();
+                  showT("Inventário reaberto");
+                }}
+                style={{ ...bp, fontSize: 12, background: "#166534" }}
+              >
+                Reabrir inventário
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
         {[
           { l: "Total", v: totalBens, c: "#1e3a8a" },

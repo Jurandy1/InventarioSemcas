@@ -11,7 +11,7 @@
 html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
 }
 
 body {
@@ -33,7 +33,6 @@ h4 { font-size: clamp(16px, 3.5vw, 20px); }
 p {
   word-break: break-word;
   overflow-wrap: break-word;
-  hyphens: auto;
 }
 
 /* ========================================
@@ -348,10 +347,6 @@ video {
 /* ========================================
    SCROLL BEHAVIOR
    ======================================== */
-
-html {
-  scroll-behavior: smooth;
-}
 
 /* ========================================
    ACESSIBILIDADE

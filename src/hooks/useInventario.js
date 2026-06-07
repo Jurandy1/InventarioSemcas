@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { clearSessionId, createSessionId, getSessionId, setSessionId } from "../utils/inventorySession.js";
 
 export function useInventario({ unidades, foundSet }) {
   const [unidadesAtivas, setUnidadesAtivas] = useState([]);
   const [pendingUnids, setPendingUnids] = useState(new Set());
   const [invSubTab, setInvSubTab] = useState("inventariar");
+  const [sessionId, setSessionIdState] = useState(() => getSessionId());
 
   useEffect(() => {
     try {
@@ -11,11 +13,18 @@ export function useInventario({ unidades, foundSet }) {
       if (!ativasRaw || !Array.isArray(unidades) || unidades.length === 0) return;
       const ids = JSON.parse(ativasRaw);
       const restored = ids.map((id) => unidades.find((x) => x.id === id)).filter(Boolean);
-      if (restored.length) setUnidadesAtivas(restored);
+      if (restored.length) {
+        setUnidadesAtivas(restored);
+        const sid = getSessionId();
+        if (sid) setSessionIdState(sid);
+      }
     } catch {}
   }, [unidades]);
 
   const confirmarAtivas = useCallback((units) => {
+    const sid = createSessionId();
+    setSessionId(sid);
+    setSessionIdState(sid);
     setUnidadesAtivas(units);
     setPendingUnids(new Set());
     setInvSubTab("andamento");
@@ -48,6 +57,8 @@ export function useInventario({ unidades, foundSet }) {
   const clearAtivas = useCallback(() => {
     setUnidadesAtivas([]);
     setPendingUnids(new Set());
+    clearSessionId();
+    setSessionIdState("");
     try {
       localStorage.removeItem("inv-ativas-ids");
     } catch {}
@@ -73,6 +84,7 @@ export function useInventario({ unidades, foundSet }) {
     setPendingUnids,
     invSubTab,
     setInvSubTab,
+    sessionId,
     confirmarAtivas,
     addAtiva,
     removeAtiva,

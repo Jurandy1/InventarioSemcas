@@ -4,6 +4,7 @@ import { TInput } from "../components/FormFields.jsx";
 import { ESTADOS, EC } from "../constants/inventory.js";
 import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "../app/categories.js";
 import { getDisplayPhotoUrl } from "../services/storage.js";
+import { SmartImg } from "../components/SmartImg.jsx";
 
 function getItemCode(item) {
   return item?.patrimonioLabel || item?.id || "—";
@@ -11,23 +12,6 @@ function getItemCode(item) {
 
 function getDisplayDesc(item, foundEntry) {
   return foundEntry?.descricaoEdit || item.descricao || item.especie || "—";
-}
-
-function SmartImg({ src, alt = "", style, ...rest }) {
-  const [resolved, setResolved] = useState(src || "");
-  useEffect(() => {
-    let alive = true;
-    setResolved(src || "");
-    (async () => {
-      const next = await getDisplayPhotoUrl(src);
-      if (!alive) return;
-      setResolved(next || src || "");
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [src]);
-  return <img src={resolved} alt={alt} style={style} loading="lazy" decoding="async" {...rest} />;
 }
 
 export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva, formRef, bumpFt, setModal, isMob, inp, cd, bs, onViewImage }) {
@@ -506,7 +490,7 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
 
         <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "2fr 1fr 1fr", gap: 8, marginBottom: 12 }}>
           <TInput
-            initial=""
+            initial={localQ}
             onVal={(v) => {
               setLocalQ(v);
               resetPage();

@@ -36,7 +36,7 @@ export function NotasFiscaisPage({
 
       <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "2fr 1fr", gap: 8, marginBottom: 12 }}>
         <TInput
-          initial=""
+          initial={nfSearch}
           onVal={(v) => {
             setNfSearch(v);
             setNfPage(1);

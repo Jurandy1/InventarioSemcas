@@ -1,8 +1,12 @@
 import React, { useMemo, useState } from "react";
+import { SmartImg } from "../components/SmartImg.jsx";
 import { TInput } from "../components/FormFields.jsx";
 import { Badge } from "../components/Badge.jsx";
 import { EC, SC } from "../constants/inventory.js";
-import { getDisplayPhotoUrl } from "../services/storage.js";
+import { countFoundInLocal } from "../utils/inventorySession.js";
+import { isSemTomboItem, SEM_TOMBO_BADGE, showFotoManualBadge } from "../utils/semTombo.js";
+import { PhotoThumb } from "../components/PhotoThumb.jsx";
+import { sortByDataNF } from "../utils/itemHelpers.js";
 
 function getItemCode(item) {
   return item?.patrimonioLabel || item?.id || "—";
@@ -36,23 +40,6 @@ function buildOrigemLine(item) {
   return `${fornecedor} · ${empenho} · ${nf}`;
 }
 
-function SmartImg({ src, alt = "", style, ...rest }) {
-  const [resolved, setResolved] = React.useState(src || "");
-  React.useEffect(() => {
-    let alive = true;
-    setResolved(src || "");
-    (async () => {
-      const next = await getDisplayPhotoUrl(src);
-      if (!alive) return;
-      setResolved(next || src || "");
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [src]);
-  return <img src={resolved} alt={alt} style={style} loading="lazy" decoding="async" {...rest} />;
-}
-
 export function InventarioPage({
   invSubTab,
   setInvSubTab,
@@ -77,14 +64,20 @@ export function InventarioPage({
   page,
   totalPages,
   setPage,
+  search,
   setSearch,
   hideFound,
   setHideFound,
   openDetModal,
   onOpenManual,
+  onOpenSemTombo,
   onOpenFinalizar,
   onOpenCancelar,
+  onOpenLinkTombo,
+  onOpenNextPending,
+  campanhaFechada,
   locais,
+  sessionId,
   onQuickAddLocal,
   onDeleteLocal,
   showT,
@@ -135,7 +128,10 @@ export function InventarioPage({
         String(it.id || "").toLowerCase().includes(q) ||
         String(it.patrimonioLabel || "").toLowerCase().includes(q) ||
         String(it.descricao || "").toLowerCase().includes(q) ||
-        String(it.especie || "").toLowerCase().includes(q)
+        String(it.especie || "").toLowerCase().includes(q) ||
+        String(it.fornecedor || "").toLowerCase().includes(q) ||
+        String(it.marca || "").toLowerCase().includes(q) ||
+        String(it.nf || "").toLowerCase().includes(q)
       ) {
         out.push(it);
         if (out.length >= 40) break;
@@ -143,6 +139,18 @@ export function InventarioPage({
     }
     return out;
   }, [pendentes, localAddSearch]);
+
+  const ajusteItems = useMemo(() => {
+    const out = [];
+    for (const u of unidadesAtivas) {
+      for (const i of u.itens) {
+        const f = foundMap[i.id];
+        if (!f) continue;
+        if (isSemTomboItem(i, f)) out.push({ item: { ...i, unidadeId: u.id, unidadeNome: u.nome }, found: f });
+      }
+    }
+    return out.sort((a, b) => sortByDataNF(a.item, b.item));
+  }, [unidadesAtivas, foundMap]);
 
   return (
     <div>
@@ -206,6 +214,31 @@ export function InventarioPage({
         >
           Locais
         </button>
+        {unidadesAtivas.length > 0 && (
+          <button
+            onClick={() => setInvSubTab("ajuste")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "8px 16px",
+              borderRadius: 9,
+              border: "none",
+              background: invSubTab === "ajuste" ? "#1e3a8a" : "#f1f5f9",
+              color: invSubTab === "ajuste" ? "#fff" : "#374151",
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: "pointer",
+            }}
+          >
+            Ajuste
+            {ajusteItems.length > 0 && (
+              <span style={{ background: invSubTab === "ajuste" ? "rgba(255,255,255,.25)" : "#e2e8f0", color: invSubTab === "ajuste" ? "#fff" : "#64748b", borderRadius: 99, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
+                {ajusteItems.length}
+              </span>
+            )}
+          </button>
+        )}
       </div>
 
       {invSubTab === "inventariar" && (
@@ -255,7 +288,7 @@ export function InventarioPage({
             </div>
           )}
 
-          <TInput initial="" onVal={(v) => setUnidadeSearch(v)} placeholder="Buscar unidade..." style={{ ...inp, marginBottom: 12 }} />
+          <TInput initial={unidadeSearch} onVal={(v) => setUnidadeSearch(v)} placeholder="Buscar unidade..." style={{ ...inp, marginBottom: 12 }} />
 
           {unidades.length === 0 ? (
             <div style={{ ...cd, textAlign: "center", padding: 40 }}>
@@ -313,11 +346,18 @@ export function InventarioPage({
                 </p>
               </div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                <button onClick={onOpenManual} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#10b981" }}>
-                  + Manual
-                </button>
+                {!campanhaFechada && onOpenNextPending && (
+                  <button onClick={onOpenNextPending} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#0f766e" }}>
+                    Próximo pendente
+                  </button>
+                )}
+                {!campanhaFechada && (
+                  <button onClick={onOpenManual} style={{ ...bs, fontSize: 11, padding: "6px 12px" }}>
+                    Manual
+                  </button>
+                )}
                 {totalFound > 0 && (
-                  <button onClick={onOpenFinalizar} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#dc2626" }}>
+                  <button onClick={onOpenFinalizar} style={{ ...bp, fontSize: 11, padding: "6px 12px" }}>
                     Finalizar
                   </button>
                 )}
@@ -370,8 +410,11 @@ export function InventarioPage({
             </div>
           </div>
 
-          <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #e0e7ff" }}>
-            <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 800, color: "#4338ca" }}>Locais / Salas desta sessão</p>
+          <div style={{ ...cd, marginBottom: 12, border: "1px solid #e2e8f0" }}>
+            <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Locais desta sessão</p>
+            <p style={{ margin: "0 0 10px", fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>
+              Crie salas/locais aqui. Só aparecem neste inventário — locais de outras sessões não são listados.
+            </p>
             <div style={{ display: "flex", gap: 8, marginBottom: locais.length > 0 ? 10 : 0 }}>
               <input
                 value={localNomeRapido}
@@ -397,10 +440,10 @@ export function InventarioPage({
                 + Adicionar
               </button>
             </div>
-            {locais.length > 0 && (
+            {locais.length > 0 ? (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {locais.map((l) => {
-                  const countLocal = Object.values(foundMap || {}).filter((f) => f?.localId === l.id).length;
+                  const countLocal = countFoundInLocal(foundMap, l.id, [...activeUnitIds]);
                   return (
                     <button
                       key={l.id}
@@ -408,7 +451,7 @@ export function InventarioPage({
                         setLocalSelecionadoId(l.id);
                         setInvSubTab("locais");
                       }}
-                      style={{ background: "#e0e7ff", color: "#3730a3", borderRadius: 99, padding: "4px 10px", fontSize: 11, fontWeight: 800, border: "none", cursor: "pointer" }}
+                      style={{ background: "#f1f5f9", color: "#334155", borderRadius: 99, padding: "4px 10px", fontSize: 11, fontWeight: 700, border: "1px solid #e2e8f0", cursor: "pointer" }}
                       title="Abrir local"
                     >
                       {l.nome} {countLocal ? `(${countLocal})` : ""}
@@ -416,11 +459,13 @@ export function InventarioPage({
                   );
                 })}
               </div>
+            ) : (
+              <p style={{ margin: 0, fontSize: 11, color: "#94a3b8" }}>Nenhum local criado nesta sessão.</p>
             )}
           </div>
 
           <TInput
-            initial=""
+            initial={search}
             onVal={(v) => {
               setSearch(v);
               setPage(1);
@@ -454,14 +499,11 @@ export function InventarioPage({
                   style={{ ...cd, cursor: "pointer", border: `1.5px solid ${isPermuta ? "#fcd34d" : isF ? "#bbf7d0" : "#e2e8f0"}`, display: "flex", gap: 12 }}
                 >
                   {foto ? (
-                    <SmartImg
+                    <PhotoThumb
                       src={foto}
-                      alt=""
-                      style={{ width: 56, height: 56, borderRadius: 8, objectFit: "cover", flexShrink: 0, cursor: "zoom-in" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onViewImage?.(foto);
-                      }}
+                      badge={showFotoManualBadge(item, f)}
+                      size={56}
+                      onImageClick={() => onViewImage?.(foto)}
                     />
                   ) : (
                     <div style={{ width: 56, height: 56, borderRadius: 8, background: isPermuta ? "#fef3c7" : isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0, color: "#64748b", fontWeight: 800 }}>
@@ -531,7 +573,59 @@ export function InventarioPage({
         </div>
       )}
 
-      {invSubTab === "locais" && (
+      {invSubTab === "locais" && unidadesAtivas.length === 0 && (
+        <div style={{ ...cd, padding: 32, textAlign: "center" }}>
+          <p style={{ margin: 0, color: "#64748b", fontSize: 13 }}>Inicie um inventário para criar e gerenciar locais.</p>
+        </div>
+      )}
+
+      {invSubTab === "ajuste" && unidadesAtivas.length > 0 && (
+        <div>
+          <div style={{ ...cd, marginBottom: 12, border: "1px solid #e2e8f0" }}>
+            <p style={{ margin: "0 0 6px", fontSize: 14, fontWeight: 800, color: "#0f172a" }}>Ajuste de tombamento</p>
+            <p style={{ margin: 0, fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
+              Vincule itens registrados sem tombo (S/T) ao patrimônio correto. As fotos permanecem com aviso de alocação manual.
+            </p>
+          </div>
+          {ajusteItems.length === 0 ? (
+            <div style={{ ...cd, textAlign: "center", padding: 32 }}>
+              <p style={{ margin: 0, color: "#94a3b8", fontSize: 13 }}>Nenhum item sem tombo pendente de vinculação.</p>
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(340px,1fr))", gap: 10 }}>
+              {ajusteItems.map(({ item, found: f }) => {
+                const foto = f?.fotoUrls?.[0];
+                return (
+                  <div key={item.id} style={{ ...cd, border: "1.5px solid #fcd34d", padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
+                    {foto ? (
+                      <PhotoThumb src={foto} badge={showFotoManualBadge(item, f)} size={56} onImageClick={() => onViewImage?.(foto)} />
+                    ) : (
+                      <div style={{ width: 56, height: 56, borderRadius: 8, background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#92400e", flexShrink: 0 }}>
+                        S/T
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: 12, fontWeight: 800 }}>{getDisplayDesc(item, f)}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Código: {getItemCode(item)}</p>
+                      {f?.tomboReferencia && (
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#92400e" }}>Sugestão: {f.tomboReferencia}</p>
+                      )}
+                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                        <Badge label={SEM_TOMBO_BADGE.label} c={SEM_TOMBO_BADGE} />
+                      </div>
+                    </div>
+                    <button onClick={() => onOpenLinkTombo?.(item, f)} style={{ ...bp, padding: "8px 10px", fontSize: 11, flexShrink: 0 }}>
+                      Vincular
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {invSubTab === "locais" && unidadesAtivas.length > 0 && (
         <div>
           {localSelecionadoId ? (
             (() => {
@@ -553,16 +647,22 @@ export function InventarioPage({
                       {l?.desc && <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>{l.desc}</p>}
                     </div>
                     <button
-                      onClick={() => onOpenManual?.(localSelecionadoId)}
-                      style={{ ...bp, padding: "8px 12px", fontSize: 12, background: "#10b981" }}
+                      onClick={() => onOpenSemTombo?.(localSelecionadoId)}
+                      style={{ ...bp, padding: "8px 12px", fontSize: 12 }}
                     >
-                      + Manual
+                      Sem tombo
+                    </button>
+                    <button
+                      onClick={() => onOpenManual?.(localSelecionadoId)}
+                      style={{ ...bs, padding: "8px 12px", fontSize: 12 }}
+                    >
+                      Manual
                     </button>
                   </div>
 
                   <div style={{ ...cd, marginBottom: 12 }}>
                     <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 900, color: "#1e3a8a" }}>Adicionar item neste local</p>
-                    <TInput initial="" onVal={(v) => setLocalAddSearch(v)} placeholder="Buscar pendentes por número/descrição..." style={{ ...inp, marginBottom: 10 }} />
+                    <TInput initial={localAddSearch} onVal={(v) => setLocalAddSearch(v)} placeholder="Buscar pendentes por número/descrição..." style={{ ...inp, marginBottom: 10 }} />
                     {pendentesFiltrados.length === 0 ? (
                       <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>Nenhum item pendente encontrado.</p>
                     ) : (
@@ -599,13 +699,15 @@ export function InventarioPage({
                           const metaLine = it ? buildMetaLine(it) : `Nº ${id}`;
                           const origemLine = it ? buildOrigemLine(it) : "—";
                           const fotoCount = Array.isArray(f?.fotoUrls) ? f.fotoUrls.length : 0;
+                          const semTombo = isSemTomboItem(it, f);
                           return (
-                            <div key={id} style={{ ...cd, border: "1.5px solid #bbf7d0", padding: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                              <div style={{ minWidth: 0 }}>
+                            <div key={id} style={{ ...cd, border: `1.5px solid ${semTombo ? "#fcd34d" : "#bbf7d0"}`, padding: 12, display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                              <div style={{ minWidth: 0, flex: 1 }}>
                                 <p style={{ margin: 0, fontSize: 12, fontWeight: 800 }}>{label}</p>
                                 <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>{metaLine}</p>
                                 <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8", overflowWrap: "anywhere" }}>{origemLine}</p>
                                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                                  {semTombo && <Badge label={SEM_TOMBO_BADGE.label} c={SEM_TOMBO_BADGE} />}
                                   <Badge label={f.estado || "—"} c={EC[f.estado] || { bg: "#f1f5f9", tx: "#334155" }} />
                                   <Badge label={f.situacao || "—"} c={SC[f.situacao] || { bg: "#f1f5f9", tx: "#334155" }} />
                                   <Badge
@@ -614,6 +716,26 @@ export function InventarioPage({
                                   />
                                 </div>
                               </div>
+                              {fotoCount > 0 && f?.fotoUrls?.[0] ? (
+                                <PhotoThumb
+                                  src={f.fotoUrls[0]}
+                                  badge={showFotoManualBadge(it, f)}
+                                  size={48}
+                                  onImageClick={() => onViewImage?.(f.fotoUrls[0])}
+                                />
+                              ) : null}
+                              <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+                              {semTombo && onOpenLinkTombo ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenLinkTombo(it || { id, descricao: label }, f);
+                                  }}
+                                  style={{ ...bp, padding: "8px 10px", fontSize: 11 }}
+                                >
+                                  Vincular tombo
+                                </button>
+                              ) : null}
                               {it ? (
                                 <button onClick={() => openDetModal(it)} style={{ ...bs, padding: "8px 10px", fontSize: 12 }}>
                                   Abrir
@@ -621,6 +743,7 @@ export function InventarioPage({
                               ) : (
                                 <span style={{ fontSize: 11, color: "#94a3b8" }}>—</span>
                               )}
+                              </div>
                             </div>
                           );
                         })}
@@ -633,7 +756,10 @@ export function InventarioPage({
           ) : (
             <div>
               <div style={{ ...cd, marginBottom: 12 }}>
-                <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 900, color: "#1e3a8a" }}>Criar / gerenciar locais</p>
+                <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Locais desta sessão</p>
+                <p style={{ margin: "0 0 10px", fontSize: 11, color: "#64748b" }}>
+                  {sessionId ? "Apenas locais criados neste inventário aparecem aqui." : "Inicie um inventário para criar locais."}
+                </p>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input
                     value={localNomeRapido}
@@ -662,13 +788,14 @@ export function InventarioPage({
               </div>
 
               {locais.length === 0 ? (
-                <div style={{ ...cd, textAlign: "center", padding: 40 }}>
-                  <p style={{ color: "#94a3b8" }}>Cadastre locais para organizar os itens.</p>
+                <div style={{ ...cd, textAlign: "center", padding: 32 }}>
+                  <p style={{ color: "#64748b", margin: 0, fontSize: 13 }}>Nenhum local nesta sessão.</p>
+                  <p style={{ color: "#94a3b8", margin: "6px 0 0", fontSize: 12 }}>Use o campo acima para criar a primeira sala.</p>
                 </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
                   {locais.map((l) => {
-                    const c = Object.values(foundMap || {}).filter((f) => f?.localId === l.id).length;
+                    const c = countFoundInLocal(foundMap, l.id, [...activeUnitIds]);
                     return (
                       <div key={l.id} style={{ ...cd, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
                         <button

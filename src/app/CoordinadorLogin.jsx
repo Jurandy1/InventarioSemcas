@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { clearFirebaseSession, fbLogin, isFirebaseConfigured, obterCoordPorUid } from "../services/firebase.js";
+import { clearFirebaseSession, fbLogin, isFirebaseConfigured, obterCoordPorUid, refreshAuthToken, setFirebaseSession } from "../services/firebase.js";
+import { clearCoordSession, loadCoordSession, saveCoordSession } from "../utils/coordRedirect.js";
 import { CoordinadorPage } from "./CoordinadorPage.jsx";
 
 export function CoordinadorLogin() {
@@ -27,6 +28,7 @@ export function CoordinadorLogin() {
       setStatus("dashboard");
     } catch (err) {
       console.error("Erro ao validar coordenadora:", err);
+      clearCoordSession();
       clearFirebaseSession();
       setToken(null);
       setCoordData(null);
@@ -37,11 +39,60 @@ export function CoordinadorLogin() {
 
   useEffect(() => {
     async function boot() {
-      clearFirebaseSession();
-      setStatus("login");
+      if (!firebaseOk) {
+        setStatus("login");
+        return;
+      }
+
+      const saved = loadCoordSession();
+      if (!saved) {
+        clearFirebaseSession();
+        setStatus("login");
+        return;
+      }
+
+      setStatus("loading");
+      try {
+        let session = saved;
+        if (saved.refreshToken) {
+          try {
+            const r = await refreshAuthToken(saved.refreshToken);
+            session = {
+              ...saved,
+              token: r.token,
+              uid: r.uid,
+              refreshToken: r.refreshToken || saved.refreshToken,
+            };
+            saveCoordSession(session);
+          } catch {
+            clearCoordSession();
+            clearFirebaseSession();
+            setStatus("login");
+            return;
+          }
+        }
+
+        setFirebaseSession({ token: session.token, uid: session.uid });
+        if (session.email) setEmail(session.email);
+        await validateCoord(session.uid);
+      } catch {
+        clearCoordSession();
+        clearFirebaseSession();
+        setStatus("login");
+      }
     }
     boot();
   }, [firebaseOk]);
+
+  if (status === "loading") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f1f5f9", gap: 16 }}>
+        <style>{`@keyframes sp{to{transform:rotate(360deg)}}`}</style>
+        <div style={{ width: 40, height: 40, border: "4px solid #e2e8f0", borderTopColor: "#6b21a8", borderRadius: "50%", animation: "sp .8s linear infinite" }} />
+        <p style={{ color: "#64748b", fontSize: 13 }}>Entrando...</p>
+      </div>
+    );
+  }
 
   if (status === "dashboard" && token && coordData) {
     return (
@@ -55,6 +106,7 @@ export function CoordinadorLogin() {
           setEmail("");
           setSenha("");
           setError("");
+          clearCoordSession();
           clearFirebaseSession();
           try {
             window.history.replaceState({}, "", `${import.meta.env.BASE_URL}#/coord/`);
@@ -120,8 +172,10 @@ export function CoordinadorLogin() {
               }
               setStatus("loading");
               const user = await fbLogin(em, pw);
+              saveCoordSession(user);
               await validateCoord(user.uid);
             } catch (e) {
+              clearCoordSession();
               clearFirebaseSession();
               setStatus("login");
               setError(e?.message || "Falha ao entrar");

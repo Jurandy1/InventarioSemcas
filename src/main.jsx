@@ -34,12 +34,13 @@ const isAbortError = (err) => {
 window.addEventListener("error", (e) => {
   const err = e?.error || e?.message;
   if (isAbortError(err)) return;
-  renderFatal(err);
+  console.error("Erro não tratado:", err);
 });
 window.addEventListener("unhandledrejection", (e) => {
   const err = e?.reason;
   if (isAbortError(err)) return;
-  renderFatal(err);
+  console.error("Promise rejeitada:", err);
+  e.preventDefault?.();
 });
 
 async function boot() {

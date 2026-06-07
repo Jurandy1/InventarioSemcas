@@ -27,7 +27,7 @@ export function BuscaPage({
   return (
     <div>
       <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>Busca</h2>
-      <TInput initial="" onVal={onSearchChange} placeholder="Buscar em todas as unidades (mín. 2 caracteres)..." style={{ ...inp, marginBottom: 12 }} />
+      <TInput initial={globalSearch} onVal={onSearchChange} placeholder="Buscar em todas as unidades (mín. 2 caracteres)..." style={{ ...inp, marginBottom: 12 }} />
       {globalSearching && <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px" }}>Buscando...</p>}
       {!globalSearching && globalSearch.trim().length >= 2 && <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px" }}>{globalResults.length} resultado(s)</p>}
       <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(360px,1fr))", gap: 10 }}>

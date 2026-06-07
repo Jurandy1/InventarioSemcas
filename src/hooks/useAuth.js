@@ -3,10 +3,50 @@ import {
   clearFirebaseSession,
   fbLogin,
   fbRegister,
+  obterCoordPorUid,
   obterInventariantePorUid,
   refreshAuthToken,
   setFirebaseSession,
 } from "../services/firebase.js";
+import { CoordRedirectError, isCoordRedirectError, redirectToCoordLogin } from "../utils/coordRedirect.js";
+
+async function resolveLoginRole(user) {
+  const invEntry = await obterInventariantePorUid(user.uid);
+  if (invEntry) {
+    if (invEntry.status === "pendente_aprovacao") {
+      throw new Error("Sua conta está aguardando aprovação do administrador. Tente novamente em breve.");
+    }
+    if (invEntry.status === "rejeitado") {
+      throw new Error("Seu acesso foi rejeitado. Entre em contato com o administrador.");
+    }
+    if (invEntry.status === "desativado") {
+      throw new Error("Sua conta foi desativada. Entre em contato com o administrador.");
+    }
+    user.nome = invEntry.nome || user.nome;
+    user.role = "inventariante";
+    return user;
+  }
+
+  const coordEntry = await obterCoordPorUid(user.uid);
+  if (coordEntry) {
+    if (coordEntry.status === "pendente_aprovacao") {
+      throw new Error("Sua conta de coordenadora aguarda aprovação. Entre em contato com o administrador.");
+    }
+    if (coordEntry.status === "rejeitada") {
+      throw new Error("Seu acesso de coordenadora foi rejeitado.");
+    }
+    if (coordEntry.status === "desativada") {
+      throw new Error("Seu acesso de coordenadora foi revogado.");
+    }
+    if (coordEntry.status === "aprovada") {
+      throw new CoordRedirectError(user);
+    }
+    throw new Error("Conta de coordenadora sem permissão de acesso.");
+  }
+
+  user.role = "admin";
+  return user;
+}
 
 export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
   const [logado, setLogado] = useState(null);
@@ -50,6 +90,25 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
             const r = await refreshAuthToken(s.refreshToken);
             const next = { ...s, token: r.token, uid: r.uid, refreshToken: r.refreshToken || s.refreshToken };
             setFirebaseSession({ token: next.token, uid: next.uid });
+
+            try {
+              await resolveLoginRole(next);
+            } catch (roleErr) {
+              if (isCoordRedirectError(roleErr)) {
+                redirectToCoordLogin(roleErr.user || next);
+                return;
+              }
+              clearFirebaseSession();
+              try {
+                sessionStorage.removeItem("inv-session");
+              } catch {}
+              try {
+                localStorage.removeItem("inv-session");
+              } catch {}
+              setLoading(false);
+              return;
+            }
+
             setLogado(next);
             try {
               sessionStorage.setItem("inv-session", JSON.stringify(next));
@@ -71,7 +130,24 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
           }
         } else {
           setFirebaseSession({ token: s.token, uid: s.uid });
-          setLogado(s);
+          try {
+            await resolveLoginRole(s);
+            setLogado(s);
+          } catch (roleErr) {
+            if (isCoordRedirectError(roleErr)) {
+              redirectToCoordLogin(roleErr.user || s);
+              return;
+            }
+            clearFirebaseSession();
+            try {
+              sessionStorage.removeItem("inv-session");
+            } catch {}
+            try {
+              localStorage.removeItem("inv-session");
+            } catch {}
+            setLoading(false);
+            return;
+          }
         }
 
         await loadAfterAuth?.();
@@ -102,32 +178,23 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
       try {
         const user = loginMode === "login" ? await fbLogin(email, senha) : await fbRegister(email, senha);
 
+        if (loginMode !== "login") {
+          clearFirebaseSession();
+          setLoginError("Cadastro apenas via convite. Use o link enviado pelo administrador.");
+          return null;
+        }
+
         if (loginMode === "login") {
           try {
-            const invEntry = await obterInventariantePorUid(user.uid);
-            if (invEntry) {
-              if (invEntry.status === "pendente_aprovacao") {
-                clearFirebaseSession();
-                setLoginError("Sua conta está aguardando aprovação do administrador. Tente novamente em breve.");
-                return null;
-              }
-              if (invEntry.status === "rejeitado") {
-                clearFirebaseSession();
-                setLoginError("Seu acesso foi rejeitado. Entre em contato com o administrador.");
-                return null;
-              }
-              if (invEntry.status === "desativado") {
-                clearFirebaseSession();
-                setLoginError("Sua conta foi desativada. Entre em contato com o administrador.");
-                return null;
-              }
-              user.nome = invEntry.nome || user.nome;
-              user.role = "inventariante";
-            } else {
-              user.role = "admin";
+            await resolveLoginRole(user);
+          } catch (roleErr) {
+            if (isCoordRedirectError(roleErr)) {
+              redirectToCoordLogin(roleErr.user || user);
+              return null;
             }
-          } catch {
-            user.role = "admin";
+            clearFirebaseSession();
+            setLoginError(roleErr?.message || "Acesso negado");
+            return null;
           }
         }
 
