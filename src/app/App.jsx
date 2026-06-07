@@ -20,7 +20,7 @@ import { filterLocaisForSession, mergeFoundRecords, resolveUnitForItem } from ".
 import { clearInventoryPresence, loadActiveInventors, pingInventoryPresence } from "../utils/inventoryPresence.js";
 import { isSemTomboItem } from "../utils/semTombo.js";
 import { getFoundEntry, isItemInventariado } from "../utils/patrimonioId.js";
-import { fetchInventarioForUnits, normalizeFoundRecord } from "../services/inventarioLoad.js";
+import { rankTombosForAjuste } from "../utils/ajusteMatch.js";
 import { mergeLocaisRecords } from "../services/locaisLoad.js";
 import { getAppStyles, COLORS } from "../constants/theme.js";
 import { SmartImg } from "../components/SmartImg.jsx";
@@ -40,6 +40,9 @@ import { useFound } from "../hooks/useFound.js";
 import { useInventario } from "../hooks/useInventario.js";
 import { useCampanha } from "../hooks/useCampanha.js";
 import { useOfflineQueue } from "../hooks/useOfflineQueue.js";
+import { useFinalizacoes } from "../hooks/useFinalizacoes.js";
+import { FinalizadosPage } from "../pages/FinalizadosPage.jsx";
+import { buildFinalizacaoStats, criarFinalizacao, registrarEdicaoFinalizacao, atualizarStatsFinalizacao } from "../services/finalizacoes.js";
 
 const tabFallback = (
   <div style={{ padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>Carregando aba…</div>
@@ -99,6 +102,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const [imgViewSrc, setImgViewSrc] = useState(null);
   const [overlayBackdropSuppressMs, setOverlayBackdropSuppressMs] = useState(0);
   const [teamOnline, setTeamOnline] = useState([]);
+  const [finalizadoEdit, setFinalizadoEdit] = useState(null);
 
   const formRef = useRef({});
   const manualPatrimonioRef = useRef(null);
@@ -157,46 +161,72 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const locais = useLocais();
 
   const inventario = useInventario({ unidades, foundSet: found.foundSet });
-  const unidadeAtiva = inventario.unidadesAtivas[0] || null;
+  const unidadeAtiva = inventario.unidadesAtivas[0] || finalizadoEdit?.units?.[0] || null;
+
+  const editScopeUnits = useMemo(
+    () => (finalizadoEdit?.units?.length ? finalizadoEdit.units : inventario.unidadesAtivas),
+    [finalizadoEdit, inventario.unidadesAtivas]
+  );
+
+  const editScopeSessionId = useMemo(() => {
+    if (finalizadoEdit?.fin) {
+      return finalizadoEdit.fin.sessionId || `fin_${finalizadoEdit.fin.id}`;
+    }
+    return inventario.sessionId;
+  }, [finalizadoEdit, inventario.sessionId]);
+
+  const scopeAllItens = useMemo(
+    () => editScopeUnits.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeId: u.id, unidadeNome: u.nome }))),
+    [editScopeUnits]
+  );
 
   const resolveItemUnit = React.useCallback(
     (item) => {
       if (!item) return unidadeAtiva;
       return (
-        resolveUnitForItem(item, inventario.unidadesAtivas, unidadeAtiva) ||
+        resolveUnitForItem(item, editScopeUnits, unidadeAtiva) ||
         unidades.find((u) => u.id === item.unidadeId) ||
         (item.unidadeId ? { id: item.unidadeId, nome: item.unidadeNome || "" } : null) ||
         unidadeAtiva
       );
     },
-    [inventario.unidadesAtivas, unidadeAtiva, unidades]
+    [editScopeUnits, unidadeAtiva, unidades]
   );
 
   const sessionLocais = useMemo(
     () =>
       filterLocaisForSession(
         locais.locais,
-        inventario.sessionId,
-        inventario.unidadesAtivas.map((u) => u.id),
+        editScopeSessionId,
+        editScopeUnits.map((u) => u.id),
         found.foundMap
       ),
-    [locais.locais, inventario.sessionId, inventario.unidadesAtivas, found.foundMap]
+    [locais.locais, editScopeSessionId, editScopeUnits, found.foundMap]
   );
 
   const createSessionLocal = React.useCallback(
     async (nome, desc = "") => {
-      if (!inventario.sessionId) {
-        showT("Inicie o inventário antes de criar locais");
+      const unitIds = editScopeUnits.map((u) => u.id);
+      if (!unitIds.length) {
+        showT("Nenhuma unidade selecionada");
         return null;
       }
-      return locais.createLocal({
-        nome,
-        desc,
-        sessionId: inventario.sessionId,
-        unidadeIds: inventario.unidadesAtivas.map((u) => u.id),
-      }, { updateQueueStatus });
+      const sid = editScopeSessionId || inventario.sessionId;
+      if (!sid) {
+        showT("Inicie o inventário ou abra um finalizado para criar locais");
+        return null;
+      }
+      return locais.createLocal(
+        {
+          nome,
+          desc,
+          sessionId: sid,
+          unidadeIds: unitIds,
+        },
+        { updateQueueStatus }
+      );
     },
-    [inventario.sessionId, inventario.unidadesAtivas, locais.createLocal, showT, updateQueueStatus]
+    [editScopeSessionId, editScopeUnits, inventario.sessionId, locais.createLocal, showT, updateQueueStatus]
   );
 
   const loadAfterAuth = React.useCallback(async () => {
@@ -206,6 +236,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
   const auth = useAuth({ firebaseOk, loadAfterAuth, showT });
   const campanhaState = useCampanha({ logado: auth.logado });
+  const finalizacoesState = useFinalizacoes({ logado: auth.logado, tombosNE: found.tombosNE, unidades });
 
   useEffect(() => {
     if (!auth.logado) return;
@@ -223,12 +254,20 @@ function OrganizedApp({ firebaseOk, isProd }) {
     return true;
   }, [campanhaState.fechada, showT]);
 
+  const assertPodeEditar = React.useCallback(() => {
+    if (campanhaState.fechada && auth.logado?.role !== "admin") {
+      showT("Inventário fechado — alterações não permitidas");
+      return false;
+    }
+    return true;
+  }, [campanhaState.fechada, auth.logado?.role, showT]);
+
   useEffect(() => {
-    if (!auth.logado || unidades.length === 0 || inventario.unidadesAtivas.length === 0) return;
-    const ids = inventario.unidadesAtivas.map((u) => u.id).filter(Boolean);
-    const scopeItems = inventario.unidadesAtivas.flatMap((u) =>
-      u.itens.map((i) => ({ ...i, unidadeId: u.id, unidadeNome: u.nome }))
-    );
+    if (!auth.logado || unidades.length === 0) return;
+    const scopeUnits = finalizadoEdit?.units?.length ? finalizadoEdit.units : inventario.unidadesAtivas;
+    if (scopeUnits.length === 0) return;
+    const ids = scopeUnits.map((u) => u.id).filter(Boolean);
+    const scopeItems = scopeUnits.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeId: u.id, unidadeNome: u.nome })));
     const keepItemIds = scopeItems.map((i) => i.id);
     const itemUnits = new Map(scopeItems.map((i) => [i.id, { unidadeId: i.unidadeId, unidadeNome: i.unidadeNome }]));
     const localIds = [
@@ -246,6 +285,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     locais.loadLocais(ids, { localIds });
   }, [
     auth.logado,
+    finalizadoEdit?.fin?.id,
     inventario.unidadesAtivas.map((u) => u.id).join(","),
     inventario.unidadesAtivas.length,
     unidades.length,
@@ -596,6 +636,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const isAdmin = auth.logado?.role === "admin";
   const navs = [
     { id: "inventario", l: "Inventário", badge: inventario.unidadesAtivas.length > 0 ? inventario.unidadesAtivas.length : null },
+    { id: "finalizados", l: "Finalizados", badge: finalizacoesState.finalizacoes?.length || null },
     { id: "busca", l: "Busca" },
     { id: "itens", l: "Itens" },
     { id: "nf", l: "Notas" },
@@ -875,7 +916,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   }, [auth.logado, unidades, found.foundMap, tryRestoreUi]);
 
   const addManual = async () => {
-    if (!assertCampanhaAberta()) return;
+    if (!assertPodeEditar()) return;
     const desc = getField("manDesc");
     if (!desc.trim()) {
       showT("Descrição obrigatória");
@@ -1049,7 +1090,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   };
 
   const addSemTomboItem = async () => {
-    if (!assertCampanhaAberta()) return;
+    if (!assertPodeEditar()) return;
     const desc = String(getField("stDesc") || "").trim();
     if (!desc) {
       showT("Informe o nome do item");
@@ -1061,7 +1102,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       return;
     }
     const unitId = String(getField("stUnidadeId") || unidadeAtiva?.id || "").trim();
-    const unit = inventario.unidadesAtivas.find((u) => u.id === unitId) || unidadeAtiva;
+    const unit = editScopeUnits.find((u) => u.id === unitId) || unidadeAtiva;
     if (!unit) {
       showT("Unidade não encontrada");
       return;
@@ -1095,6 +1136,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       identificadoPorFoto: true,
       descricaoEdit: desc,
       tomboReferencia: String(getField("stTomboRef") || "").trim(),
+      marca: String(getField("stMarca") || "").trim(),
     };
     const stEstado = getField("stEstado") || "Bom";
     const stObs = String(getField("stObs") || "").trim();
@@ -1141,7 +1183,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         situacao: "Em uso",
         localId,
         obs: stObs,
-        marca: "",
+        marca: stExtras.marca || "",
         origem: "Próprio",
         fotoUrls: [],
         extras: stExtras,
@@ -1182,7 +1224,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       situacao: "Em uso",
       localId,
       obs: stObs,
-      marca: "",
+      marca: stExtras.marca || "",
       origem: "Próprio",
       fotoUrls,
       extras: stExtras,
@@ -1197,7 +1239,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   };
 
   const addSemTomboPendentes = async () => {
-    if (!assertCampanhaAberta()) return;
+    if (!assertPodeEditar()) return;
     const selected = Array.isArray(formRef.current.stSelectedIds) ? formRef.current.stSelectedIds : [];
     if (!selected.length) {
       showT("Selecione ao menos um item pendente");
@@ -1223,7 +1265,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       for (const itemId of selected) {
         const item = inventario.allItens.find((i) => i.id === itemId);
         if (!item || isItemInventariado(itemId, found.foundSet)) continue;
-        const unit = inventario.unidadesAtivas.find((u) => u.id === item.unidadeId) || unidadeAtiva;
+        const unit = editScopeUnits.find((u) => u.id === item.unidadeId) || unidadeAtiva;
         const now = new Date();
         steps.push({
           collection: "inventario",
@@ -1325,14 +1367,28 @@ function OrganizedApp({ firebaseOk, isProd }) {
     showT(count > 1 ? `${count} itens registrados com a mesma foto` : "Salvo!");
   };
 
-  const openLinkTomboModal = (stItem, stFound) => {
+  const openLinkTomboModal = (stItem, stFound, preselectId = "") => {
+    let realId = preselectId || "";
+    if (!realId && stItem) {
+      const stUnitId = stItem.unidadeId || stFound?.unidadeId;
+      const pool = scopeAllItens.filter((i) => {
+        if (i.id === stItem.id) return false;
+        if (isSemTomboItem(i, found.foundMap[i.id])) return false;
+        if (String(i.id || "").startsWith("ST_") || String(i.id || "").startsWith("MAN_")) return false;
+        if (found.foundSet.has(i.id)) return false;
+        if (stUnitId && i.unidadeId && i.unidadeId !== stUnitId) return false;
+        return true;
+      });
+      const top = rankTombosForAjuste(stItem, stFound, pool, { minScore: 0, limit: 1 })[0];
+      if (top?.score >= 40) realId = top.item.id;
+    }
     formRef.current = {
       ...formRef.current,
       ajusteStId: stItem?.id || "",
       ajusteStItem: stItem,
       ajusteStFound: stFound,
       ajusteSearch: "",
-      ajusteRealId: "",
+      ajusteRealId: realId,
     };
     bumpFt();
     setModal("ajusteLink");
@@ -1381,8 +1437,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
     setBusy(true);
     try {
-      const stItem = inventario.allItens.find((i) => i.id === stId) || formRef.current.ajusteStItem;
-      const unit = inventario.unidadesAtivas.find((u) => u.id === (stFound.unidadeId || stItem?.unidadeId)) || unidadeAtiva;
+      const stItem = scopeAllItens.find((i) => i.id === stId) || formRef.current.ajusteStItem;
+      const unit = editScopeUnits.find((u) => u.id === (stFound.unidadeId || stItem?.unidadeId)) || unidadeAtiva;
       const entry = {
         ...stFound,
         patrimonioId: realId,
@@ -1392,6 +1448,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         alocadoManualmente: true,
         semTomboOrigemId: stId,
         semTomboOrigemDesc: stFound.descricaoEdit || stItem?.descricao || "",
+        tomboLabelFisico: String(stFound.tomboReferencia || stItem?.patrimonioLabel || stId).trim() || "",
         semTombo: false,
         identificadoPorFoto: false,
         ultimaAtualizacao: new Date().toISOString(),
@@ -1423,6 +1480,11 @@ function OrganizedApp({ firebaseOk, isProd }) {
         })),
       );
 
+      if (finalizadoEdit?.fin?.id && !finalizadoEdit.fin.legacy) {
+        const stats = buildFinalizacaoStats(finalizadoEdit.units, found.foundSet);
+        atualizarStatsFinalizacao(finalizadoEdit.fin.id, stats);
+      }
+
       await logAuditoria("link-tombo", "inventario", realId, stFound, entry);
       setModal(null);
       showT(`Vinculado ao tombo ${realItem.patrimonioLabel || realId}`);
@@ -1433,9 +1495,41 @@ function OrganizedApp({ firebaseOk, isProd }) {
     }
   };
 
+  const confirmarTomboDivergente = async (foundId, foundEntry) => {
+    if (!assertPodeEditar()) return;
+    const docId = String(foundEntry?.patrimonioId || foundId || "").trim();
+    if (!docId) return;
+    const cur = getFoundEntry(docId, found.foundMap) || foundEntry;
+    if (!cur) {
+      showT("Registro não encontrado");
+      return;
+    }
+    setBusy(true);
+    try {
+      const entry = {
+        ...cur,
+        tomboEstrangeiroOk: true,
+        ultimaAtualizacao: new Date().toISOString(),
+      };
+      delete entry._id;
+      await fsSet("inventario", docId, entry);
+      const next = found.found.map((f) =>
+        String(f.patrimonioId || f._id) === docId ? { ...entry, _id: docId, patrimonioId: docId } : f
+      );
+      found.setFound(next);
+      bumpCacheBuster();
+      await setCachedData("inventario", next);
+      showT("Tombo divergente aceito — registro mantido");
+    } catch (e) {
+      showT(e?.message || "Erro ao confirmar");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const getSemTomboPendentes = () => {
     const q = String(formRef.current.stPendSearch || "").trim().toLowerCase();
-    return inventario.allItens.filter((i) => {
+    return scopeAllItens.filter((i) => {
       if (isItemInventariado(i.id, found.foundSet)) return false;
       if (isSemTomboItem(i, getFoundEntry(i.id, found.foundMap))) return false;
       if (!q) return true;
@@ -1557,6 +1651,26 @@ function OrganizedApp({ firebaseOk, isProd }) {
     }
     found.setTombosNE((prev) => [...prev, ...pendentes.map((i) => ({ ...i, unidade: i.unidadeNome, dataFin, coordenadora: nome, matricula }))]);
 
+    const stats = buildFinalizacaoStats(inventario.unidadesAtivas, found.foundSet);
+    try {
+      await criarFinalizacao({
+        unidadeIds,
+        unidadeNomes,
+        sessionId: inventario.sessionId || "",
+        coordenadora: { nome, matricula },
+        conviteToken: token,
+        stats,
+        finalizedBy: {
+          uid: auth.logado?.uid || "",
+          nome: auth.logado?.nome || "",
+          email: auth.logado?.email || "",
+        },
+      });
+      finalizacoesState.refresh?.();
+    } catch {
+      showT("Finalizado, mas falha ao registrar na lista de Finalizados");
+    }
+
     setModal("qrcode-resultado");
     showT("Convite criado! A coordenadora se cadastra pelo QR Code e você aprova em Coordenadores.");
   };
@@ -1664,6 +1778,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 stEstado: "Bom",
                 stObs: "",
                 stTomboRef: "",
+                stMarca: "",
                 stPhotos: [],
                 stSelectedIds: [],
                 stPendSearch: "",
@@ -1680,6 +1795,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 stEstado: "Bom",
                 stObs: "",
                 stTomboRef: "",
+                stMarca: "",
                 stPhotos: [],
                 stSelectedIds: [],
                 stPendSearch: "",
@@ -1705,6 +1821,95 @@ function OrganizedApp({ firebaseOk, isProd }) {
             }}
             showT={showT}
             onViewImage={onViewImage}
+          />
+        )}
+
+        {tab === "finalizados" && (
+          <FinalizadosPage
+            finalizacoes={finalizacoesState.finalizacoes}
+            loading={finalizacoesState.loading}
+            onRefresh={finalizacoesState.refresh}
+            editFin={finalizadoEdit?.fin || null}
+            editUnits={finalizadoEdit?.units || []}
+            onEdit={(fin) => {
+              const units = (fin.unidadeIds || []).map((id) => unidades.find((u) => u.id === id)).filter(Boolean);
+              if (!units.length) {
+                showT("Unidade não encontrada no cadastro");
+                return;
+              }
+              setFinalizadoEdit({ fin, units });
+              registrarEdicaoFinalizacao(fin.id, auth.logado);
+            }}
+            onCloseEdit={() => setFinalizadoEdit(null)}
+            foundSet={found.foundSet}
+            foundMap={found.foundMap}
+            locais={sessionLocais}
+            isMob={isMob}
+            cd={cd}
+            inp={inp}
+            bp={bp}
+            bs={bs}
+            openDetModal={openDetModal}
+            onOpenSemTombo={(localId) => {
+              formRef.current = {
+                stMode: "novo",
+                stDesc: "",
+                stLocal: String(localId || sessionLocais[0]?.id || ""),
+                stUnidadeId: unidadeAtiva?.id || editScopeUnits[0]?.id || "",
+                stEstado: "Bom",
+                stObs: "",
+                stTomboRef: "",
+                stMarca: "",
+                stPhotos: [],
+                stSelectedIds: [],
+                stPendSearch: "",
+              };
+              bumpFt();
+              setModal("semTombo");
+            }}
+            onOpenFotoVarios={() => {
+              formRef.current = {
+                stMode: "pendentes",
+                stDesc: "",
+                stLocal: String(sessionLocais[0]?.id || ""),
+                stUnidadeId: unidadeAtiva?.id || editScopeUnits[0]?.id || "",
+                stEstado: "Bom",
+                stObs: "",
+                stTomboRef: "",
+                stMarca: "",
+                stPhotos: [],
+                stSelectedIds: [],
+                stPendSearch: "",
+              };
+              bumpFt();
+              setModal("semTombo");
+            }}
+            onOpenLinkTombo={openLinkTomboModal}
+            onConfirmTomboDivergente={confirmarTomboDivergente}
+            onOpenManual={(localId) => {
+              formRef.current = {
+                manEstado: defaultEstadoForItem({ data: new Date().toLocaleDateString("pt-BR") }),
+                manPatrimonio: "",
+                manLocal: String(localId || sessionLocais[0]?.id || ""),
+                manQtd: 1,
+                manSharePhotos: true,
+              };
+              bumpFt();
+              setModal("manual");
+            }}
+            sessionId={editScopeSessionId}
+            showT={showT}
+            onQuickAddLocal={async (nome) => {
+              const entry = await createSessionLocal(nome);
+              if (entry) showT("Local adicionado");
+            }}
+            onDeleteLocal={async (l) => {
+              await locais.deleteLocal(l, { updateQueueStatus });
+              showT("Local removido");
+            }}
+            onViewImage={onViewImage}
+            campanhaFechada={campanhaState.fechada}
+            logado={auth.logado}
           />
         )}
 
@@ -1853,7 +2058,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             onViewImage={onViewImage}
             onClose={() => { revokeBlobUrls(formRef.current.detNewBase64 || []); clearUiResume(); setModal(null); }}
             onSave={() => {
-              if (!assertCampanhaAberta()) return;
+              if (!assertPodeEditar()) return;
               found.saveDetail({
                 formRef,
                 getField,
@@ -2119,6 +2324,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 ? inventario.unidadesAtivas[0].nome
                 : `${inventario.unidadesAtivas.length} unidades em inventário`}
             </p>
+            <p style={{ margin: "0 0 14px", fontSize: 12, color: "#15803d", lineHeight: 1.45, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 12px" }}>
+              Finalizar encerra a sessão ativa, mas o inventário continua editável na aba <strong>Finalizados</strong> — ajustes, locais e ligação de mobiliário permanecem disponíveis.
+            </p>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
               <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12 }}>
                 <p style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#15803d" }}>{inventario.totalFound}</p>
@@ -2300,6 +2508,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
                   </select>
                 </>
               )}
+              <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Marca / fornecedor da mobília</label>
+              <TInput key={"stMarca_" + ft} initial={getField("stMarca")} onVal={(v) => setField("stMarca", v)} placeholder="Ex: RM MOVEIS" suggestions={sugestoes.marcas} style={inp} />
               <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Tombamento sugerido (opcional)</label>
               <TInput key={"stRef_" + ft} initial={getField("stTomboRef")} onVal={(v) => setField("stTomboRef", v)} placeholder="Número se souber..." style={inp} />
             </>
@@ -2378,7 +2588,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             {(() => {
               const stUnitId = formRef.current.ajusteStItem?.unidadeId || formRef.current.ajusteStFound?.unidadeId;
               const q = String(formRef.current.ajusteSearch || "").trim().toLowerCase();
-              const candidates = inventario.allItens.filter((i) => {
+              const pool = scopeAllItens.filter((i) => {
                 if (i.id === formRef.current.ajusteStId) return false;
                 if (isSemTomboItem(i, found.foundMap[i.id])) return false;
                 if (String(i.id || "").startsWith("ST_") || String(i.id || "").startsWith("MAN_")) return false;
@@ -2390,14 +2600,23 @@ function OrganizedApp({ firebaseOk, isProd }) {
                   String(i.patrimonioLabel || "").toLowerCase().includes(q) ||
                   String(i.descricao || "").toLowerCase().includes(q) ||
                   String(i.especie || "").toLowerCase().includes(q) ||
-                  String(i.fornecedor || "").toLowerCase().includes(q)
+                  String(i.fornecedor || "").toLowerCase().includes(q) ||
+                  String(i.marca || "").toLowerCase().includes(q)
                 );
-              }).slice(0, 40);
+              });
+              const ranked = rankTombosForAjuste(formRef.current.ajusteStItem, formRef.current.ajusteStFound, pool, {
+                minScore: 0,
+                limit: 50,
+              });
+              const rankedIds = new Set(ranked.map((r) => r.item.id));
+              const rest = pool.filter((i) => !rankedIds.has(i.id));
+              const candidates = [...ranked.map((r) => ({ ...r.item, _match: r })), ...rest.map((item) => ({ ...item, _match: null }))].slice(0, 40);
               if (!candidates.length) {
                 return <p style={{ margin: 0, padding: 16, fontSize: 12, color: "#94a3b8", textAlign: "center" }}>Nenhum tombo pendente encontrado.</p>;
               }
               return candidates.map((it) => {
                 const sel = formRef.current.ajusteRealId === it.id;
+                const match = it._match;
                 return (
                   <button
                     key={it.id}
@@ -2411,13 +2630,23 @@ function OrganizedApp({ firebaseOk, isProd }) {
                       textAlign: "left",
                       border: "none",
                       borderBottom: "1px solid #f1f5f9",
-                      background: sel ? "#eff6ff" : "#fff",
+                      background: sel ? "#eff6ff" : match?.score >= 40 ? "#f0fdf4" : "#fff",
                       padding: "10px 12px",
                       cursor: "pointer",
                     }}
                   >
-                    <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>{it.descricao || it.especie || "—"}</span>
-                    <span style={{ display: "block", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(it)} · {it.fornecedor || "—"}</span>
+                    <span style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                      <span style={{ display: "block", fontSize: 12, fontWeight: 700, flex: 1 }}>{it.descricao || it.especie || "—"}</span>
+                      {match?.score >= 15 && (
+                        <span style={{ fontSize: 10, fontWeight: 800, color: match.score >= 60 ? "#15803d" : "#1d4ed8", flexShrink: 0 }}>
+                          {match.score}% · {match.reasons?.join(", ")}
+                        </span>
+                      )}
+                    </span>
+                    <span style={{ display: "block", fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                      Nº {it.patrimonioLabel || it.id} · {it.fornecedor || "—"}
+                      {it.marca ? ` · Marca: ${it.marca}` : ""}
+                    </span>
                   </button>
                 );
               });

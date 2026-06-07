@@ -261,6 +261,20 @@ service cloud.firestore {
 
 
 
+    match /finalizacoes/{docId} {
+
+      allow read: if isAuth();
+
+      allow create: if isAuth() && (isAdminUser() || isInventarianteAtivo() || isCoordAprovada());
+
+      allow update: if isAuth() && (isAdminUser() || isInventarianteAtivo() || isCoordAprovada());
+
+      allow delete: if isAdminUser();
+
+    }
+
+
+
     match /auditoria/{docId} {
 
       allow read: if isAdminUser();

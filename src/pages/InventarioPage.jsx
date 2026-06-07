@@ -5,17 +5,9 @@ import { Badge } from "../components/Badge.jsx";
 import { EC, SC } from "../constants/inventory.js";
 import { countFoundInLocal } from "../utils/inventorySession.js";
 import { isItemInventariado } from "../utils/patrimonioId.js";
-import { isAjustePendente, isSemTomboItem, isTomboPendente, SEM_TOMBO_BADGE, showFotoManualBadge } from "../utils/semTombo.js";
+import { isAjustePendente, isSemTomboItem, SEM_TOMBO_BADGE, showFotoManualBadge } from "../utils/semTombo.js";
 import { PhotoThumb } from "../components/PhotoThumb.jsx";
-import { sortByDataNF } from "../utils/itemHelpers.js";
-
-function getItemCode(item) {
-  return item?.patrimonioLabel || item?.id || "—";
-}
-
-function getDisplayDesc(item, foundEntry) {
-  return foundEntry?.descricaoEdit || item.descricao || item.especie || "—";
-}
+import { AjusteWorkbench, buildOrigemLine, getDisplayDesc, getItemCode, TIPO_ENTRADA_BADGE } from "../components/AjusteWorkbench.jsx";
 
 function formatBRL(v) {
   const n = Number(v || 0) || 0;
@@ -31,14 +23,6 @@ function buildMetaLine(item) {
   const data = item?.data || "—";
   const valor = formatBRL(item?.valor || 0);
   return `Nº ${code} · ${data} · R$ ${valor}`;
-}
-
-function buildOrigemLine(item) {
-  const fornecedor = String(item?.fornecedor || "").trim() || "—";
-  const empenho = String(item?.empenho || "").trim() || "NÃO INFORMADO";
-  const rawNf = String(item?.nf || "").trim();
-  const nf = rawNf ? (rawNf.toLowerCase().startsWith("nf") ? rawNf : `NF ${rawNf}`) : "NF —";
-  return `${fornecedor} · ${empenho} · ${nf}`;
 }
 
 export function InventarioPage({
@@ -93,8 +77,6 @@ export function InventarioPage({
   const [localNomeRapido, setLocalNomeRapido] = useState("");
   const [localSelecionadoId, setLocalSelecionadoId] = useState("");
   const [localAddSearch, setLocalAddSearch] = useState("");
-  const [ajusteTomboSearch, setAjusteTomboSearch] = useState("");
-
   const itemById = useMemo(() => {
     const map = new Map();
     for (const u of unidadesAtivas) for (const i of u.itens) map.set(i.id, { ...i, unidadeId: u.id, unidadeNome: u.nome });
@@ -147,47 +129,16 @@ export function InventarioPage({
     return out;
   }, [pendentes, localAddSearch]);
 
-  const ajusteItems = useMemo(() => {
-    const out = [];
+  const ajusteCount = useMemo(() => {
+    let n = 0;
     for (const u of unidadesAtivas) {
       for (const i of u.itens) {
         const f = foundMap[i.id];
-        if (!f) continue;
-        if (isAjustePendente(i, f)) out.push({ item: { ...i, unidadeId: u.id, unidadeNome: u.nome }, found: f });
+        if (f && isAjustePendente(i, f)) n++;
       }
     }
-    return out.sort((a, b) => String(a.found?.ultimaAtualizacao || "").localeCompare(String(b.found?.ultimaAtualizacao || "")));
+    return n;
   }, [unidadesAtivas, foundMap]);
-
-  const tombosPendentes = useMemo(() => {
-    const out = [];
-    for (const u of unidadesAtivas) {
-      for (const i of u.itens) {
-        if (!isTomboPendente(i, foundSet)) continue;
-        out.push({ ...i, unidadeId: u.id, unidadeNome: u.nome });
-      }
-    }
-    return out.sort((a, b) => String(a.id).localeCompare(String(b.id)));
-  }, [unidadesAtivas, foundSet]);
-
-  const tombosPendentesFiltrados = useMemo(() => {
-    const q = String(ajusteTomboSearch || "").trim().toLowerCase();
-    if (!q) return tombosPendentes.slice(0, 60);
-    const out = [];
-    for (const it of tombosPendentes) {
-      if (
-        String(it.id || "").toLowerCase().includes(q) ||
-        String(it.patrimonioLabel || "").toLowerCase().includes(q) ||
-        String(it.descricao || "").toLowerCase().includes(q) ||
-        String(it.especie || "").toLowerCase().includes(q) ||
-        String(it.fornecedor || "").toLowerCase().includes(q)
-      ) {
-        out.push(it);
-        if (out.length >= 60) break;
-      }
-    }
-    return out;
-  }, [tombosPendentes, ajusteTomboSearch]);
 
   return (
     <div>
@@ -269,9 +220,9 @@ export function InventarioPage({
             }}
           >
             Ajuste
-            {ajusteItems.length > 0 && (
+            {ajusteCount > 0 && (
               <span style={{ background: invSubTab === "ajuste" ? "rgba(255,255,255,.25)" : "#e2e8f0", color: invSubTab === "ajuste" ? "#fff" : "#64748b", borderRadius: 99, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
-                {ajusteItems.length}
+                {ajusteCount}
               </span>
             )}
           </button>
@@ -596,6 +547,8 @@ export function InventarioPage({
               const foto = f?.fotoUrls?.[0];
               const displayDesc = getDisplayDesc(item, f);
               const isPermuta = f?.situacao === "Permuta";
+              const tipo = item.tipoEntrada || "Próprio";
+              const tipoC = TIPO_ENTRADA_BADGE[tipo] || TIPO_ENTRADA_BADGE["Próprio"];
               return (
                 <div
                   key={`${item.unidadeId}_${item.id}`}
@@ -639,6 +592,7 @@ export function InventarioPage({
                       {item.nf ? ` · NF ${item.nf}` : ""}
                     </p>
                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      <Badge label={tipo} c={tipoC} />
                       {isF ? (
                         <>
                           <Badge label={f.estado} c={EC[f.estado]} />
@@ -684,93 +638,20 @@ export function InventarioPage({
       )}
 
       {invSubTab === "ajuste" && unidadesAtivas.length > 0 && (
-        <div>
-          <div style={{ ...cd, marginBottom: 12, border: "1px solid #e2e8f0" }}>
-            <p style={{ margin: "0 0 6px", fontSize: 14, fontWeight: 800, color: "#0f172a" }}>Ajuste — identificar por foto</p>
-            <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
-              Itens registrados só com foto e descrição ficam aqui até você ligar ao tombo correto da planilha.
-              Também pode usar a mesma foto para marcar vários tombos pendentes de uma vez.
-            </p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button onClick={() => onOpenSemTombo?.()} style={{ ...bp, fontSize: 12, padding: "8px 14px" }}>
-                + Foto e descrição
-              </button>
-              <button onClick={() => onOpenFotoVarios?.()} style={{ ...bs, fontSize: 12, padding: "8px 14px", borderColor: "#1351B4", color: "#1351B4" }}>
-                Mesma foto em vários tombos
-              </button>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "1fr 1fr", gap: 12, alignItems: "start" }}>
-            <div style={{ ...cd, border: "1.5px solid #fcd34d" }}>
-              <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#92400e" }}>
-                Fotos aguardando identificação ({ajusteItems.length})
-              </p>
-              <p style={{ margin: "0 0 12px", fontSize: 11, color: "#a16207", lineHeight: 1.4 }}>
-                Clique em Vincular e escolha um tombo pendente abaixo.
-              </p>
-              {ajusteItems.length === 0 ? (
-                <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", textAlign: "center", padding: "20px 8px" }}>
-                  Nenhuma foto pendente. Use &quot;Foto e descrição&quot; quando encontrar um item sem número de tombo.
-                </p>
-              ) : (
-                <div style={{ display: "grid", gap: 8 }}>
-                  {ajusteItems.map(({ item, found: f }) => {
-                    const foto = f?.fotoUrls?.[0];
-                    return (
-                      <div key={item.id} style={{ border: "1px solid #fde68a", borderRadius: 10, padding: 10, display: "flex", gap: 10, alignItems: "center", background: "#fffbeb" }}>
-                        {foto ? (
-                          <PhotoThumb src={foto} badge={showFotoManualBadge(item, f)} size={52} onImageClick={() => onViewImage?.(foto)} />
-                        ) : (
-                          <div style={{ width: 52, height: 52, borderRadius: 8, background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#92400e", flexShrink: 0 }}>
-                            S/T
-                          </div>
-                        )}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ margin: 0, fontSize: 12, fontWeight: 800 }}>{getDisplayDesc(item, f)}</p>
-                          {f?.tomboReferencia && (
-                            <p style={{ margin: "2px 0 0", fontSize: 11, color: "#92400e" }}>Sugestão: {f.tomboReferencia}</p>
-                          )}
-                          {unidadesAtivas.length > 1 && (
-                            <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748b" }}>{item.unidadeNome}</p>
-                          )}
-                        </div>
-                        <button onClick={() => onOpenLinkTombo?.(item, f)} style={{ ...bp, padding: "8px 10px", fontSize: 11, flexShrink: 0 }}>
-                          Vincular
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div style={{ ...cd, border: "1.5px solid #fed7aa" }}>
-              <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#c2410c" }}>
-                Tombos ainda não encontrados ({tombosPendentes.length})
-              </p>
-              <p style={{ margin: "0 0 10px", fontSize: 11, color: "#9a3412", lineHeight: 1.4 }}>
-                Itens da planilha sem registro no inventário — candidatos para receber a foto.
-              </p>
-              <TInput initial={ajusteTomboSearch} onVal={setAjusteTomboSearch} placeholder="Buscar tombo, descrição..." style={{ ...inp, marginBottom: 10, fontSize: 12 }} />
-              {tombosPendentesFiltrados.length === 0 ? (
-                <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", textAlign: "center", padding: "20px 8px" }}>
-                  {tombosPendentes.length === 0 ? "Todos os tombos desta unidade já foram inventariados." : "Nenhum resultado na busca."}
-                </p>
-              ) : (
-                <div style={{ maxHeight: 420, overflowY: "auto", display: "grid", gap: 6 }}>
-                  {tombosPendentesFiltrados.map((it) => (
-                    <div key={it.id} style={{ border: "1px solid #ffedd5", borderRadius: 8, padding: "8px 10px", background: "#fff7ed" }}>
-                      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{it.descricao || it.especie || "—"}</p>
-                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(it)}</p>
-                      <p style={{ margin: "2px 0 0", fontSize: 10, color: "#94a3b8", overflowWrap: "anywhere" }}>{buildOrigemLine(it)}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <AjusteWorkbench
+          unidadesAtivas={unidadesAtivas}
+          foundSet={foundSet}
+          foundMap={foundMap}
+          isMob={isMob}
+          cd={cd}
+          inp={inp}
+          bp={bp}
+          bs={bs}
+          onOpenSemTombo={onOpenSemTombo}
+          onOpenFotoVarios={onOpenFotoVarios}
+          onOpenLinkTombo={onOpenLinkTombo}
+          onViewImage={onViewImage}
+        />
       )}
 
       {invSubTab === "locais" && unidadesAtivas.length > 0 && (
