@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { fsGetDocPublic, fsSetStrict, isFirebaseConfigured, fbRegister, setFirebaseSession } from "../services/firebase.js";
+import { AuthPageLayout } from "../components/AuthPageLayout.jsx";
+import { getAppStyles } from "../constants/theme.js";
+import { fsGetDocPublic, fsSetStrict, isFirebaseConfigured, fbRegister, setFirebaseSession, marcarConviteCoordUsado } from "../services/firebase.js";
 import { TInput } from "../components/FormFields.jsx";
 
 function getTokenFromLocation() {
@@ -25,6 +27,7 @@ export function CoordinadorRegistro() {
   const [submitting, setSubmitting] = useState(false);
 
   const firebaseOk = isFirebaseConfigured();
+  const { inp } = getAppStyles(false);
 
   const validateToken = async (tok) => {
     try {
@@ -146,8 +149,11 @@ export function CoordinadorRegistro() {
 
       await fsSetStrict("coordenadores", user.uid, coordData);
 
-      const conviteAtualizado = { ...convite, status: "usado", dataUso: new Date().toISOString() };
-      await fsSetStrict("convites", token, conviteAtualizado);
+      try {
+        await marcarConviteCoordUsado(token, convite);
+      } catch (markErr) {
+        console.warn("Convite não marcado como usado:", markErr);
+      }
 
       setStatus("sucesso");
     } catch (err) {
@@ -160,96 +166,61 @@ export function CoordinadorRegistro() {
 
   if (status === "loading") {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f1f5f9", gap: 16 }}>
-        <style>{`@keyframes sp{to{transform:rotate(360deg)}}`}</style>
-        <div style={{ width: 40, height: 40, border: "4px solid #e2e8f0", borderTopColor: "#6b21a8", borderRadius: "50%", animation: "sp .8s linear infinite" }} />
-        <p style={{ color: "#64748b", fontSize: 13 }}>Validando convite...</p>
+      <div className="gov-loading">
+        <div className="gov-spinner" aria-hidden="true" />
+        <p style={{ color: "var(--gov-text-muted)", fontSize: 13 }}>Validando convite...</p>
       </div>
     );
   }
 
   if (status === "sucesso") {
     return (
-      <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #6b21a8, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-        <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 420, textAlign: "center" }}>
-          <h1 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 700 }}>Registro concluído!</h1>
-          <p style={{ color: "#64748b", fontSize: 13, margin: "0 0 24px", lineHeight: 1.5 }}>
-            Bem-vinda, <strong>{formData.nome}</strong>!
-          </p>
-          <div style={{ background: "#f3e8ff", border: "1px solid #e9d5ff", borderRadius: 12, padding: 16, marginBottom: 24 }}>
-            <p style={{ margin: 0, fontSize: 12, color: "#6b21a8", fontWeight: 600 }}>
-              Sua solicitação foi enviada para aprovação. O administrador analisará seus dados e você receberá um email de confirmação.
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              try {
-                window.location.href = `${import.meta.env.BASE_URL}#/coord/`;
-              } catch {}
-            }}
-            style={{ width: "100%", background: "#6b21a8", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-          >
-            Voltar
-          </button>
+      <AuthPageLayout title="Registro concluído!" subtitle={`Bem-vinda, ${formData.nome}!`} footer="Secretaria Municipal — SEMCAS">
+        <div className="gov-alert gov-alert--info" style={{ marginBottom: 20 }}>
+          Sua solicitação foi enviada para aprovação. O administrador analisará seus dados e você receberá confirmação por e-mail.
         </div>
-      </div>
+        <button
+          type="button"
+          className="gov-btn gov-btn--primary"
+          style={{ width: "100%" }}
+          onClick={() => {
+            try { window.location.href = `${import.meta.env.BASE_URL}#/coord/`; } catch {}
+          }}
+        >
+          Ir para o login da coordenadora
+        </button>
+      </AuthPageLayout>
     );
   }
 
   if (status === "erro") {
     return (
-      <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #6b21a8, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-        <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 420, textAlign: "center" }}>
-          <h1 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 700 }}>Acesso negado</h1>
-          <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 12, padding: 16, marginBottom: 24 }}>
-            <p style={{ margin: 0, fontSize: 13, color: "#991b1b", fontWeight: 600, lineHeight: 1.4 }}>{error}</p>
-          </div>
-          <button
-            onClick={() => {
-              try {
-                window.history.back();
-              } catch {}
-            }}
-            style={{ width: "100%", background: "#6b21a8", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-          >
-            Voltar
-          </button>
-        </div>
-      </div>
+      <AuthPageLayout title="Acesso negado" subtitle="Não foi possível validar o convite" footer="Solicite um novo link ao administrador">
+        <div className="gov-alert gov-alert--danger" style={{ marginBottom: 16 }}>{error}</div>
+        <button type="button" className="gov-btn gov-btn--secondary" style={{ width: "100%" }} onClick={() => { try { window.history.back(); } catch {} }}>
+          Voltar
+        </button>
+      </AuthPageLayout>
     );
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #6b21a8, #7c3aed)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 420 }}>
-        <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <h1 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 700 }}>Registre-se como Coordenadora</h1>
-          <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>Inventário SEMCAS · {convite?.unidadeNome || ""}</p>
-        </div>
+    <AuthPageLayout
+      badge="Coordenadoria"
+      title="Registro de coordenadora"
+      subtitle={convite?.unidadeNome ? `Unidade: ${convite.unidadeNome}` : "Inventário SEMCAS"}
+      footer="Após o registro, aguarde a aprovação do administrador"
+    >
+      {error && <div className="gov-alert gov-alert--danger" style={{ marginBottom: 16 }}>{error}</div>}
 
-        {error && (
-          <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 12, padding: 12, marginBottom: 16 }}>
-            <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{error}</p>
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div>
             <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 6 }}>Nome completo *</label>
             <TInput
               initial={formData.nome}
               onVal={(v) => setFormData((prev) => ({ ...prev, nome: v }))}
               placeholder="Ex: Maria Silva"
-              style={{
-                width: "100%",
-                border: "1.5px solid #d1d5db",
-                borderRadius: 9,
-                padding: "10px 13px",
-                fontSize: 14,
-                fontFamily: "inherit",
-                boxSizing: "border-box",
-                outline: "none",
-              }}
+              style={inp}
             />
           </div>
 
@@ -259,16 +230,7 @@ export function CoordinadorRegistro() {
               initial={formData.matricula}
               onVal={(v) => setFormData((prev) => ({ ...prev, matricula: v }))}
               placeholder="Ex: 123456"
-              style={{
-                width: "100%",
-                border: "1.5px solid #d1d5db",
-                borderRadius: 9,
-                padding: "10px 13px",
-                fontSize: 14,
-                fontFamily: "inherit",
-                boxSizing: "border-box",
-                outline: "none",
-              }}
+              style={inp}
             />
           </div>
 
@@ -279,16 +241,7 @@ export function CoordinadorRegistro() {
               onVal={(v) => setFormData((prev) => ({ ...prev, email: v }))}
               type="email"
               placeholder="seu@email.com"
-              style={{
-                width: "100%",
-                border: "1.5px solid #d1d5db",
-                borderRadius: 9,
-                padding: "10px 13px",
-                fontSize: 14,
-                fontFamily: "inherit",
-                boxSizing: "border-box",
-                outline: "none",
-              }}
+              style={inp}
             />
           </div>
 
@@ -299,16 +252,7 @@ export function CoordinadorRegistro() {
               onVal={(v) => setFormData((prev) => ({ ...prev, senha: v }))}
               type="password"
               placeholder="Mínimo 6 caracteres"
-              style={{
-                width: "100%",
-                border: "1.5px solid #d1d5db",
-                borderRadius: 9,
-                padding: "10px 13px",
-                fontSize: 14,
-                fontFamily: "inherit",
-                boxSizing: "border-box",
-                outline: "none",
-              }}
+              style={inp}
             />
           </div>
 
@@ -319,44 +263,19 @@ export function CoordinadorRegistro() {
               onVal={(v) => setFormData((prev) => ({ ...prev, confirmaSenha: v }))}
               type="password"
               placeholder="Repita a senha"
-              style={{
-                width: "100%",
-                border: "1.5px solid #d1d5db",
-                borderRadius: 9,
-                padding: "10px 13px",
-                fontSize: 14,
-                fontFamily: "inherit",
-                boxSizing: "border-box",
-                outline: "none",
-              }}
+              style={inp}
             />
           </div>
 
           <button
             type="submit"
             disabled={submitting}
-            style={{
-              width: "100%",
-              background: "#6b21a8",
-              color: "#fff",
-              border: "none",
-              borderRadius: 9,
-              padding: "11px 18px",
-              fontSize: 14,
-              fontWeight: 700,
-              cursor: submitting ? "not-allowed" : "pointer",
-              marginTop: 8,
-              opacity: submitting ? 0.8 : 1,
-            }}
+            className="gov-btn gov-btn--primary"
+            style={{ width: "100%", marginTop: 8, opacity: submitting ? 0.8 : 1 }}
           >
             {submitting ? "Registrando..." : "Registrar"}
           </button>
         </form>
-
-        <p style={{ margin: "16px 0 0", fontSize: 11, color: "#94a3b8", textAlign: "center" }}>
-          Após o registro, você precisará da aprovação do administrador para acessar o sistema.
-        </p>
-      </div>
-    </div>
+    </AuthPageLayout>
   );
 }

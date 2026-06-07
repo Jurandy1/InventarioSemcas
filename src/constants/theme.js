@@ -1,0 +1,80 @@
+/** Design tokens — estilo institucional / governamental (inspirado em gov.br) */
+export const COLORS = {
+  primary: "#1351B4",
+  primaryDark: "#0C326F",
+  primaryLight: "#E8F0FE",
+  accent: "#168821",
+  accentLight: "#E3F5E8",
+  warning: "#FFCD07",
+  danger: "#E52207",
+  dangerLight: "#FDE8E8",
+  bg: "#F0F2F5",
+  bgAlt: "#FFFFFF",
+  surface: "#FFFFFF",
+  border: "#CCCCCC",
+  borderLight: "#E5E5E5",
+  text: "#333333",
+  textSecondary: "#555555",
+  textMuted: "#888888",
+  headerText: "#FFFFFF",
+};
+
+export function getAppStyles(isMobile = false) {
+  const fontSize = isMobile ? 16 : 14;
+  return {
+    inp: {
+      width: "100%",
+      border: `1px solid ${COLORS.border}`,
+      borderRadius: 4,
+      padding: "10px 14px",
+      fontSize,
+      fontFamily: "inherit",
+      boxSizing: "border-box",
+      outline: "none",
+      background: COLORS.surface,
+      color: COLORS.text,
+    },
+    bp: {
+      background: COLORS.primary,
+      color: COLORS.headerText,
+      border: `1px solid ${COLORS.primaryDark}`,
+      borderRadius: 4,
+      padding: "11px 18px",
+      fontSize: 14,
+      fontWeight: 700,
+      cursor: "pointer",
+      letterSpacing: "0.01em",
+    },
+    bs: {
+      background: COLORS.surface,
+      color: COLORS.textSecondary,
+      border: `1px solid ${COLORS.border}`,
+      borderRadius: 4,
+      padding: "11px 18px",
+      fontSize: 14,
+      fontWeight: 600,
+      cursor: "pointer",
+    },
+    cd: {
+      background: COLORS.surface,
+      borderRadius: 4,
+      padding: 16,
+      border: `1px solid ${COLORS.borderLight}`,
+      boxShadow: "0 1px 2px rgba(0,0,0,0.04)",
+    },
+    label: {
+      display: "block",
+      fontSize: 13,
+      fontWeight: 700,
+      color: COLORS.text,
+      marginBottom: 6,
+    },
+    sectionTitle: {
+      margin: "0 0 16px",
+      fontSize: 18,
+      fontWeight: 700,
+      color: COLORS.primaryDark,
+      letterSpacing: "-0.01em",
+    },
+  };
+}

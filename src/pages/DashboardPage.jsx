@@ -65,7 +65,7 @@ export function DashboardPage({
       )}
       <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
         {[
-          { l: "Total", v: totalBens, c: "#1e3a8a" },
+          { l: "Total", v: totalBens, c: "#1351B4" },
           { l: "Encontrados", v: totalFound, c: "#16a34a" },
           { l: "Pendentes", v: totalBens - totalFound, c: "#dc2626" },
           { l: "Progresso", v: `${progresso}%`, c: "#7c3aed" },

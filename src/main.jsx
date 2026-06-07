@@ -9,7 +9,7 @@ const isInvRegistro    = path.includes("/invregistro/")   || hash.includes("#/in
 
 const rootEl = document.getElementById("root");
 if (rootEl) {
-  rootEl.innerHTML = `<div style="min-height:100vh;background:#f1f5f9;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial"><div style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px;box-shadow:0 1px 3px rgba(0,0,0,.06)"><div style="font-weight:800;font-size:14px;color:#0f172a;margin-bottom:6px">Carregando…</div><div style="font-size:12px;color:#64748b">Iniciando aplicação</div></div></div>`;
+  rootEl.innerHTML = `<div class="gov-loading"><div class="gov-spinner"></div><p style="color:var(--gov-text-muted);font-size:13px">Iniciando aplicação…</p></div>`;
 }
 
 const renderFatal = (err) => {
@@ -41,6 +41,20 @@ window.addEventListener("unhandledrejection", (e) => {
   if (isAbortError(err)) return;
   console.error("Promise rejeitada:", err);
   e.preventDefault?.();
+});
+
+window.addEventListener("hashchange", () => {
+  const h = String(window.location.hash || "");
+  const p = String(window.location.pathname || "");
+  const nowRegistro =
+    p.includes("/invregistro/") ||
+    p.includes("/coordregistro/") ||
+    h.includes("#/invregistro/") ||
+    h.includes("#/coordregistro/");
+  const wasRegistro = isInvRegistro || isCoordRegistro;
+  if (nowRegistro !== wasRegistro) {
+    window.location.reload();
+  }
 });
 
 async function boot() {

@@ -103,12 +103,12 @@ export function NotasFiscaisPage({
                     <div style={{ marginBottom: 10 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                         <span style={{ fontSize: 11, color: "#64748b", fontWeight: 700 }}>Inventário</span>
-                        <span style={{ fontSize: 11, color: "#1e3a8a", fontWeight: 800 }}>
+                        <span style={{ fontSize: 11, color: "#1351B4", fontWeight: 800 }}>
                           {inv}/{n.itens.length} ({pct}%)
                         </span>
                       </div>
                       <div style={{ height: 6, borderRadius: 3, background: "#e2e8f0" }}>
-                        <div style={{ height: "100%", borderRadius: 3, background: pct === 100 ? "#16a34a" : "#1e3a8a", width: `${pct}%`, transition: "width .2s" }} />
+                        <div style={{ height: "100%", borderRadius: 3, background: pct === 100 ? "#16a34a" : "#1351B4", width: `${pct}%`, transition: "width .2s" }} />
                       </div>
                     </div>
 

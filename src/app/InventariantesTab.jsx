@@ -104,7 +104,7 @@ export function InventariantesTab({ showT, isMob }) {
     padding: "10px 13px", fontSize: 14, fontFamily: "inherit",
     boxSizing: "border-box", outline: "none",
   };
-  const bp = { background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
+  const bp = { background: "#1351B4", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
   const bs = { background: "#f1f5f9", color: "#334155", border: "1px solid #cbd5e1", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" };
   const cd = { background: "#fff", borderRadius: 12, padding: 16, boxShadow: "0 1px 3px rgba(0,0,0,.06)" };
 
@@ -213,7 +213,7 @@ export function InventariantesTab({ showT, isMob }) {
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: tab === t.id ? "#1e3a8a" : "#f1f5f9", color: tab === t.id ? "#fff" : "#374151", fontWeight: 600, cursor: "pointer", fontSize: 12, whiteSpace: "nowrap", flexShrink: 0 }}
+            style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: tab === t.id ? "#1351B4" : "#f1f5f9", color: tab === t.id ? "#fff" : "#374151", fontWeight: 600, cursor: "pointer", fontSize: 12, whiteSpace: "nowrap", flexShrink: 0 }}
           >
             {t.label}
           </button>
@@ -296,7 +296,7 @@ export function InventariantesTab({ showT, isMob }) {
               <div style={{ display: "flex", gap: 8 }}>
                 <button
                   onClick={() => copiarLink(linkGerado.link)}
-                  style={{ ...bp, flex: 1, fontSize: 13, background: copiado ? "#16a34a" : "#1e3a8a" }}
+                  style={{ ...bp, flex: 1, fontSize: 13, background: copiado ? "#16a34a" : "#1351B4" }}
                 >
                   {copiado ? "Copiado" : "Copiar link"}
                 </button>

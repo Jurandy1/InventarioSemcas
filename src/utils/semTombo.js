@@ -1,3 +1,5 @@
+import { isItemInventariado } from "./patrimonioId.js";
+
 export function isSemTomboItem(item, foundEntry) {
   if (foundEntry?.semTombo || foundEntry?.identificadoPorFoto) return true;
   if (item?.semTombo) return true;
@@ -6,6 +8,24 @@ export function isSemTomboItem(item, foundEntry) {
     return !!(foundEntry?.identificadoPorFoto || item?.identificadoPorFoto);
   }
   return false;
+}
+
+/** Item aguardando identificação na aba Ajuste (foto + descrição, ainda sem tombo real). */
+export function isAjustePendente(item, foundEntry) {
+  if (!foundEntry) return false;
+  const id = String(item?.id || foundEntry.patrimonioId || foundEntry._id || "");
+  if (foundEntry.vinculadoDeSemTombo && !id.startsWith("ST_")) return false;
+  if (String(id).startsWith("ST_")) return true;
+  if (foundEntry.semTombo || foundEntry.identificadoPorFoto) return true;
+  return isSemTomboItem(item, foundEntry);
+}
+
+/** Tombos da planilha ainda não inventariados (candidatos para receber foto). */
+export function isTomboPendente(item, foundSet) {
+  const id = String(item?.id || "");
+  if (!id || id.startsWith("ST_") || id.startsWith("MAN_")) return false;
+  if (!foundSet) return true;
+  return !isItemInventariado(id, foundSet);
 }
 
 export const SEM_TOMBO_BADGE = { bg: "#fef3c7", tx: "#92400e", label: "Sem tombo" };

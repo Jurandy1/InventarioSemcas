@@ -105,7 +105,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
   };
 
   const bp = {
-    background: "#1e3a8a",
+    background: "#1351B4",
     color: "#fff",
     border: "none",
     borderRadius: 9,
@@ -237,7 +237,7 @@ export function CoordenadoresTab({ unidades, showT, isMob }) {
               padding: "8px 14px",
               borderRadius: 8,
               border: "none",
-              background: tab === t.id ? "#1e3a8a" : "#f1f5f9",
+              background: tab === t.id ? "#1351B4" : "#f1f5f9",
               color: tab === t.id ? "#fff" : "#374151",
               fontWeight: 600,
               cursor: "pointer",

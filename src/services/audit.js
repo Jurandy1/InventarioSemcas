@@ -1,4 +1,6 @@
 import { fsGetAll, fsSet, getFirebaseSession } from "./firebase.js";
+import { fetchInventarioForUnits } from "./inventarioLoad.js";
+import { fetchLocaisForUnits, mergeLocaisRecords } from "./locaisLoad.js";
 
 export async function logAuditoria(acao, entidade, entidadeId, antes = null, depois = null) {
   const { uid } = getFirebaseSession();
@@ -97,7 +99,7 @@ export async function criarBackupManual() {
   };
 }
 
-export function setupRealtimeSync(unidadeId, onInventarioChange, onLocaisChange, onCoordenadoresChange) {
+export function setupRealtimeSync(unidadeIds, onInventarioChange, onLocaisChange, onCoordenadoresChange) {
   const { uid } = getFirebaseSession();
   if (!uid) return null;
 
@@ -107,29 +109,29 @@ export function setupRealtimeSync(unidadeId, onInventarioChange, onLocaisChange,
   const locaisMs = Math.max(10000, Number(opts.locaisMs || 60000) || 60000);
   const coordMs = Math.max(15000, Number(opts.coordenadoresMs || 90000) || 90000);
 
-  const filterInventario = (docs) => {
-    if (!unidadeId) return docs;
-    return docs.filter((d) => !d.unidadeId || d.unidadeId === unidadeId);
-  };
+  const ids = Array.isArray(unidadeIds)
+    ? unidadeIds.filter(Boolean)
+    : unidadeIds
+      ? [unidadeIds]
+      : [];
+
+  const fetchInventario = async () => fetchInventarioForUnits(ids);
+
+  const fetchLocais = async () => fetchLocaisForUnits(ids);
 
   if (onInventarioChange) {
-    const fetchInventario = () =>
-      unidadeId
-        ? fsGetAll("inventario", { where: [{ field: "unidadeId", op: "EQUAL", value: unidadeId }], orderBy: ["__name__"] })
-        : fsGetAll("inventario");
-
-    fetchInventario().then((docs) => onInventarioChange(filterInventario(docs)));
+    fetchInventario().then((docs) => onInventarioChange(docs));
     const interval = setInterval(async () => {
       const updated = await fetchInventario();
-      onInventarioChange(filterInventario(updated));
+      onInventarioChange(updated);
     }, invMs);
     unsubscribers.push(() => clearInterval(interval));
   }
 
   if (onLocaisChange) {
-    fsGetAll("locais").then((docs) => onLocaisChange(docs));
+    fetchLocais().then((docs) => onLocaisChange(docs));
     const interval = setInterval(async () => {
-      const updated = await fsGetAll("locais");
+      const updated = await fetchLocais();
       onLocaisChange(updated);
     }, locaisMs);
     unsubscribers.push(() => clearInterval(interval));

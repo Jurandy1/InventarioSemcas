@@ -469,7 +469,7 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
           <div style={{ fontSize: 12, opacity: 0.9, marginBottom: 10 }}>{camError}</div>
           <div style={{ display: "flex", gap: 8 }}>
             {!useNativeCapture && canUseLiveCamera() && (
-              <button onClick={() => startCamera(facingMode)} style={{ background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              <button onClick={() => startCamera(facingMode)} style={{ background: "#1351B4", color: "#fff", border: "none", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
                 Tentar novamente
               </button>
             )}
@@ -484,7 +484,7 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
       )}
 
       {captured.length > 0 && !preview && (
-        <button onClick={done} style={{ margin: "0 16px 16px", background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+        <button onClick={done} style={{ margin: "0 16px 16px", background: "#1351B4", color: "#fff", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
           Concluir ({captured.length} foto{captured.length > 1 ? "s" : ""})
         </button>
       )}

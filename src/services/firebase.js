@@ -304,7 +304,11 @@ export async function fsQueryPage(collection, opts = {}) {
     20000
   );
 
-  if (!r.ok) return { docs: [], nextCursor: null, hasMore: false };
+  if (!r.ok) {
+    const errBody = await r.json().catch(() => ({}));
+    console.warn(`Firestore query failed (${collection}):`, errBody?.error?.message || r.status);
+    return { docs: [], nextCursor: null, hasMore: false };
+  }
   const rows = await r.json().catch(() => []);
   const docsRaw = (Array.isArray(rows) ? rows : []).map((x) => x?.document).filter(Boolean);
 
@@ -433,7 +437,7 @@ export async function criarConviteCoordinador(unidadeId, unidadeNome, matricula 
     criadoPor: criadoPor || authUid,
   };
 
-  await fsSet("convites", token, convite);
+  await fsSetStrict("convites", token, convite);
   return convite;
 }
 
@@ -478,8 +482,8 @@ export async function obterCoordenadores(status = "pendente_aprovacao") {
 
 export async function obterCoordPorUid(uid) {
   assertFirebaseConfigured();
-  const rows = await fsGetAll("coordenadores", { where: [{ field: "uid", op: "EQUAL", value: uid }], orderBy: ["__name__"], limit: 1 });
-  return rows[0] || null;
+  if (!authToken || !uid) return null;
+  return fsGetDoc("coordenadores", uid);
 }
 
 export async function obterCoordPorUnidade(unidadeId) {
@@ -569,8 +573,31 @@ export async function criarConviteInventariante(criadoPor = "") {
     criadoPor: criadoPor || authUid,
   };
 
-  await fsSet("convites_inventariantes", token, convite);
+  await fsSetStrict("convites_inventariantes", token, convite);
   return convite;
+}
+
+/** Marca convite de inventariante como usado após cadastro (requer auth do novo usuário). */
+export async function marcarConviteInventarianteUsado(token, convite, uid) {
+  assertFirebaseConfigured();
+  if (!authToken) throw new Error("Usuário não autenticado");
+  await fsSetStrict("convites_inventariantes", token, {
+    ...convite,
+    status: "usado",
+    dataUso: new Date().toISOString(),
+    usadoPor: uid,
+  });
+}
+
+/** Marca convite de coordenadora como usado após cadastro. */
+export async function marcarConviteCoordUsado(token, convite) {
+  assertFirebaseConfigured();
+  if (!authToken) throw new Error("Usuário não autenticado");
+  await fsSetStrict("convites", token, {
+    ...convite,
+    status: "usado",
+    dataUso: new Date().toISOString(),
+  });
 }
 
 export async function gerarLinkConviteInventariante() {
@@ -591,10 +618,9 @@ export async function obterInventariantes(status = "pendente_aprovacao") {
 
 export async function obterInventariantePorUid(uid) {
   assertFirebaseConfigured();
-  if (!authToken) return null;
+  if (!authToken || !uid) return null;
   try {
-    const rows = await fsGetAll("inventariantes", { where: [{ field: "uid", op: "EQUAL", value: uid }], orderBy: ["__name__"], limit: 1 });
-    return rows[0] || null;
+    return await fsGetDoc("inventariantes", uid);
   } catch {
     return null;
   }

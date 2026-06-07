@@ -2,21 +2,21 @@ export const ESTADOS = ["Novo", "Ótimo", "Bom", "Regular", "Ruim", "Inservível
 export const SITUACOES = ["Em uso", "Depósito", "Extraviado", "Avariado", "Baixado", "Permuta"];
 
 export const EC = {
-  Novo: { bg: "#d1fae5", tx: "#047857" },
-  Ótimo: { bg: "#dcfce7", tx: "#15803d" },
-  Bom: { bg: "#dbeafe", tx: "#1d4ed8" },
-  Regular: { bg: "#fef9c3", tx: "#a16207" },
-  Ruim: { bg: "#fee2e2", tx: "#b91c1c" },
-  Inservível: { bg: "#f3e8ff", tx: "#7e22ce" },
+  Novo: { bg: "#E3F5E8", tx: "#0D4419", border: "#A8DAB5" },
+  Ótimo: { bg: "#E3F5E8", tx: "#168821", border: "#A8DAB5" },
+  Bom: { bg: "#E8F0FE", tx: "#1351B4", border: "#B8D4F0" },
+  Regular: { bg: "#FFF8E6", tx: "#735C00", border: "#FFE08A" },
+  Ruim: { bg: "#FDE8E8", tx: "#8A0015", border: "#F5C2C7" },
+  Inservível: { bg: "#F0F2F5", tx: "#555555", border: "#CCCCCC" },
 };
 
 export const SC = {
-  "Em uso": { bg: "#dcfce7", tx: "#15803d" },
-  Depósito: { bg: "#f1f5f9", tx: "#475569" },
-  Extraviado: { bg: "#fee2e2", tx: "#b91c1c" },
-  Avariado: { bg: "#ffedd5", tx: "#c2410c" },
-  Baixado: { bg: "#f3e8ff", tx: "#7e22ce" },
-  Permuta: { bg: "#fef3c7", tx: "#92400e" },
+  "Em uso": { bg: "#E3F5E8", tx: "#168821", border: "#A8DAB5" },
+  Depósito: { bg: "#F0F2F5", tx: "#555555", border: "#CCCCCC" },
+  Extraviado: { bg: "#FDE8E8", tx: "#8A0015", border: "#F5C2C7" },
+  Avariado: { bg: "#FFF8E6", tx: "#735C00", border: "#FFE08A" },
+  Baixado: { bg: "#F0F2F5", tx: "#555555", border: "#CCCCCC" },
+  Permuta: { bg: "#FFF8E6", tx: "#735C00", border: "#FFE08A" },
 };
 
 export const PER_PAGE = 20;

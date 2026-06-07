@@ -4,7 +4,8 @@ import { TInput } from "../components/FormFields.jsx";
 import { Badge } from "../components/Badge.jsx";
 import { EC, SC } from "../constants/inventory.js";
 import { countFoundInLocal } from "../utils/inventorySession.js";
-import { isSemTomboItem, SEM_TOMBO_BADGE, showFotoManualBadge } from "../utils/semTombo.js";
+import { isItemInventariado } from "../utils/patrimonioId.js";
+import { isAjustePendente, isSemTomboItem, isTomboPendente, SEM_TOMBO_BADGE, showFotoManualBadge } from "../utils/semTombo.js";
 import { PhotoThumb } from "../components/PhotoThumb.jsx";
 import { sortByDataNF } from "../utils/itemHelpers.js";
 
@@ -49,6 +50,9 @@ export function InventarioPage({
   setPendingUnids,
   confirmarAtivas,
   removeAtiva,
+  retomarSessaoPausada,
+  sessoesPausadas,
+  pausedUnitIds,
   foundSet,
   foundMap,
   isMob,
@@ -71,11 +75,13 @@ export function InventarioPage({
   openDetModal,
   onOpenManual,
   onOpenSemTombo,
+  onOpenFotoVarios,
   onOpenFinalizar,
   onOpenCancelar,
   onOpenLinkTombo,
   onOpenNextPending,
   campanhaFechada,
+  teamOnline,
   locais,
   sessionId,
   onQuickAddLocal,
@@ -87,6 +93,7 @@ export function InventarioPage({
   const [localNomeRapido, setLocalNomeRapido] = useState("");
   const [localSelecionadoId, setLocalSelecionadoId] = useState("");
   const [localAddSearch, setLocalAddSearch] = useState("");
+  const [ajusteTomboSearch, setAjusteTomboSearch] = useState("");
 
   const itemById = useMemo(() => {
     const map = new Map();
@@ -113,7 +120,7 @@ export function InventarioPage({
     const out = [];
     for (const u of unidadesAtivas) {
       for (const i of u.itens) {
-        if (!foundSet?.has(i.id)) out.push({ ...i, unidadeId: u.id, unidadeNome: u.nome });
+        if (!isItemInventariado(i.id, foundSet)) out.push({ ...i, unidadeId: u.id, unidadeNome: u.nome });
       }
     }
     return out;
@@ -146,11 +153,41 @@ export function InventarioPage({
       for (const i of u.itens) {
         const f = foundMap[i.id];
         if (!f) continue;
-        if (isSemTomboItem(i, f)) out.push({ item: { ...i, unidadeId: u.id, unidadeNome: u.nome }, found: f });
+        if (isAjustePendente(i, f)) out.push({ item: { ...i, unidadeId: u.id, unidadeNome: u.nome }, found: f });
       }
     }
-    return out.sort((a, b) => sortByDataNF(a.item, b.item));
+    return out.sort((a, b) => String(a.found?.ultimaAtualizacao || "").localeCompare(String(b.found?.ultimaAtualizacao || "")));
   }, [unidadesAtivas, foundMap]);
+
+  const tombosPendentes = useMemo(() => {
+    const out = [];
+    for (const u of unidadesAtivas) {
+      for (const i of u.itens) {
+        if (!isTomboPendente(i, foundSet)) continue;
+        out.push({ ...i, unidadeId: u.id, unidadeNome: u.nome });
+      }
+    }
+    return out.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  }, [unidadesAtivas, foundSet]);
+
+  const tombosPendentesFiltrados = useMemo(() => {
+    const q = String(ajusteTomboSearch || "").trim().toLowerCase();
+    if (!q) return tombosPendentes.slice(0, 60);
+    const out = [];
+    for (const it of tombosPendentes) {
+      if (
+        String(it.id || "").toLowerCase().includes(q) ||
+        String(it.patrimonioLabel || "").toLowerCase().includes(q) ||
+        String(it.descricao || "").toLowerCase().includes(q) ||
+        String(it.especie || "").toLowerCase().includes(q) ||
+        String(it.fornecedor || "").toLowerCase().includes(q)
+      ) {
+        out.push(it);
+        if (out.length >= 60) break;
+      }
+    }
+    return out;
+  }, [tombosPendentes, ajusteTomboSearch]);
 
   return (
     <div>
@@ -164,7 +201,7 @@ export function InventarioPage({
             padding: "8px 16px",
             borderRadius: 9,
             border: "none",
-            background: invSubTab === "inventariar" ? "#1e3a8a" : "#f1f5f9",
+            background: invSubTab === "inventariar" ? "#1351B4" : "#f1f5f9",
             color: invSubTab === "inventariar" ? "#fff" : "#374151",
             fontWeight: 700,
             fontSize: 13,
@@ -183,7 +220,7 @@ export function InventarioPage({
               padding: "8px 16px",
               borderRadius: 9,
               border: "none",
-              background: invSubTab === "andamento" ? "#1e3a8a" : "#f1f5f9",
+              background: invSubTab === "andamento" ? "#1351B4" : "#f1f5f9",
               color: invSubTab === "andamento" ? "#fff" : "#374151",
               fontWeight: 700,
               fontSize: 13,
@@ -205,7 +242,7 @@ export function InventarioPage({
             padding: "8px 16px",
             borderRadius: 9,
             border: "none",
-            background: invSubTab === "locais" ? "#1e3a8a" : "#f1f5f9",
+            background: invSubTab === "locais" ? "#1351B4" : "#f1f5f9",
             color: invSubTab === "locais" ? "#fff" : "#374151",
             fontWeight: 700,
             fontSize: 13,
@@ -224,7 +261,7 @@ export function InventarioPage({
               padding: "8px 16px",
               borderRadius: 9,
               border: "none",
-              background: invSubTab === "ajuste" ? "#1e3a8a" : "#f1f5f9",
+              background: invSubTab === "ajuste" ? "#1351B4" : "#f1f5f9",
               color: invSubTab === "ajuste" ? "#fff" : "#374151",
               fontWeight: 700,
               fontSize: 13,
@@ -245,7 +282,7 @@ export function InventarioPage({
         <div>
           {unidadesAtivas.length > 0 && (
             <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #c7d2fe", background: "#eef2ff", padding: "12px 16px" }}>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#1e3a8a" }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#1351B4" }}>
                 Inventário pausado · {unidadesAtivas.length} unidade{unidadesAtivas.length > 1 ? "s" : ""} selecionada{unidadesAtivas.length > 1 ? "s" : ""}
               </p>
               <p style={{ margin: "4px 0 10px", fontSize: 12, color: "#475569" }}>
@@ -266,24 +303,77 @@ export function InventarioPage({
           </div>
 
           {pendingUnids.size > 0 && (
-            <div style={{ position: "sticky", top: 64, zIndex: 100, background: "#1e3a8a", borderRadius: 12, padding: "12px 16px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, boxShadow: "0 4px 16px rgba(30,58,138,.35)" }}>
+            <div style={{ position: "sticky", top: 64, zIndex: 100, background: "#1351B4", borderRadius: 12, padding: "12px 16px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, boxShadow: "0 4px 16px rgba(30,58,138,.35)", flexWrap: "wrap" }}>
               <span style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>
                 {pendingUnids.size} unidade{pendingUnids.size > 1 ? "s" : ""} selecionada{pendingUnids.size > 1 ? "s" : ""}
               </span>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button onClick={() => setPendingUnids(new Set())} style={{ background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>
                   Limpar
                 </button>
-                <button
-                  onClick={() => {
-                    const selected = unidades.filter((u) => pendingUnids.has(u.id));
-                    confirmarAtivas(selected);
-                    setPage(1);
-                  }}
-                  style={{ background: "#fff", color: "#1e3a8a", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 800 }}
-                >
-                  Iniciar inventário
-                </button>
+                {unidadesAtivas.length > 0 ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        const selected = unidades.filter((u) => pendingUnids.has(u.id));
+                        confirmarAtivas(selected, { merge: true });
+                        setPage(1);
+                      }}
+                      style={{ background: "#fff", color: "#1351B4", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 800 }}
+                    >
+                      Adicionar ao inventário
+                    </button>
+                    <button
+                      onClick={() => {
+                        const selected = unidades.filter((u) => pendingUnids.has(u.id));
+                        confirmarAtivas(selected, { novaSessao: true });
+                        setPage(1);
+                      }}
+                      style={{ background: "rgba(255,255,255,.2)", color: "#fff", border: "1px solid rgba(255,255,255,.4)", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 700 }}
+                    >
+                      Novo inventário (pausa o atual)
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const selected = unidades.filter((u) => pendingUnids.has(u.id));
+                      confirmarAtivas(selected);
+                      setPage(1);
+                    }}
+                    style={{ background: "#fff", color: "#1351B4", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 800 }}
+                  >
+                    Iniciar inventário
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {Array.isArray(sessoesPausadas) && sessoesPausadas.length > 0 && (
+            <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #fde68a", background: "#fffbeb", padding: "12px 16px" }}>
+              <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 800, color: "#92400e" }}>
+                Inventários pausados ({sessoesPausadas.length})
+              </p>
+              <div style={{ display: "grid", gap: 8 }}>
+                {sessoesPausadas.map((s) => (
+                  <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#78350f" }}>
+                        {(s.unitNomes || s.unitIds || []).join(", ") || "Unidades"}
+                      </p>
+                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#a16207" }}>
+                        Pausado em {s.savedAt ? new Date(s.savedAt).toLocaleString("pt-BR") : "—"}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => retomarSessaoPausada?.(s)}
+                      style={{ ...bp, fontSize: 12, padding: "8px 12px", background: "#b45309" }}
+                    >
+                      Retomar
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -299,9 +389,10 @@ export function InventarioPage({
               {unidades
                 .filter((u) => !unidadeSearch || u.nome.toLowerCase().includes(unidadeSearch.toLowerCase()))
                 .map((u) => {
-                  const inv = u.itens.filter((i) => foundSet.has(i.id)).length;
+                  const inv = u.itens.filter((i) => isItemInventariado(i.id, foundSet)).length;
                   const pct = u.itens.length > 0 ? Math.round((inv / u.itens.length) * 100) : 0;
                   const isActive = unidadesAtivas.some((x) => x.id === u.id);
+                  const isArchivedPaused = pausedUnitIds?.has?.(u.id) && !isActive;
                   const selected = pendingUnids.has(u.id);
                   return (
                     <button
@@ -315,15 +406,17 @@ export function InventarioPage({
                           return next;
                         });
                       }}
-                      style={{ ...cd, border: `2px solid ${isActive ? "#86efac" : selected ? "#1e3a8a" : "#e2e8f0"}`, cursor: isActive ? "default" : "pointer", textAlign: "left", position: "relative", overflow: "hidden", background: isActive ? "#f0fdf4" : selected ? "#eff6ff" : "#fff" }}
+                      style={{ ...cd, border: `2px solid ${isActive ? "#86efac" : isArchivedPaused ? "#fcd34d" : selected ? "#1351B4" : "#e2e8f0"}`, cursor: isActive ? "default" : "pointer", textAlign: "left", position: "relative", overflow: "hidden", background: isActive ? "#f0fdf4" : isArchivedPaused ? "#fffbeb" : selected ? "#eff6ff" : "#fff" }}
                     >
-                      <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderRadius: 6, border: `2px solid ${isActive ? "#16a34a" : selected ? "#1e3a8a" : "#d1d5db"}`, background: isActive ? "#16a34a" : selected ? "#1e3a8a" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#fff", fontWeight: 900 }}>
-                        {isActive ? "OK" : selected ? "OK" : ""}
+                      <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderRadius: 6, border: `2px solid ${isActive ? "#16a34a" : isArchivedPaused ? "#d97706" : selected ? "#1351B4" : "#d1d5db"}`, background: isActive ? "#16a34a" : isArchivedPaused ? "#f59e0b" : selected ? "#1351B4" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#fff", fontWeight: 900 }}>
+                        {isActive ? "OK" : isArchivedPaused ? "P" : selected ? "OK" : ""}
                       </div>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: isActive ? "#15803d" : selected ? "#1e3a8a" : "#0f172a", paddingRight: 28 }}>{u.nome}</p>
-                      <p style={{ margin: "4px 0 8px", fontSize: 12, color: isActive ? "#16a34a" : "#64748b" }}>{isActive ? "Em inventário" : `${u.itens.length} itens · ${inv} inventariados`}</p>
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: isActive ? "#15803d" : isArchivedPaused ? "#92400e" : selected ? "#1351B4" : "#0f172a", paddingRight: 28 }}>{u.nome}</p>
+                      <p style={{ margin: "4px 0 8px", fontSize: 12, color: isActive ? "#16a34a" : isArchivedPaused ? "#b45309" : "#64748b" }}>
+                        {isActive ? "Em inventário" : isArchivedPaused ? "Inventário pausado (retome abaixo)" : `${u.itens.length} itens · ${inv} inventariados`}
+                      </p>
                       <div style={{ height: 4, borderRadius: 2, background: "#e2e8f0" }}>
-                        <div style={{ height: "100%", background: pct === 100 ? "#16a34a" : isActive ? "#1e3a8a" : "#94a3b8", borderRadius: 2, width: `${pct}%`, transition: "width .3s" }} />
+                        <div style={{ height: "100%", background: pct === 100 ? "#16a34a" : isActive ? "#1351B4" : "#94a3b8", borderRadius: 2, width: `${pct}%`, transition: "width .3s" }} />
                       </div>
                     </button>
                   );
@@ -338,7 +431,7 @@ export function InventarioPage({
           <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #bfdbfe", background: "#eff6ff", padding: "12px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
               <div>
-                <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#1e3a8a" }}>
+                <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#1351B4" }}>
                   {unidadesAtivas.length} unidade{unidadesAtivas.length > 1 ? "s" : ""} em inventário
                 </p>
                 <p style={{ margin: "2px 0 0", fontSize: 11, color: "#3b82f6" }}>
@@ -377,12 +470,23 @@ export function InventarioPage({
             </div>
 
             <div style={{ height: 5, borderRadius: 3, background: "#dbeafe", marginBottom: 10 }}>
-              <div style={{ height: "100%", background: progresso === 100 ? "#16a34a" : "#1e3a8a", borderRadius: 3, width: `${progresso}%`, transition: "width .3s" }} />
+              <div style={{ height: "100%", background: progresso === 100 ? "#16a34a" : "#1351B4", borderRadius: 3, width: `${progresso}%`, transition: "width .3s" }} />
             </div>
+
+            {Array.isArray(teamOnline) && teamOnline.length > 0 && (
+              <div style={{ marginBottom: 10, padding: "8px 12px", background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 9 }}>
+                <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#166534" }}>
+                  Equipe na mesma unidade agora: {teamOnline.map((t) => t.nome).join(", ")}
+                </p>
+                <p style={{ margin: "4px 0 0", fontSize: 10, color: "#15803d", lineHeight: 1.35 }}>
+                  Itens e locais são compartilhados em tempo real. Cada um pode inventariar itens diferentes ao mesmo tempo.
+                </p>
+              </div>
+            )}
 
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {unidadesAtivas.map((u) => {
-                const uFound = u.itens.filter((i) => foundSet.has(i.id)).length;
+                const uFound = u.itens.filter((i) => isItemInventariado(i.id, foundSet)).length;
                 const uPct = u.itens.length > 0 ? Math.round((uFound / u.itens.length) * 100) : 0;
                 const done = uPct === 100;
                 return (
@@ -402,7 +506,7 @@ export function InventarioPage({
                       {uFound}/{u.itens.length} · {uPct}%
                     </p>
                     <div style={{ height: 3, borderRadius: 2, background: done ? "#bbf7d0" : "#e2e8f0" }}>
-                      <div style={{ height: "100%", background: done ? "#16a34a" : "#1e3a8a", borderRadius: 2, width: `${uPct}%` }} />
+                      <div style={{ height: "100%", background: done ? "#16a34a" : "#1351B4", borderRadius: 2, width: `${uPct}%` }} />
                     </div>
                   </div>
                 );
@@ -411,9 +515,9 @@ export function InventarioPage({
           </div>
 
           <div style={{ ...cd, marginBottom: 12, border: "1px solid #e2e8f0" }}>
-            <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Locais desta sessão</p>
+            <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Locais da unidade</p>
             <p style={{ margin: "0 0 10px", fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>
-              Crie salas/locais aqui. Só aparecem neste inventário — locais de outras sessões não são listados.
+              Locais compartilhados entre todos na mesma unidade. Qualquer inventariante da equipe vê e usa os mesmos locais.
             </p>
             <div style={{ display: "flex", gap: 8, marginBottom: locais.length > 0 ? 10 : 0 }}>
               <input
@@ -460,7 +564,7 @@ export function InventarioPage({
                 })}
               </div>
             ) : (
-              <p style={{ margin: 0, fontSize: 11, color: "#94a3b8" }}>Nenhum local criado nesta sessão.</p>
+              <p style={{ margin: 0, fontSize: 11, color: "#94a3b8" }}>Nenhum local criado nesta unidade ainda.</p>
             )}
           </div>
 
@@ -582,46 +686,90 @@ export function InventarioPage({
       {invSubTab === "ajuste" && unidadesAtivas.length > 0 && (
         <div>
           <div style={{ ...cd, marginBottom: 12, border: "1px solid #e2e8f0" }}>
-            <p style={{ margin: "0 0 6px", fontSize: 14, fontWeight: 800, color: "#0f172a" }}>Ajuste de tombamento</p>
-            <p style={{ margin: 0, fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
-              Vincule itens registrados sem tombo (S/T) ao patrimônio correto. As fotos permanecem com aviso de alocação manual.
+            <p style={{ margin: "0 0 6px", fontSize: 14, fontWeight: 800, color: "#0f172a" }}>Ajuste — identificar por foto</p>
+            <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b", lineHeight: 1.5 }}>
+              Itens registrados só com foto e descrição ficam aqui até você ligar ao tombo correto da planilha.
+              Também pode usar a mesma foto para marcar vários tombos pendentes de uma vez.
             </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={() => onOpenSemTombo?.()} style={{ ...bp, fontSize: 12, padding: "8px 14px" }}>
+                + Foto e descrição
+              </button>
+              <button onClick={() => onOpenFotoVarios?.()} style={{ ...bs, fontSize: 12, padding: "8px 14px", borderColor: "#1351B4", color: "#1351B4" }}>
+                Mesma foto em vários tombos
+              </button>
+            </div>
           </div>
-          {ajusteItems.length === 0 ? (
-            <div style={{ ...cd, textAlign: "center", padding: 32 }}>
-              <p style={{ margin: 0, color: "#94a3b8", fontSize: 13 }}>Nenhum item sem tombo pendente de vinculação.</p>
+
+          <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "1fr 1fr", gap: 12, alignItems: "start" }}>
+            <div style={{ ...cd, border: "1.5px solid #fcd34d" }}>
+              <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#92400e" }}>
+                Fotos aguardando identificação ({ajusteItems.length})
+              </p>
+              <p style={{ margin: "0 0 12px", fontSize: 11, color: "#a16207", lineHeight: 1.4 }}>
+                Clique em Vincular e escolha um tombo pendente abaixo.
+              </p>
+              {ajusteItems.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", textAlign: "center", padding: "20px 8px" }}>
+                  Nenhuma foto pendente. Use &quot;Foto e descrição&quot; quando encontrar um item sem número de tombo.
+                </p>
+              ) : (
+                <div style={{ display: "grid", gap: 8 }}>
+                  {ajusteItems.map(({ item, found: f }) => {
+                    const foto = f?.fotoUrls?.[0];
+                    return (
+                      <div key={item.id} style={{ border: "1px solid #fde68a", borderRadius: 10, padding: 10, display: "flex", gap: 10, alignItems: "center", background: "#fffbeb" }}>
+                        {foto ? (
+                          <PhotoThumb src={foto} badge={showFotoManualBadge(item, f)} size={52} onImageClick={() => onViewImage?.(foto)} />
+                        ) : (
+                          <div style={{ width: 52, height: 52, borderRadius: 8, background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#92400e", flexShrink: 0 }}>
+                            S/T
+                          </div>
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: 12, fontWeight: 800 }}>{getDisplayDesc(item, f)}</p>
+                          {f?.tomboReferencia && (
+                            <p style={{ margin: "2px 0 0", fontSize: 11, color: "#92400e" }}>Sugestão: {f.tomboReferencia}</p>
+                          )}
+                          {unidadesAtivas.length > 1 && (
+                            <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748b" }}>{item.unidadeNome}</p>
+                          )}
+                        </div>
+                        <button onClick={() => onOpenLinkTombo?.(item, f)} style={{ ...bp, padding: "8px 10px", fontSize: 11, flexShrink: 0 }}>
+                          Vincular
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(340px,1fr))", gap: 10 }}>
-              {ajusteItems.map(({ item, found: f }) => {
-                const foto = f?.fotoUrls?.[0];
-                return (
-                  <div key={item.id} style={{ ...cd, border: "1.5px solid #fcd34d", padding: 12, display: "flex", gap: 10, alignItems: "center" }}>
-                    {foto ? (
-                      <PhotoThumb src={foto} badge={showFotoManualBadge(item, f)} size={56} onImageClick={() => onViewImage?.(foto)} />
-                    ) : (
-                      <div style={{ width: 56, height: 56, borderRadius: 8, background: "#fef3c7", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, color: "#92400e", flexShrink: 0 }}>
-                        S/T
-                      </div>
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: 12, fontWeight: 800 }}>{getDisplayDesc(item, f)}</p>
-                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Código: {getItemCode(item)}</p>
-                      {f?.tomboReferencia && (
-                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#92400e" }}>Sugestão: {f.tomboReferencia}</p>
-                      )}
-                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
-                        <Badge label={SEM_TOMBO_BADGE.label} c={SEM_TOMBO_BADGE} />
-                      </div>
+
+            <div style={{ ...cd, border: "1.5px solid #fed7aa" }}>
+              <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 800, color: "#c2410c" }}>
+                Tombos ainda não encontrados ({tombosPendentes.length})
+              </p>
+              <p style={{ margin: "0 0 10px", fontSize: 11, color: "#9a3412", lineHeight: 1.4 }}>
+                Itens da planilha sem registro no inventário — candidatos para receber a foto.
+              </p>
+              <TInput initial={ajusteTomboSearch} onVal={setAjusteTomboSearch} placeholder="Buscar tombo, descrição..." style={{ ...inp, marginBottom: 10, fontSize: 12 }} />
+              {tombosPendentesFiltrados.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", textAlign: "center", padding: "20px 8px" }}>
+                  {tombosPendentes.length === 0 ? "Todos os tombos desta unidade já foram inventariados." : "Nenhum resultado na busca."}
+                </p>
+              ) : (
+                <div style={{ maxHeight: 420, overflowY: "auto", display: "grid", gap: 6 }}>
+                  {tombosPendentesFiltrados.map((it) => (
+                    <div key={it.id} style={{ border: "1px solid #ffedd5", borderRadius: 8, padding: "8px 10px", background: "#fff7ed" }}>
+                      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{it.descricao || it.especie || "—"}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(it)}</p>
+                      <p style={{ margin: "2px 0 0", fontSize: 10, color: "#94a3b8", overflowWrap: "anywhere" }}>{buildOrigemLine(it)}</p>
                     </div>
-                    <button onClick={() => onOpenLinkTombo?.(item, f)} style={{ ...bp, padding: "8px 10px", fontSize: 11, flexShrink: 0 }}>
-                      Vincular
-                    </button>
-                  </div>
-                );
-              })}
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       )}
 
@@ -661,7 +809,7 @@ export function InventarioPage({
                   </div>
 
                   <div style={{ ...cd, marginBottom: 12 }}>
-                    <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 900, color: "#1e3a8a" }}>Adicionar item neste local</p>
+                    <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 900, color: "#1351B4" }}>Adicionar item neste local</p>
                     <TInput initial={localAddSearch} onVal={(v) => setLocalAddSearch(v)} placeholder="Buscar pendentes por número/descrição..." style={{ ...inp, marginBottom: 10 }} />
                     {pendentesFiltrados.length === 0 ? (
                       <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>Nenhum item pendente encontrado.</p>
@@ -756,9 +904,9 @@ export function InventarioPage({
           ) : (
             <div>
               <div style={{ ...cd, marginBottom: 12 }}>
-                <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Locais desta sessão</p>
+                <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Locais da unidade</p>
                 <p style={{ margin: "0 0 10px", fontSize: 11, color: "#64748b" }}>
-                  {sessionId ? "Apenas locais criados neste inventário aparecem aqui." : "Inicie um inventário para criar locais."}
+                  {sessionId ? "Locais compartilhados com toda a equipe nesta unidade." : "Inicie um inventário para criar locais."}
                 </p>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input
@@ -789,7 +937,7 @@ export function InventarioPage({
 
               {locais.length === 0 ? (
                 <div style={{ ...cd, textAlign: "center", padding: 32 }}>
-                  <p style={{ color: "#64748b", margin: 0, fontSize: 13 }}>Nenhum local nesta sessão.</p>
+                  <p style={{ color: "#64748b", margin: 0, fontSize: 13 }}>Nenhum local nesta unidade ainda.</p>
                   <p style={{ color: "#94a3b8", margin: "6px 0 0", fontSize: 12 }}>Use o campo acima para criar a primeira sala.</p>
                 </div>
               ) : (

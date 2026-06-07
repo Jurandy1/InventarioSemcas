@@ -1,6 +1,29 @@
 /* ========================================
-   ESTILOS GLOBAIS E RESPONSIVOS
+   DESIGN SYSTEM INSTITUCIONAL — SEMCAS
+   Inspirado em padrões gov.br
    ======================================== */
+
+:root {
+  --gov-primary: #1351b4;
+  --gov-primary-dark: #0c326f;
+  --gov-primary-light: #e8f0fe;
+  --gov-accent: #168821;
+  --gov-accent-light: #e3f5e8;
+  --gov-warning: #ffcd07;
+  --gov-danger: #e52207;
+  --gov-danger-light: #fde8e8;
+  --gov-bg: #f0f2f5;
+  --gov-surface: #ffffff;
+  --gov-border: #cccccc;
+  --gov-border-light: #e5e5e5;
+  --gov-text: #333333;
+  --gov-text-secondary: #555555;
+  --gov-text-muted: #888888;
+  --gov-radius: 4px;
+  --gov-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --gov-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+  --gov-font: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
 
 * {
   margin: 0;
@@ -15,184 +38,521 @@ html {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  line-height: 1.6;
-  color: #0f172a;
-  background-color: #f1f5f9;
+  font-family: var(--gov-font);
+  line-height: 1.5;
+  color: var(--gov-text);
+  background-color: var(--gov-bg);
 }
 
-/* ========================================
-   TIPOGRAFIA RESPONSIVA
-   ======================================== */
-
-h1 { font-size: clamp(24px, 5vw, 32px); }
-h2 { font-size: clamp(20px, 4.5vw, 28px); }
-h3 { font-size: clamp(18px, 4vw, 24px); }
-h4 { font-size: clamp(16px, 3.5vw, 20px); }
+h1 { font-size: clamp(22px, 4vw, 28px); font-weight: 700; color: var(--gov-primary-dark); }
+h2 { font-size: clamp(18px, 3.5vw, 22px); font-weight: 700; color: var(--gov-primary-dark); }
+h3 { font-size: clamp(16px, 3vw, 18px); font-weight: 700; color: var(--gov-text); }
 
 p {
   word-break: break-word;
   overflow-wrap: break-word;
 }
 
-/* ========================================
-   CONTAINERS RESPONSIVOS
-   ======================================== */
+/* ---- Header institucional ---- */
 
-.container {
-  width: 100%;
-  margin: 0 auto;
-  padding: 0 16px;
+.gov-header {
+  background: var(--gov-primary);
+  color: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  box-shadow: var(--gov-shadow-md);
 }
 
-@media (max-width: 640px) {
-  .container { padding: 0 12px; }
+.gov-header__flag {
+  height: 4px;
+  background: linear-gradient(90deg, var(--gov-accent) 0%, var(--gov-accent) 33%, var(--gov-warning) 33%, var(--gov-warning) 66%, var(--gov-primary-dark) 66%);
 }
 
-@media (max-width: 480px) {
-  .container { padding: 0 8px; }
-}
-
-/* ========================================
-   GRID RESPONSIVO
-   ======================================== */
-
-.grid {
-  display: grid;
-  gap: 16px;
-  width: 100%;
-}
-
-@media (max-width: 768px) {
-  .grid { gap: 12px; }
-}
-
-@media (max-width: 480px) {
-  .grid { gap: 8px; }
-}
-
-/* ========================================
-   FLEX RESPONSIVO
-   ======================================== */
-
-.flex-container {
+.gov-header__inner {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 16px;
-  flex-wrap: wrap;
+  padding: 12px 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.gov-header__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.gov-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.gov-brand__seal {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--gov-radius);
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.gov-brand__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.gov-brand__org {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.85;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gov-brand__sys {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.gov-header__meta {
+  margin: 2px 0 0;
+  font-size: 11px;
+  opacity: 0.88;
+  line-height: 1.35;
+}
+
+.gov-header__status {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---- Sidebar ---- */
+
+.gov-layout {
+  display: flex;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.gov-sidebar {
+  width: 220px;
+  background: var(--gov-surface);
+  border-right: 1px solid var(--gov-border-light);
+  padding: 16px 12px;
+  flex-shrink: 0;
+}
+
+.gov-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
+  background: transparent;
+  color: var(--gov-text-secondary);
+  border: none;
+  border-radius: var(--gov-radius);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 2px;
+  text-align: left;
+  position: relative;
+  min-height: 44px;
+  transition: background 0.15s, color 0.15s;
 }
 
-@media (max-width: 768px) {
-  .flex-container { gap: 12px; }
+.gov-nav-item:hover {
+  background: var(--gov-primary-light);
+  color: var(--gov-primary-dark);
 }
 
-@media (max-width: 480px) {
-  .flex-container { gap: 8px; flex-direction: column; }
+.gov-nav-item--active {
+  background: var(--gov-primary-light);
+  color: var(--gov-primary-dark);
+  border-left: 3px solid var(--gov-primary);
+  padding-left: 9px;
+  font-weight: 700;
 }
 
-/* ========================================
-   TABELAS RESPONSIVAS
-   ======================================== */
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  overflow-x: auto;
-  display: block;
+.gov-nav-item--active .gov-nav-icon svg {
+  stroke: var(--gov-primary);
 }
 
-@media (max-width: 768px) {
-  table {
-    font-size: 14px;
-  }
-  
-  thead {
-    display: none;
-  }
-  
-  tbody {
-    display: block;
-  }
-  
-  tr {
-    display: block;
-    margin-bottom: 12px;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 12px;
-    background: #fff;
-  }
-  
-  td {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 0;
-    border: none;
-  }
-  
-  td::before {
-    content: attr(data-label);
-    font-weight: 700;
-    color: #64748b;
-    width: 40%;
-    flex-shrink: 0;
-  }
+.gov-nav-badge {
+  margin-left: auto;
+  background: var(--gov-primary);
+  color: #fff;
+  border-radius: 99px;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 7px;
+  min-width: 18px;
+  text-align: center;
 }
 
-/* ========================================
-   BUTTONS RESPONSIVOS
-   ======================================== */
+.gov-nav-item--active .gov-nav-badge {
+  background: var(--gov-primary-dark);
+}
 
-button {
+.gov-sidebar-foot {
+  border-top: 1px solid var(--gov-border-light);
+  margin-top: 12px;
+  padding-top: 12px;
+  font-size: 10px;
+  color: var(--gov-text-muted);
+  line-height: 1.4;
+}
+
+.gov-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.gov-main--mobile {
+  padding-bottom: calc(78px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ---- Mobile bottom nav ---- */
+
+.gov-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--gov-surface);
+  border-top: 1px solid var(--gov-border-light);
+  display: flex;
+  z-index: 200;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.gov-bottom-nav-item {
+  flex: 1;
+  min-height: 56px;
+  padding: 8px 2px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  position: relative;
+}
+
+.gov-bottom-nav-item span {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--gov-text-muted);
+}
+
+.gov-bottom-nav-item--active span {
+  color: var(--gov-primary);
+  font-weight: 800;
+}
+
+.gov-bottom-nav-badge {
+  position: absolute;
+  top: 6px;
+  right: calc(50% - 16px);
+  background: var(--gov-danger);
+  color: #fff;
+  border-radius: 99px;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 1px 5px;
+  min-width: 14px;
+  text-align: center;
+  line-height: 14px;
+}
+
+/* ---- Botões ---- */
+
+.gov-btn {
   font-family: inherit;
   cursor: pointer;
-  border: none;
-  border-radius: 8px;
-  transition: all 0.2s ease;
+  border-radius: var(--gov-radius);
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
   min-height: 44px;
   padding: 10px 16px;
   font-size: 14px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
-button:disabled {
-  opacity: 0.6;
+.gov-btn:disabled {
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
-button:active {
-  transform: scale(0.98);
+.gov-btn--primary {
+  background: var(--gov-primary);
+  color: #fff;
+  border: 1px solid var(--gov-primary-dark);
+  font-weight: 700;
 }
 
-@media (max-width: 480px) {
-  button {
-    min-height: 48px;
-    min-width: 48px;
-    padding: 12px 16px;
-    font-size: 14px;
+.gov-btn--primary:hover:not(:disabled) {
+  background: var(--gov-primary-dark);
+}
+
+.gov-btn--ghost {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.gov-btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.gov-btn--secondary {
+  background: var(--gov-surface);
+  color: var(--gov-text-secondary);
+  border: 1px solid var(--gov-border);
+}
+
+.gov-btn--secondary:hover:not(:disabled) {
+  background: var(--gov-bg);
+  border-color: var(--gov-primary);
+  color: var(--gov-primary-dark);
+}
+
+/* ---- Cards e alertas ---- */
+
+.gov-card {
+  background: var(--gov-surface);
+  border: 1px solid var(--gov-border-light);
+  border-radius: var(--gov-radius);
+  padding: 16px;
+  box-shadow: var(--gov-shadow-sm);
+}
+
+.gov-alert {
+  border-radius: var(--gov-radius);
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  border: 1px solid;
+}
+
+.gov-alert--danger {
+  background: var(--gov-danger-light);
+  border-color: #f5c2c7;
+  color: #8a0015;
+}
+
+.gov-alert--warning {
+  background: #fff8e6;
+  border-color: #ffe08a;
+  color: #735c00;
+}
+
+.gov-alert--info {
+  background: var(--gov-primary-light);
+  border-color: #b8d4f0;
+  color: var(--gov-primary-dark);
+}
+
+.gov-alert--success {
+  background: var(--gov-accent-light);
+  border-color: #a8dab5;
+  color: #0d4419;
+}
+
+.gov-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--gov-primary);
+  background: var(--gov-primary-light);
+  border: 1px solid #b8d4f0;
+  border-radius: var(--gov-radius);
+  padding: 3px 8px;
+  margin-bottom: 10px;
+}
+
+/* ---- Auth pages ---- */
+
+.gov-auth-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--gov-bg);
+}
+
+.gov-auth-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+}
+
+.gov-auth-card {
+  background: var(--gov-surface);
+  border: 1px solid var(--gov-border-light);
+  border-radius: var(--gov-radius);
+  padding: 32px;
+  width: 100%;
+  max-width: 440px;
+  box-shadow: var(--gov-shadow-md);
+}
+
+.gov-auth-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.gov-auth-subtitle {
+  color: var(--gov-text-muted);
+  font-size: 13px;
+  margin: 0 0 24px;
+}
+
+.gov-auth-footer {
+  text-align: center;
+  padding: 16px;
+  font-size: 11px;
+  color: var(--gov-text-muted);
+  border-top: 1px solid var(--gov-border-light);
+  background: var(--gov-surface);
+}
+
+.gov-link {
+  color: var(--gov-primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.gov-link:hover {
+  text-decoration: underline;
+}
+
+/* ---- Banner / toast ---- */
+
+.gov-banner {
+  padding: 8px 16px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gov-banner--info {
+  background: var(--gov-primary);
+  color: #fff;
+}
+
+.gov-banner--danger {
+  background: var(--gov-danger);
+  color: #fff;
+}
+
+.gov-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--gov-primary-dark);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: var(--gov-radius);
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 400;
+  box-shadow: var(--gov-shadow-md);
+  max-width: 92vw;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.gov-toast--mobile {
+  bottom: calc(78px + env(safe-area-inset-bottom, 0px) + 10px);
+}
+
+/* ---- Modal ---- */
+
+.gov-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(12, 50, 111, 0.45);
+  z-index: 300;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@media (min-width: 769px) {
+  .gov-modal-overlay {
+    align-items: center;
   }
 }
 
-/* ========================================
-   INPUTS RESPONSIVOS
-   ======================================== */
+.gov-modal-panel {
+  background: var(--gov-surface);
+  width: 100%;
+  max-height: 90dvh;
+  overflow-y: auto;
+  padding: 24px;
+  border: 1px solid var(--gov-border-light);
+  box-shadow: var(--gov-shadow-md);
+  border-radius: var(--gov-radius) var(--gov-radius) 0 0;
+}
+
+@media (min-width: 769px) {
+  .gov-modal-panel {
+    width: auto;
+    min-width: 420px;
+    max-width: 560px;
+    max-height: 85vh;
+    border-radius: var(--gov-radius);
+  }
+}
+
+/* ---- Form ---- */
 
 input, select, textarea {
   font-family: inherit;
   width: 100%;
-  padding: 10px 12px;
-  border: 1.5px solid #d1d5db;
-  border-radius: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--gov-border);
+  border-radius: var(--gov-radius);
   font-size: 14px;
-  transition: border-color 0.2s ease;
   min-height: 44px;
+  background: var(--gov-surface);
+  color: var(--gov-text);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 input:focus, select:focus, textarea:focus {
   outline: none;
-  border-color: #1e3a8a;
-  box-shadow: 0 0 0 3px rgba(30, 58, 138, 0.1);
+  border-color: var(--gov-primary);
+  box-shadow: 0 0 0 3px rgba(19, 81, 180, 0.15);
 }
 
 @media (max-width: 480px) {
@@ -201,156 +561,49 @@ input:focus, select:focus, textarea:focus {
   }
 }
 
-/* ========================================
-   CARDS RESPONSIVOS
-   ======================================== */
-
-.card {
-  background: #fff;
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-  transition: box-shadow 0.2s ease;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
+button {
+  font-family: inherit;
 }
 
-.card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
+/* ---- Badge institucional ---- */
 
-@media (max-width: 768px) {
-  .card { padding: 12px; }
-}
-
-@media (max-width: 480px) {
-  .card { padding: 8px; }
-}
-
-/* ========================================
-   MODAL RESPONSIVO
-   ======================================== */
-
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  z-index: 300;
-  padding: 16px;
-}
-
-@media (min-width: 769px) {
-  .modal-overlay {
-    align-items: center;
-  }
-}
-
-.modal-content {
-  background: #fff;
-  border-radius: 20px 20px 0 0;
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
-  padding: 24px;
-  -webkit-overflow-scrolling: touch;
-}
-
-@media (min-width: 769px) {
-  .modal-content {
-    border-radius: 16px;
-    width: auto;
-    max-width: 520px;
-    max-height: 85vh;
-  }
-}
-
-@media (max-width: 480px) {
-  .modal-content {
-    padding: 16px;
-    border-radius: 16px 16px 0 0;
-  }
-}
-
-/* ========================================
-   NAVEGAÇÃO RESPONSIVA
-   ======================================== */
-
-nav {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  width: 100%;
-}
-
-@media (max-width: 640px) {
-  nav {
-    gap: 4px;
-  }
-  
-  nav button {
-    flex: 1;
-    min-width: auto;
-    padding: 8px;
-    font-size: 12px;
-  }
-}
-
-/* ========================================
-   IMAGENS E MÍDIA
-   ======================================== */
-
-img {
-  max-width: 100%;
-  height: auto;
-  display: block;
-}
-
-video {
-  max-width: 100%;
-  height: auto;
-}
-
-/* ========================================
-   UTILITÁRIOS
-   ======================================== */
-
-.text-truncate {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.gov-status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--gov-radius);
+  font-size: 10px;
+  font-weight: 700;
+  border: 1px solid transparent;
   white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 
-.text-break {
-  word-break: break-word;
-  overflow-wrap: break-word;
+/* ---- Loading ---- */
+
+.gov-loading {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--gov-bg);
 }
 
-.hidden {
-  display: none !important;
+.gov-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--gov-border-light);
+  border-top-color: var(--gov-primary);
+  border-radius: 50%;
+  animation: gov-spin 0.8s linear infinite;
 }
 
-@media (max-width: 768px) {
-  .hide-mobile {
-    display: none !important;
-  }
+@keyframes gov-spin {
+  to { transform: rotate(360deg); }
 }
 
-@media (min-width: 769px) {
-  .show-mobile {
-    display: none !important;
-  }
-}
-
-/* ========================================
-   SCROLL BEHAVIOR
-   ======================================== */
-
-/* ========================================
-   ACESSIBILIDADE
-   ======================================== */
+/* ---- Utilitários ---- */
 
 .visually-hidden {
   position: absolute;
@@ -364,43 +617,7 @@ video {
   border-width: 0;
 }
 
-/* ========================================
-   ANIMAÇÕES
-   ======================================== */
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.spinner {
-  animation: spin 0.8s linear infinite;
-}
-
-.fade-in {
-  animation: fadeIn 0.3s ease-in-out;
-}
-
-/* ========================================
-   PRINT STYLES
-   ======================================== */
-
 @media print {
-  body {
-    background: #fff;
-  }
-  
-  .no-print {
-    display: none !important;
-  }
+  body { background: #fff; }
+  .no-print { display: none !important; }
 }

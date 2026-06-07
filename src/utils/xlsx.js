@@ -1,7 +1,7 @@
 import { idbGet, idbSet } from "./db.js";
 
 const XLSX_PATH = `${import.meta.env.BASE_URL}patrimonio_por_unidade.xlsx`;
-const CACHE_KEY = "unidades_v4";
+const CACHE_KEY = "unidades_v5";
 const TTL = 24 * 60 * 60 * 1000;
 
 export async function loadUnidades(forceRefresh = false) {
@@ -78,7 +78,10 @@ export function parseXLSX(wb, XLSX) {
       hdrs = null;
     } else if (f === "Patrimônio" && cur) {
       hdrs = row.map((h) => String(h).trim());
-    } else if (!f.startsWith("Total") && hdrs && cur && /^\d{5,}$/.test(f)) {
+    } else if (!f.startsWith("Total") && hdrs && cur) {
+      const patDigits = String(row[0] || "").trim().replace(/\D/g, "");
+      if (!/^\d{5,9}$/.test(patDigits)) continue;
+      const patId = patDigits.padStart(9, "0");
       const g = (n) => {
         const i = hdrs.indexOf(n);
         return i >= 0 ? String(row[i] || "").trim() : "";
@@ -90,7 +93,7 @@ export function parseXLSX(wb, XLSX) {
       const especieRaw = g("Espécie");
 
       cur.itens.push({
-        id: f,
+        id: patId,
         data: g("Data"),
         especie: especieRaw,
         descricao: descricaoRaw,

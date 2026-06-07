@@ -1,8 +1,17 @@
 import React from "react";
 
 function NavIcon({ id, active, size = 18 }) {
-  const color = active ? "#fff" : "#475569";
-  const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: color, strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round" };
+  const color = active ? "var(--gov-primary)" : "var(--gov-text-muted)";
+  const common = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: color,
+    strokeWidth: 2,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+  };
   switch (id) {
     case "inventario":
       return (
@@ -94,193 +103,97 @@ export function NavBar({
   storageOk,
   children,
 }) {
+  const unitLabel =
+    unidadesAtivas?.length === 1
+      ? unidadesAtivas[0].nome
+      : unidadesAtivas?.length > 1
+        ? `${unidadesAtivas.length} unidades em inventário`
+        : "";
+
   return (
     <>
-      <div
-        style={{
-          background: "#1e3a8a",
-          color: "#fff",
-          padding: "12px 16px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          position: "sticky",
-          top: 0,
-          zIndex: 200,
-        }}
-      >
-        <div>
-          <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Inventário SEMCAS</p>
-          <p style={{ margin: 0, fontSize: 11, opacity: 0.7 }}>
-            {logado?.nome || ""}
-            {unidadesAtivas?.length === 1
-              ? ` · ${unidadesAtivas[0].nome}`
-              : unidadesAtivas?.length > 1
-              ? ` · ${unidadesAtivas.length} unidades em inventário`
-              : ""}
-          </p>
-          <div style={{ marginTop: 3 }}>{offlineStatus}</div>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {logado && (
-            <button
-              onClick={onReloadXlsx}
-              style={{
-                background: "rgba(255,255,255,.15)",
-                color: "#fff",
-                border: "none",
-                borderRadius: 8,
-                padding: "6px 12px",
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              {loadingXlsx ? "Atualizando..." : "Atualizar"}
+      <header className="gov-header">
+        <div className="gov-header__flag" aria-hidden="true" />
+        <div className="gov-header__inner">
+          <div className="gov-brand">
+            <div className="gov-brand__seal" aria-hidden="true">
+              S
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p className="gov-brand__org">Secretaria Municipal — SEMCAS</p>
+              <p className="gov-brand__sys">Inventário Patrimonial</p>
+              {(logado?.nome || unitLabel) && (
+                <p className="gov-header__meta">
+                  {logado?.nome || ""}
+                  {logado?.nome && unitLabel ? " · " : ""}
+                  {unitLabel}
+                </p>
+              )}
+              <div className="gov-header__status">{offlineStatus}</div>
+            </div>
+          </div>
+          <div className="gov-header__actions">
+            {logado && (
+              <button type="button" className="gov-btn gov-btn--ghost" onClick={onReloadXlsx}>
+                {loadingXlsx ? "Atualizando…" : "Atualizar base"}
+              </button>
+            )}
+            <button type="button" className="gov-btn gov-btn--ghost" onClick={onLogout}>
+              Sair
             </button>
-          )}
-          <button
-            onClick={onLogout}
-            style={{
-              background: "rgba(255,255,255,.15)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 8,
-              padding: "6px 12px",
-              fontSize: 12,
-              cursor: "pointer",
-            }}
-          >
-            Sair
-          </button>
+          </div>
         </div>
-      </div>
+      </header>
 
       {banner}
 
-      <div style={{ display: "flex", maxWidth: 1400, margin: "0 auto" }}>
+      <div className="gov-layout">
         {!isMobile && (
-          <div style={{ width: 210, background: "#fff", borderRight: "1px solid #e2e8f0", padding: 16, flexShrink: 0 }}>
-            {navs.map((n) => (
-              <button
-                key={n.id}
-                onClick={() => onTabChange(n.id)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  width: "100%",
-                  background: activeTab === n.id ? "#1e3a8a" : "transparent",
-                  color: activeTab === n.id ? "#fff" : "#374151",
-                  border: "none",
-                  borderRadius: 8,
-                  padding: "10px 12px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  marginBottom: 4,
-                  textAlign: "left",
-                  position: "relative",
-                }}
-              >
-                <NavIcon id={n.id} active={activeTab === n.id} />
-                <span>{n.l}</span>
-                {n.badge && (
-                  <span
-                    style={{
-                      marginLeft: "auto",
-                      background: activeTab === n.id ? "rgba(255,255,255,.3)" : "#1e3a8a",
-                      color: "#fff",
-                      borderRadius: 99,
-                      fontSize: 10,
-                      fontWeight: 800,
-                      padding: "1px 6px",
-                      minWidth: 16,
-                      textAlign: "center",
-                    }}
-                  >
-                    {n.badge}
+          <aside className="gov-sidebar">
+            <nav aria-label="Menu principal">
+              {navs.map((n) => (
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => onTabChange(n.id)}
+                  className={`gov-nav-item${activeTab === n.id ? " gov-nav-item--active" : ""}`}
+                >
+                  <span className="gov-nav-icon">
+                    <NavIcon id={n.id} active={activeTab === n.id} />
                   </span>
-                )}
-              </button>
-            ))}
-            <hr style={{ border: "none", borderTop: "1px solid #e2e8f0", margin: "12px 0" }} />
-            <p style={{ fontSize: 10, color: "#94a3b8", margin: 0 }}>{storageOk ? "Fotos: Firebase Storage OK" : "Fotos: Storage não configurado"}</p>
-          </div>
+                  <span>{n.l}</span>
+                  {n.badge ? <span className="gov-nav-badge">{n.badge}</span> : null}
+                </button>
+              ))}
+            </nav>
+            <div className="gov-sidebar-foot">
+              {storageOk ? "Armazenamento de fotos: ativo" : "Armazenamento de fotos: não configurado"}
+            </div>
+          </aside>
         )}
 
-        <div
-          style={{
-            flex: 1,
-            padding: isMobile ? 12 : 24,
-            paddingBottom: isMobile ? "calc(78px + env(safe-area-inset-bottom, 0px))" : 24,
-          }}
-        >
+        <main className={`gov-main${isMobile ? " gov-main--mobile" : ""}`} style={{ padding: isMobile ? 12 : 24 }}>
           {children}
-        </div>
+        </main>
       </div>
 
       {isMobile && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            background: "#fff",
-            borderTop: "1.5px solid #e2e8f0",
-            display: "flex",
-            zIndex: 200,
-            paddingBottom: "env(safe-area-inset-bottom, 0px)",
-            boxShadow: "0 -6px 16px rgba(15,23,42,.08)",
-          }}
-        >
+        <nav className="gov-bottom-nav" aria-label="Menu mobile">
           {navs.map((n) => (
             <button
               key={n.id}
+              type="button"
               onClick={() => onTabChange(n.id)}
-              style={{
-                flex: 1,
-                minHeight: 56,
-                padding: "10px 2px 8px",
-                border: "none",
-                background: "none",
-                cursor: "pointer",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 0,
-                position: "relative",
-              }}
+              className={`gov-bottom-nav-item${activeTab === n.id ? " gov-bottom-nav-item--active" : ""}`}
             >
-              {n.badge && (
-                <span
-                  style={{
-                    position: "absolute",
-                    top: 6,
-                    right: "calc(50% - 14px)",
-                    background: "#dc2626",
-                    color: "#fff",
-                    borderRadius: 99,
-                    fontSize: 9,
-                    fontWeight: 800,
-                    padding: "1px 4px",
-                    minWidth: 14,
-                    textAlign: "center",
-                    lineHeight: "14px",
-                  }}
-                >
-                  {n.badge}
-                </span>
-              )}
-              <div style={{ height: 20, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {n.badge ? <span className="gov-bottom-nav-badge">{n.badge}</span> : null}
+              <div style={{ height: 20, display: "flex", alignItems: "center" }}>
                 <NavIcon id={n.id} active={activeTab === n.id} size={20} />
               </div>
-              <span style={{ fontSize: 10, fontWeight: activeTab === n.id ? 800 : 500, color: activeTab === n.id ? "#1e3a8a" : "#94a3b8" }}>
-                {n.l}
-              </span>
+              <span>{n.l}</span>
             </button>
           ))}
-        </div>
+        </nav>
       )}
     </>
   );

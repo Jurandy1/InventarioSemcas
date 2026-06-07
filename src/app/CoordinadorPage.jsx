@@ -12,6 +12,7 @@ import { PhotoThumb } from "../components/PhotoThumb.jsx";
 import { getDisplayPhotoUrl } from "../services/storage.js";
 import { gerarRelatorioExcelCoord, offlineManager, queueOfflineWithPhotos } from "../services/features.js";
 import { fecharCampanha, isCampanhaFechada, loadCampanhaAtiva } from "../services/campanha.js";
+import { getAppStyles, COLORS } from "../constants/theme.js";
 import { useOfflineQueue } from "../hooks/useOfflineQueue.js";
 
 const COORD_PER_PAGE = 30;
@@ -313,15 +314,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
   const pendentes = useMemo(() => itens.filter((i) => !foundSet.has(i.id)), [itens, foundSet]);
   const inventariados = useMemo(() => itens.filter((i) => foundSet.has(i.id)), [itens, foundSet]);
 
-  const inp = {
-    width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9,
-    padding: "10px 13px", fontSize: isMob ? 16 : 14, fontFamily: "inherit",
-    boxSizing: "border-box", outline: "none",
-  };
-
-  const bp = { background: "#6b21a8", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
-  const bs = { background: "#f1f5f9", color: "#334155", border: "1px solid #cbd5e1", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 600, cursor: "pointer" };
-  const cd = { background: "#fff", borderRadius: 12, padding: 16, boxShadow: "0 1px 3px rgba(0,0,0,.06)" };
+  const { inp, bp, bs, cd } = getAppStyles(isMob);
 
   const Overlay = ({ children, onClose }) => (
     <div
@@ -477,44 +470,53 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
   const campanhaFechada = isCampanhaFechada(campanha);
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f1f5f9" }}>
-      {/* Header */}
-      <div style={{ background: "#6b21a8", color: "#fff", padding: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, zIndex: 200 }}>
-        <div>
-          <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{coordDisplayName(coordData)}</p>
-          <p style={{ margin: 0, fontSize: 11, opacity: 0.8 }}>
-            {Array.isArray(coordData?.unidadeNomes) && coordData.unidadeNomes.length > 1
-              ? `${coordData.unidadeNomes.length} unidades`
-              : coordData?.unidadeNome}
-          </p>
-          {(queueStatus.pending > 0 || queueStatus.failed > 0 || !queueStatus.isOnline) && (
-            <p style={{ margin: "4px 0 0", fontSize: 10, opacity: 0.9 }}>
-              {!queueStatus.isOnline
-                ? `Offline · ${queueStatus.pending} na fila`
-                : `${queueStatus.pending} pendente(s)${queueStatus.failed ? ` · ${queueStatus.failed} falha(s)` : ""}`}
-              {queueStatus.isOnline && (queueStatus.pending > 0 || queueStatus.failed > 0) ? (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await offlineManager.retrySync();
-                    updateQueueStatus();
-                  }}
-                  style={{ marginLeft: 6, background: "rgba(255,255,255,.2)", border: "none", borderRadius: 4, color: "#fff", fontSize: 10, cursor: "pointer", padding: "1px 6px" }}
-                >
-                  Sync
-                </button>
-              ) : null}
-            </p>
-          )}
+    <div style={{ minHeight: "100vh", background: "var(--gov-bg)" }}>
+      <header className="gov-header">
+        <div className="gov-header__flag" aria-hidden="true" />
+        <div className="gov-header__inner">
+          <div className="gov-brand">
+            <div className="gov-brand__seal" aria-hidden="true">S</div>
+            <div>
+              <p className="gov-brand__org">Secretaria Municipal — SEMCAS</p>
+              <p className="gov-brand__sys">{coordDisplayName(coordData)}</p>
+              <p className="gov-header__meta">
+                {Array.isArray(coordData?.unidadeNomes) && coordData.unidadeNomes.length > 1
+                  ? `${coordData.unidadeNomes.length} unidades`
+                  : coordData?.unidadeNome}
+              </p>
+              {(queueStatus.pending > 0 || queueStatus.failed > 0 || !queueStatus.isOnline) && (
+                <div className="gov-header__status" style={{ marginTop: 4 }}>
+                  {!queueStatus.isOnline
+                    ? `Offline · ${queueStatus.pending} na fila`
+                    : `${queueStatus.pending} pendente(s)${queueStatus.failed ? ` · ${queueStatus.failed} falha(s)` : ""}`}
+                  {queueStatus.isOnline && (queueStatus.pending > 0 || queueStatus.failed > 0) ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await offlineManager.retrySync();
+                        updateQueueStatus();
+                      }}
+                      className="gov-btn gov-btn--ghost"
+                      style={{ marginLeft: 8, padding: "2px 8px", fontSize: 10 }}
+                    >
+                      Sync
+                    </button>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="gov-header__actions">
+            <button type="button" className="gov-btn gov-btn--ghost" onClick={onLogout}>
+              Sair
+            </button>
+          </div>
         </div>
-        <button onClick={onLogout} style={{ background: "rgba(255,255,255,.15)", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
-          Sair
-        </button>
-      </div>
+      </header>
 
       <div style={{ maxWidth: 1200, margin: "0 auto", padding: isMob ? 12 : 24 }}>
         {campanhaFechada && (
-          <div style={{ background: "#991b1b", color: "#fff", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12, fontWeight: 600 }}>
+          <div className="gov-banner gov-banner--danger" style={{ borderRadius: 4, marginBottom: 12 }}>
             Inventário fechado — apenas consulta
           </div>
         )}
@@ -527,7 +529,20 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              style={{ padding: "10px 16px", borderRadius: 9, border: "none", background: tab === t.id ? "#6b21a8" : "#fff", color: tab === t.id ? "#fff" : "#374151", fontWeight: 600, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 4,
+                border: `1px solid ${tab === t.id ? COLORS.primary : COLORS.borderLight}`,
+                background: tab === t.id ? COLORS.primary : COLORS.surface,
+                color: tab === t.id ? "#fff" : COLORS.text,
+                fontWeight: 600,
+                cursor: "pointer",
+                fontSize: 13,
+                whiteSpace: "nowrap",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+              }}
             >
               {t.label}
               {t.count !== undefined && (
@@ -640,7 +655,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
               {[
-                { label: "Total",       valor: itens.length,         cor: "#1e3a8a" },
+                { label: "Total",       valor: itens.length,         cor: COLORS.primary },
                 { label: "Localizados", valor: inventariados.length,  cor: "#16a34a" },
                 { label: "Pendentes",   valor: pendentes.length,      cor: "#dc2626" },
                 { label: "Progresso",   valor: `${itens.length > 0 ? Math.round((inventariados.length / itens.length) * 100) : 0}%`, cor: "#7c3aed" },
@@ -671,7 +686,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 <Badge label="Inventariado" c={{ bg: "#d1fae5", tx: "#065f46" }} />
                 {isRegistroInventariante(foundMap[detItem.id]) && (
-                  <Badge label="Aguardando verificação" c={{ bg: "#dbeafe", tx: "#1e40af" }} />
+                  <Badge label="Aguardando verificação" c={{ bg: COLORS.primaryLight, tx: COLORS.primary, border: "#B8D4F0" }} />
                 )}
               </div>
               {(() => {
@@ -777,11 +792,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
         />
       )}
 
-      {toast && (
-        <div style={{ position: "fixed", bottom: "calc(24px + env(safe-area-inset-bottom, 0px))", left: "50%", transform: "translateX(-50%)", background: "#6b21a8", color: "#fff", padding: "11px 24px", borderRadius: 24, fontSize: 13, fontWeight: 600, zIndex: 400, boxShadow: "0 4px 16px rgba(0,0,0,.25)", maxWidth: "92vw" }}>
-          {toast}
-        </div>
-      )}
+      {toast && <div className="gov-toast">{toast}</div>}
 
       {imgViewSrc && (
         <div

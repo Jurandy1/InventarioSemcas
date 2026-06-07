@@ -1,13 +1,22 @@
 import React, { useEffect, useState } from "react";
-import { fsGetDocPublic, fsSetStrict, isFirebaseConfigured, fbRegister, setFirebaseSession } from "../services/firebase.js";
+import { AuthPageLayout } from "../components/AuthPageLayout.jsx";
+import { getAppStyles } from "../constants/theme.js";
+import { fsGetDocPublic, fsSetStrict, isFirebaseConfigured, fbRegister, setFirebaseSession, marcarConviteInventarianteUsado } from "../services/firebase.js";
 import { TInput } from "../components/FormFields.jsx";
 
 function getTokenFromLocation() {
   const path = String(window.location.pathname || "");
   const hash = String(window.location.hash || "");
+  const search = String(window.location.search || "");
   const m1 = path.match(/\/invregistro\/([^/]+)/);
-  const m2 = hash.match(/#\/invregistro\/([^/?]+)/);
-  return (m1?.[1] || m2?.[1] || "").trim() || null;
+  const m2 = hash.match(/#\/invregistro\/([^/?#]+)/);
+  const m3 = search.match(/[?&]convite=([^&]+)/);
+  const raw = (m1?.[1] || m2?.[1] || m3?.[1] || "").trim();
+  try {
+    return raw ? decodeURIComponent(raw) : null;
+  } catch {
+    return raw || null;
+  }
 }
 
 export function InventarianteRegistro() {
@@ -27,11 +36,7 @@ export function InventarianteRegistro() {
 
   const firebaseOk = isFirebaseConfigured();
 
-  const inp = {
-    width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9,
-    padding: "10px 13px", fontSize: 14, fontFamily: "inherit",
-    boxSizing: "border-box", outline: "none",
-  };
+  const { inp } = getAppStyles(false);
 
   const validateToken = async (tok) => {
     setError("");
@@ -40,7 +45,9 @@ export function InventarianteRegistro() {
 
       if (!found) {
         setStatus("erro");
-        setError("Link inválido ou expirado. Solicite um novo convite ao administrador.");
+        setError(
+          "Convite não encontrado no sistema. Peça ao administrador um novo link — convites antigos podem não ter sido salvos corretamente."
+        );
         return;
       }
 
@@ -68,7 +75,12 @@ export function InventarianteRegistro() {
     } catch (err) {
       console.error(err);
       setStatus("erro");
-      setError("Erro ao validar o link. Verifique sua conexão e tente novamente.");
+      const msg = String(err?.message || "");
+      if (msg.includes("Firestore") || msg.includes("PERMISSION") || msg.includes("permission")) {
+        setError("Convite bloqueado pelas regras do Firestore. O administrador precisa publicar as regras atualizadas no Firebase Console.");
+      } else {
+        setError(msg || "Erro ao validar o link. Verifique sua conexão e tente novamente.");
+      }
     }
   };
 
@@ -119,8 +131,11 @@ export function InventarianteRegistro() {
       };
       await fsSetStrict("inventariantes", user.uid, invData);
 
-      // Mark invite as used
-      await fsSetStrict("convites_inventariantes", token, { ...convite, status: "usado", dataUso: new Date().toISOString(), usadoPor: user.uid });
+      try {
+        await marcarConviteInventarianteUsado(token, convite, user.uid);
+      } catch (markErr) {
+        console.warn("Convite não marcado como usado:", markErr);
+      }
 
       setStatus("sucesso");
     } catch (err) {
@@ -135,89 +150,60 @@ export function InventarianteRegistro() {
     }
   };
 
-  // ── Loading ──
   if (status === "loading") {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: "#f1f5f9", gap: 16 }}>
-        <style>{`@keyframes sp{to{transform:rotate(360deg)}}`}</style>
-        <div style={{ width: 40, height: 40, border: "4px solid #e2e8f0", borderTopColor: "#1e3a8a", borderRadius: "50%", animation: "sp .8s linear infinite" }} />
-        <p style={{ color: "#64748b", fontSize: 13 }}>Validando convite...</p>
+      <div className="gov-loading">
+        <div className="gov-spinner" aria-hidden="true" />
+        <p style={{ color: "var(--gov-text-muted)", fontSize: 13 }}>Validando convite...</p>
       </div>
     );
   }
 
-  // ── Erro ──
   if (status === "erro") {
     return (
-      <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#1e3a8a,#1e40af)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-        <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 420, textAlign: "center" }}>
-          <h1 style={{ margin: "0 0 12px", fontSize: 20, fontWeight: 700 }}>Link inválido</h1>
-          <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 12, padding: 16, marginBottom: 24 }}>
-            <p style={{ margin: 0, fontSize: 13, color: "#991b1b", fontWeight: 600, lineHeight: 1.5 }}>{error}</p>
-          </div>
-          <p style={{ fontSize: 12, color: "#94a3b8" }}>
-            Contate o administrador do sistema para receber um novo link de convite.
-          </p>
-        </div>
-      </div>
+      <AuthPageLayout title="Link inválido" subtitle="Não foi possível validar o convite" footer="Contate o administrador para receber um novo link">
+        <div className="gov-alert gov-alert--danger">{error}</div>
+      </AuthPageLayout>
     );
   }
 
-  // ── Sucesso ──
   if (status === "sucesso") {
     return (
-      <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#1e3a8a,#1e40af)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-        <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 420, textAlign: "center" }}>
-          <h1 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700 }}>Cadastro realizado!</h1>
-          <p style={{ color: "#64748b", fontSize: 13, margin: "0 0 20px" }}>
-            Bem-vindo(a), <strong>{formData.nome}</strong>!
+      <AuthPageLayout title="Cadastro realizado!" subtitle={`Bem-vindo(a), ${formData.nome}!`} footer="Secretaria Municipal — SEMCAS">
+        <div className="gov-alert gov-alert--info" style={{ marginBottom: 20 }}>
+          <p style={{ margin: 0, fontWeight: 700, marginBottom: 6 }}>Próximo passo</p>
+          <p style={{ margin: 0 }}>
+            Seu cadastro foi enviado para aprovação. O administrador analisará suas informações e liberará o acesso em breve.
           </p>
-          <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 12, padding: 16, marginBottom: 24, textAlign: "left" }}>
-            <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#1e3a8a", marginBottom: 6 }}>Próximo passo</p>
-            <p style={{ margin: 0, fontSize: 13, color: "#1e40af", lineHeight: 1.5 }}>
-              Seu cadastro foi enviado para aprovação. O administrador analisará suas informações
-              e liberará o acesso em breve. Você será notificado quando puder fazer login.
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              try { window.location.href = import.meta.env.BASE_URL || "/"; } catch {}
-            }}
-            style={{ width: "100%", background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 9, padding: "12px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
-          >
-            Ir para o Login
-          </button>
         </div>
-      </div>
+        <button
+          type="button"
+          className="gov-btn gov-btn--primary"
+          style={{ width: "100%" }}
+          onClick={() => {
+            try { window.location.href = import.meta.env.BASE_URL || "/"; } catch {}
+          }}
+        >
+          Ir para o Login
+        </button>
+      </AuthPageLayout>
     );
   }
 
-  // ── Formulário ──
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#1e3a8a,#1e40af)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: "#fff", borderRadius: 16, padding: 32, width: "100%", maxWidth: 460 }}>
-        {/* Header */}
-        <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <h1 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 700 }}>Cadastro de Inventariante</h1>
-          <p style={{ color: "#94a3b8", fontSize: 13, margin: 0 }}>Inventário SEMCAS</p>
-        </div>
+    <AuthPageLayout
+      badge="Cadastro"
+      title="Cadastro de inventariante"
+      subtitle="Preencha os dados abaixo para solicitar acesso"
+      footer="Após o cadastro, aguarde a aprovação do administrador"
+    >
+      <div className="gov-alert gov-alert--success" style={{ marginBottom: 16 }}>
+        Convite válido até {new Date(convite?.dataExpiracao).toLocaleDateString("pt-BR")}
+      </div>
 
-        {/* Invite info banner */}
-        <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", marginBottom: 20, display: "flex", alignItems: "center", gap: 8 }}>
-          <p style={{ margin: 0, fontSize: 12, color: "#065f46", fontWeight: 600 }}>
-            Convite válido até {new Date(convite?.dataExpiracao).toLocaleDateString("pt-BR")}
-          </p>
-        </div>
+      {error && <div className="gov-alert gov-alert--danger" style={{ marginBottom: 16 }}>{error}</div>}
 
-        {/* Error */}
-        {error && (
-          <div style={{ background: "#fee2e2", border: "1px solid #fca5a5", borderRadius: 10, padding: 12, marginBottom: 16 }}>
-            <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>{error}</p>
-          </div>
-        )}
-
-        {/* Form */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
             <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#374151", marginBottom: 5 }}>
               Nome completo <span style={{ color: "#dc2626" }}>*</span>
@@ -293,19 +279,16 @@ export function InventarianteRegistro() {
             />
           </div>
 
-          <button
-            onClick={handleSubmit}
-            disabled={submitting}
-            style={{ width: "100%", background: "#1e3a8a", color: "#fff", border: "none", borderRadius: 9, padding: "12px 18px", fontSize: 14, fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer", marginTop: 4, opacity: submitting ? 0.8 : 1 }}
-          >
-            {submitting ? "Cadastrando..." : "Criar conta"}
-          </button>
-        </div>
-
-        <p style={{ margin: "16px 0 0", fontSize: 11, color: "#94a3b8", textAlign: "center", lineHeight: 1.4 }}>
-          Após o cadastro, você precisará aguardar a aprovação do administrador antes de acessar o sistema.
-        </p>
+        <button
+          type="button"
+          onClick={handleSubmit}
+          disabled={submitting}
+          className="gov-btn gov-btn--primary"
+          style={{ width: "100%", marginTop: 4, opacity: submitting ? 0.8 : 1 }}
+        >
+          {submitting ? "Cadastrando..." : "Criar conta"}
+        </button>
       </div>
-    </div>
+    </AuthPageLayout>
   );
 }

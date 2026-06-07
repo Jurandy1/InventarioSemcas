@@ -4,6 +4,9 @@ import { deletePhoto, isStorageOk, uploadPhotos } from "../services/storage.js";
 import { EVENTOS, notificationService, offlineManager, queueOfflineWithPhotos } from "../services/features.js";
 import { logAuditoria } from "../services/audit.js";
 import { bumpCacheBuster, compressPhotoArray, getCachedData, perfMonitor, setCachedData } from "../utils/performance.js";
+import { mergeFoundRecords } from "../utils/inventorySession.js";
+import { getFoundEntry, normalizePatrimonioId } from "../utils/patrimonioId.js";
+import { fetchInventarioForUnits, normalizeFoundRecord } from "../services/inventarioLoad.js";
 import { saveOfflinePhotos } from "../utils/offlineStore.js";
 
 export function useFound({ showT, applyDescOverride } = {}) {
@@ -18,53 +21,50 @@ export function useFound({ showT, applyDescOverride } = {}) {
 
   const syncFoundRef = useCallback(
     (next) => {
-      foundRef.current = next;
-      foundPosRef.current = new Map(next.map((f, idx) => [f.patrimonioId, idx]));
-      setFound(next);
+      const normalized = (next || []).map(normalizeFoundRecord);
+      foundRef.current = normalized;
+      foundPosRef.current = new Map(normalized.map((f, idx) => [f.patrimonioId, idx]));
+      setFound(normalized);
     },
     [setFound]
   );
 
-  const foundSet = useMemo(() => new Set(found.map((f) => f.patrimonioId)), [found]);
-  const foundMap = useMemo(() => found.reduce((m, f) => ((m[f.patrimonioId] = f), m), {}), [found]);
+  const foundSet = useMemo(() => new Set(found.map((f) => normalizePatrimonioId(f.patrimonioId || f._id)).filter(Boolean)), [found]);
+  const foundMap = useMemo(() => {
+    const m = {};
+    for (const f of found) {
+      const id = normalizePatrimonioId(f.patrimonioId || f._id);
+      if (id) m[id] = f;
+    }
+    return m;
+  }, [found]);
 
-  const loadFoundAndTombos = useCallback(async (unitIds = []) => {
+  const loadFoundAndTombos = useCallback(async (unitIds = [], options = {}) => {
+    const keepItemIds = options.keepItemIds || [];
+    const itemUnits = options.itemUnits || null;
+
     try {
       const [cachedFound, cachedTombos] = await Promise.all([getCachedData("inventario"), getCachedData("tombosNE")]);
-      if (Array.isArray(cachedFound) && cachedFound.length > 0) syncFoundRef(cachedFound);
-      if (Array.isArray(cachedTombos) && cachedTombos.length > 0) setTombosNE(cachedTombos);
+      const memoryPrev = foundRef.current || [];
+      const basePrev =
+        memoryPrev.length > 0
+          ? memoryPrev
+          : Array.isArray(cachedFound) && cachedFound.length > 0
+            ? cachedFound
+            : [];
+      if (memoryPrev.length === 0 && basePrev.length > 0) syncFoundRef(basePrev);
 
       const ids = Array.isArray(unitIds) ? unitIds.filter(Boolean) : [];
       let foundDocs = [];
-      if (ids.length === 1) {
-        foundDocs = await fsGetAll("inventario", {
-          where: [{ field: "unidadeId", op: "EQUAL", value: ids[0] }],
-          orderBy: ["__name__"],
+      if (!options.cacheOnly) {
+        foundDocs = await fetchInventarioForUnits(ids, {
+          patrimonioIds: options.patrimonioIds || keepItemIds,
         });
-      } else if (ids.length > 1) {
-        const chunks = await Promise.all(
-          ids.map((uid) =>
-            fsGetAll("inventario", {
-              where: [{ field: "unidadeId", op: "EQUAL", value: uid }],
-              orderBy: ["__name__"],
-            })
-          )
-        );
-        const seen = new Set();
-        for (const chunk of chunks) {
-          for (const d of chunk) {
-            const pid = d.patrimonioId || d._id;
-            if (seen.has(pid)) continue;
-            seen.add(pid);
-            foundDocs.push(d);
-          }
-        }
-      } else {
-        foundDocs = await fsGetAll("inventario", { pageSize: 300 });
       }
 
       const neDocs = await fsGetAll("tombosNE", { pageSize: 200 });
-      const nextFound = foundDocs.map((d) => ({ ...d, patrimonioId: d.patrimonioId || d._id }));
+      const incoming = foundDocs.map((d) => normalizeFoundRecord({ ...d, patrimonioId: d.patrimonioId || d._id }));
+      const nextFound = mergeFoundRecords(basePrev, incoming, { keepItemIds, itemUnits });
       const nextTombos = neDocs.map((d) => ({ ...d, id: d._id }));
 
       syncFoundRef(nextFound);
@@ -72,18 +72,21 @@ export function useFound({ showT, applyDescOverride } = {}) {
 
       await Promise.all([setCachedData("inventario", nextFound), setCachedData("tombosNE", nextTombos)]);
       return { found: nextFound, tombosNE: nextTombos };
-    } catch {
-      return { found: [], tombosNE: [] };
+    } catch (e) {
+      console.warn("Erro ao carregar inventário:", e);
+      return { found: foundRef.current || [], tombosNE: [] };
     }
   }, [syncFoundRef]);
 
   const markFound = useCallback(
-    async ({ itemId, estado, situacao, localId, obs, marca, origem, fotoUrls = [], extras = {}, unidadeAtiva, logado, updateQueueStatus, offlinePhotos = null, localOnly = false }) => {
+    async ({ itemId, estado, situacao, localId, obs, marca, origem, fotoUrls = [], extras = {}, unidadeAtiva, itemUnit, logado, updateQueueStatus, offlinePhotos = null, localOnly = false }) => {
       const now = new Date();
-      const entryUnidadeId = unidadeAtiva?.id || "";
-      const entryUnidadeNome = unidadeAtiva?.nome || "";
+      const docId = normalizePatrimonioId(itemId);
+      const unit = itemUnit?.id ? itemUnit : unidadeAtiva;
+      const entryUnidadeId = unit?.id || "";
+      const entryUnidadeNome = unit?.nome || "";
       const entry = {
-        patrimonioId: itemId,
+        patrimonioId: docId,
         unidadeId: entryUnidadeId,
         unidadeNome: entryUnidadeNome,
         estado,
@@ -104,7 +107,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
       };
 
       const currentFound = foundRef.current || [];
-      const existing = currentFound.find((f) => f.patrimonioId === itemId);
+      const existing = currentFound.find((f) => normalizePatrimonioId(f.patrimonioId) === docId);
       if (existing) {
         const prevUser = existing.usuario || existing.user || "";
         const prevEmail = existing.email || "";
@@ -116,9 +119,9 @@ export function useFound({ showT, applyDescOverride } = {}) {
       }
 
       const applyLocal = async () => {
-        const idx = foundPosRef.current.get(itemId);
+        const idx = foundPosRef.current.get(docId);
         const nextFound = currentFound.slice();
-        const nextEntry = { ...entry, _id: itemId };
+        const nextEntry = { ...entry, _id: docId };
         if (typeof idx === "number") nextFound[idx] = nextEntry;
         else nextFound.push(nextEntry);
         syncFoundRef(nextFound);
@@ -134,15 +137,15 @@ export function useFound({ showT, applyDescOverride } = {}) {
       if (!navigator.onLine) {
         await queueOfflineWithPhotos({
           type: "save",
-          data: { collection: "inventario", docId: itemId, content: entry },
+          data: { collection: "inventario", docId, content: entry },
           photos: Array.isArray(offlinePhotos) ? offlinePhotos : null,
-          uploadPrefix: itemId,
+          uploadPrefix: docId,
         });
         updateQueueStatus?.();
         return applyLocal();
       }
 
-      await fsSet("inventario", itemId, entry);
+      await fsSet("inventario", docId, entry);
       return applyLocal();
     },
     [showT, syncFoundRef]
@@ -150,9 +153,10 @@ export function useFound({ showT, applyDescOverride } = {}) {
 
   const deleteFound = useCallback(
     async (itemId) => {
-      await fsDel("inventario", itemId);
+      const docId = normalizePatrimonioId(itemId);
+      await fsDel("inventario", docId);
       const base = foundRef.current || [];
-      const next = base.filter((f) => f.patrimonioId !== itemId);
+      const next = base.filter((f) => normalizePatrimonioId(f.patrimonioId) !== docId);
       syncFoundRef(next);
       bumpCacheBuster();
       await setCachedData("inventario", next);
@@ -161,9 +165,11 @@ export function useFound({ showT, applyDescOverride } = {}) {
   );
 
   const saveDetail = useCallback(
-    async ({ formRef, getField, unidadeAtiva, logado, updateQueueStatus, closeModal }) => {
+    async ({ formRef, getField, unidadeAtiva, itemUnit, logado, updateQueueStatus, closeModal }) => {
       const item = formRef.current.detItem;
       if (!item) return;
+
+      const unit = itemUnit?.id ? itemUnit : unidadeAtiva;
 
       const localId = String(getField("detLocal") || "").trim();
       if (!localId) {
@@ -173,7 +179,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
 
       perfMonitor.start("saveDetail");
 
-      const before = foundMap[item.id] || null;
+      const before = getFoundEntry(item.id, foundMap) || null;
       const existingUrls = formRef.current.detExistingUrls || [];
       const newBase64 = formRef.current.detNewBase64 || [];
       let allUrls = [...existingUrls];
@@ -211,8 +217,8 @@ export function useFound({ showT, applyDescOverride } = {}) {
 
         const offlineEntry = {
           patrimonioId: item.id,
-          unidadeId: unidadeAtiva?.id || item?.unidadeId || "",
-          unidadeNome: unidadeAtiva?.nome || item?.unidadeNome || "",
+          unidadeId: unit?.id || item?.unidadeId || "",
+          unidadeNome: unit?.nome || item?.unidadeNome || "",
           estado: getField("detEstado") || "Bom",
           situacao: situacaoAtual,
           localId: getField("detLocal"),
@@ -284,7 +290,8 @@ export function useFound({ showT, applyDescOverride } = {}) {
           origem: getField("detOrigem") || "Próprio",
           fotoUrls: allUrls,
           extras,
-          unidadeAtiva,
+          unidadeAtiva: unit,
+          itemUnit: unit,
           logado,
         });
 

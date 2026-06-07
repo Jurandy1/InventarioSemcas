@@ -285,9 +285,9 @@ export function ItemDetailModal({
                 fontSize: 12,
                 fontWeight: 700,
                 cursor: "pointer",
-                border: `2px solid ${(formRef.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#e2e8f0"}`,
+                border: `2px solid ${(formRef.current.detOrigem || "Próprio") === o ? "#1351B4" : "#e2e8f0"}`,
                 background: (formRef.current.detOrigem || "Próprio") === o ? "#dbeafe" : "#fff",
-                color: (formRef.current.detOrigem || "Próprio") === o ? "#1e3a8a" : "#6b7280",
+                color: (formRef.current.detOrigem || "Próprio") === o ? "#1351B4" : "#6b7280",
               }}
             >
               {o}
@@ -425,7 +425,7 @@ export function ItemDetailModal({
         <button
           onClick={onSave}
           style={{
-            background: "#1e3a8a",
+            background: "#1351B4",
             color: "#fff",
             border: "none",
             borderRadius: 9,

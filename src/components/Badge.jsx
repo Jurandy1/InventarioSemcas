@@ -1,18 +1,14 @@
-import * as React from "react";
+import React from "react";
 
 export function Badge({ label, c }) {
-  if (!c) c = { bg: "#f1f5f9", tx: "#475569" };
+  if (!c) c = { bg: "#F0F2F5", tx: "#555555", border: "#CCCCCC" };
   return (
     <span
+      className="gov-status-badge"
       style={{
-        display: "inline-block",
-        padding: "2px 8px",
-        borderRadius: 16,
-        fontSize: 10,
-        fontWeight: 700,
         background: c.bg,
         color: c.tx,
-        whiteSpace: "nowrap",
+        borderColor: c.border || "transparent",
       }}
     >
       {label}
