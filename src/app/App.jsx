@@ -43,14 +43,16 @@ import { useOfflineQueue } from "../hooks/useOfflineQueue.js";
 import { useFinalizacoes } from "../hooks/useFinalizacoes.js";
 import { FinalizadosPage } from "../pages/FinalizadosPage.jsx";
 import { buildFinalizacaoStats, criarFinalizacao, registrarEdicaoFinalizacao, atualizarStatsFinalizacao } from "../services/finalizacoes.js";
+import { CoordenadoresTab } from "./CoordenadoresTab.jsx";
+import { InventariantesTab } from "./InventariantesTab.jsx";
+import { clearChunkReloadFlag, lazyWithRetry } from "../utils/lazyWithRetry.js";
 
 const tabFallback = (
   <div style={{ padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>Carregando aba…</div>
 );
-const LazyTombosPage = React.lazy(() => import("../pages/TombosPage.jsx").then((m) => ({ default: m.TombosPage })));
-const LazyDashboardPage = React.lazy(() => import("../pages/DashboardPage.jsx").then((m) => ({ default: m.DashboardPage })));
-const LazyCoordenadoresTab = React.lazy(() => import("./CoordenadoresTab.jsx").then((m) => ({ default: m.CoordenadoresTab })));
-const LazyInventariantesTab = React.lazy(() => import("./InventariantesTab.jsx").then((m) => ({ default: m.InventariantesTab })));
+
+const LazyTombosPage = lazyWithRetry(() => import("../pages/TombosPage.jsx").then((m) => ({ default: m.TombosPage })));
+const LazyDashboardPage = lazyWithRetry(() => import("../pages/DashboardPage.jsx").then((m) => ({ default: m.DashboardPage })));
 
 function getItemCode(item) {
   return item?.patrimonioLabel || item?.id || "—";
@@ -80,6 +82,10 @@ function getDisplayEspecie(item, foundEntry) {
 }
 
 function OrganizedApp({ firebaseOk, isProd }) {
+  useEffect(() => {
+    clearChunkReloadFlag();
+  }, []);
+
   const [tab, setTab] = useState("inventario");
   const [busy, setBusy] = useState(false);
   const [isMob, setIsMob] = useState(window.innerWidth < 768);
@@ -2128,16 +2134,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
           </Suspense>
         )}
 
-        {tab === "coordenadores" && (
-          <Suspense fallback={tabFallback}>
-            <LazyCoordenadoresTab unidades={unidades} showT={showT} isMob={isMob} />
-          </Suspense>
-        )}
-        {tab === "inventariantes" && (
-          <Suspense fallback={tabFallback}>
-            <LazyInventariantesTab showT={showT} isMob={isMob} />
-          </Suspense>
-        )}
+        {tab === "coordenadores" && <CoordenadoresTab unidades={unidades} showT={showT} isMob={isMob} />}
+        {tab === "inventariantes" && <InventariantesTab showT={showT} isMob={isMob} />}
       </NavBar>
 
       {modal === "camera" && (

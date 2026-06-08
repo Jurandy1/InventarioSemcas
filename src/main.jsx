@@ -19,6 +19,29 @@ const renderFatal = (err) => {
   root.innerHTML = `<div style="min-height:100vh;background:#f8fafc;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial"><div style="max-width:720px;width:100%;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px"><div style="font-weight:800;font-size:14px;color:#991b1b;margin-bottom:8px">Erro ao carregar a aplicação</div><pre style="white-space:pre-wrap;margin:0;color:#0f172a;font-size:12px;line-height:1.4">${msg}</pre></div></div>`;
 };
 
+const CHUNK_RELOAD_KEY = "inv_chunk_reload_v1";
+
+const isChunkLoadError = (err) => {
+  const msg = err instanceof Error ? err.message : String(err || "");
+  const m = msg.toLowerCase();
+  return (
+    m.includes("dynamically imported module") ||
+    m.includes("importing a module script failed") ||
+    (m.includes("failed to fetch") && m.includes(".js"))
+  );
+};
+
+const reloadOnceForStaleChunks = () => {
+  try {
+    if (!sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+      sessionStorage.setItem(CHUNK_RELOAD_KEY, "1");
+      window.location.reload();
+      return true;
+    }
+  } catch {}
+  return false;
+};
+
 const isAbortError = (err) => {
   const name = err && typeof err === "object" && "name" in err ? String(err.name || "") : "";
   const msg =
@@ -39,6 +62,10 @@ window.addEventListener("error", (e) => {
 window.addEventListener("unhandledrejection", (e) => {
   const err = e?.reason;
   if (isAbortError(err)) return;
+  if (isChunkLoadError(err) && reloadOnceForStaleChunks()) {
+    e.preventDefault?.();
+    return;
+  }
   console.error("Promise rejeitada:", err);
   e.preventDefault?.();
 });
@@ -57,22 +84,33 @@ window.addEventListener("hashchange", () => {
   }
 });
 
+async function importWithRetry(factory) {
+  try {
+    return await factory();
+  } catch (err) {
+    if (isChunkLoadError(err) && reloadOnceForStaleChunks()) {
+      return new Promise(() => {});
+    }
+    throw err;
+  }
+}
+
 async function boot() {
   const el = document.getElementById("root");
   if (!el) return;
   const root = createRoot(el);
 
   if (isInvRegistro) {
-    const mod = await import("./app/InventarianteRegistro.jsx");
+    const mod = await importWithRetry(() => import("./app/InventarianteRegistro.jsx"));
     root.render(React.createElement(React.StrictMode, null, React.createElement(mod.InventarianteRegistro)));
   } else if (isCoordRegistro) {
-    const mod = await import("./app/CoordinadorRegistro.jsx");
+    const mod = await importWithRetry(() => import("./app/CoordinadorRegistro.jsx"));
     root.render(React.createElement(React.StrictMode, null, React.createElement(mod.CoordinadorRegistro)));
   } else if (isCoordPage) {
-    const mod = await import("./app/CoordinadorLogin.jsx");
+    const mod = await importWithRetry(() => import("./app/CoordinadorLogin.jsx"));
     root.render(React.createElement(React.StrictMode, null, React.createElement(mod.CoordinadorLogin)));
   } else {
-    const mod = await import("./app/App.jsx");
+    const mod = await importWithRetry(() => import("./app/App.jsx"));
     root.render(React.createElement(React.StrictMode, null, React.createElement(mod.default)));
   }
 }
