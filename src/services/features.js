@@ -2,6 +2,7 @@ import { fsDel, fsGetAll, fsGetDoc, fsSet, fsSetStrict } from "./firebase.js";
 import { isStorageOk, uploadPhotos } from "./storage.js";
 import { compressPhotoArray } from "../utils/performance.js";
 import { deleteOfflinePhotos, loadOfflinePhotos, saveOfflinePhotos } from "../utils/offlineStore.js";
+import { createVisibilityAwarePoller, isLikelySlowDevice, isPageHidden } from "../utils/mobilePerf.js";
 
 export class OfflineManager {
   constructor() {
@@ -9,6 +10,7 @@ export class OfflineManager {
     this.isOnline = typeof navigator !== "undefined" ? navigator.onLine : true;
     this.isSyncing = false;
     this.syncInterval = null;
+    this.syncIntervalCleanup = null;
     this.lastError = "";
     this.loadQueue();
     if (typeof window !== "undefined") {
@@ -37,15 +39,26 @@ export class OfflineManager {
   }
 
   startPeriodicSync() {
-    if (this.syncInterval) clearInterval(this.syncInterval);
-    this.syncInterval = setInterval(() => {
-      if (this.isOnline && !this.isSyncing) {
+    this.stopPeriodicSync();
+    const activeMs = isLikelySlowDevice() ? 20000 : 12000;
+    const hiddenMs = 60000;
+    const tick = () => {
+      if (this.isOnline && !this.isSyncing && !isPageHidden()) {
         this.syncQueue().catch((e) => console.error("Erro na sincronização periódica:", e));
       }
-    }, 10000); // Sincronizar a cada 10 segundos
+    };
+    this.syncIntervalCleanup = createVisibilityAwarePoller(tick, {
+      activeMs,
+      hiddenMs,
+      runImmediately: false,
+    });
   }
 
   stopPeriodicSync() {
+    if (this.syncIntervalCleanup) {
+      this.syncIntervalCleanup();
+      this.syncIntervalCleanup = null;
+    }
     if (this.syncInterval) {
       clearInterval(this.syncInterval);
       this.syncInterval = null;

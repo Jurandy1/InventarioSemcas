@@ -35,6 +35,21 @@ html {
   font-size: 16px;
   -webkit-font-smoothing: antialiased;
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 body {
@@ -324,6 +339,20 @@ p {
   min-height: 36px;
   padding: 6px 12px;
   font-size: 12px;
+}
+
+@media (max-width: 767px) {
+  .gov-btn--ghost {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  button,
+  .gov-btn,
+  [role="button"] {
+    touch-action: manipulation;
+  }
 }
 
 .gov-btn--ghost:hover:not(:disabled) {

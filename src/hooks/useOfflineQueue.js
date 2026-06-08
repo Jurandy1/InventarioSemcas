@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { offlineManager } from "../services/features.js";
+import { createVisibilityAwarePoller } from "../utils/mobilePerf.js";
 
 export function useOfflineQueue() {
   const [queueStatus, setQueueStatus] = useState(() => offlineManager.getQueueStatus());
@@ -26,9 +27,13 @@ export function useOfflineQueue() {
     updateQueueStatus();
     window.addEventListener("online", updateQueueStatus);
     window.addEventListener("offline", updateQueueStatus);
-    const queueTimer = setInterval(updateQueueStatus, 10000);
+    const stopPoller = createVisibilityAwarePoller(updateQueueStatus, {
+      activeMs: 15000,
+      hiddenMs: 45000,
+      runImmediately: false,
+    });
     return () => {
-      clearInterval(queueTimer);
+      stopPoller();
       window.removeEventListener("online", updateQueueStatus);
       window.removeEventListener("offline", updateQueueStatus);
     };

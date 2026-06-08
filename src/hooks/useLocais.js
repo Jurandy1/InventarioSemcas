@@ -30,7 +30,15 @@ export function useLocais() {
         incoming = await fetchLocaisForUnits(ids, { localIds: options.localIds || [] });
       }
 
-      const nextLocais = mergeLocaisRecords(basePrev, incoming);
+      // Escopo por unidade: não acumular locais de outras unidades/sessões na memória.
+      const scopedBase =
+        ids.length > 0
+          ? (basePrev || []).filter((l) => {
+              const uids = Array.isArray(l.unidadeIds) ? l.unidadeIds : l.unidadeId ? [l.unidadeId] : [];
+              return uids.some((uid) => ids.includes(uid));
+            })
+          : basePrev;
+      const nextLocais = ids.length > 0 ? mergeLocaisRecords(scopedBase, incoming) : mergeLocaisRecords(basePrev, incoming);
       setLocais(nextLocais);
       await setCachedData("locais", nextLocais);
       return nextLocais;

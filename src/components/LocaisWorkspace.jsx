@@ -4,7 +4,7 @@ import { TInput } from "./FormFields.jsx";
 import { PhotoThumb } from "./PhotoThumb.jsx";
 import { buildOrigemLine, getDisplayDesc, getItemCode } from "./AjusteWorkbench.jsx";
 import { EC, SC } from "../constants/inventory.js";
-import { countFoundInLocal } from "../utils/inventorySession.js";
+import { canDeleteLocal, countFoundInLocal } from "../utils/inventorySession.js";
 import { isItemInventariado } from "../utils/patrimonioId.js";
 import { isSemTomboItem, SEM_TOMBO_BADGE, showFotoManualBadge } from "../utils/semTombo.js";
 
@@ -208,7 +208,7 @@ export function LocaisWorkspace({
       <div style={{ ...cd, marginBottom: 12 }}>
         <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Locais da unidade</p>
         <p style={{ margin: "0 0 10px", fontSize: 11, color: "#64748b" }}>
-          Clique em um local para ver os itens alocados e editar individualmente.
+          Locais desta sessão da unidade. Locais de sessões anteriores (já usados em itens) aparecem somente para consulta — não podem ser removidos.
         </p>
         {!readOnly && (
           <div style={{ display: "flex", gap: 8 }}>
@@ -259,7 +259,7 @@ export function LocaisWorkspace({
                   {l.desc && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#94a3b8" }}>{l.desc}</p>}
                   <p style={{ margin: "6px 0 0", fontSize: 12, color: "#64748b", fontWeight: 700 }}>{c} item(s)</p>
                 </button>
-                {!readOnly && onDeleteLocal && (
+                {!readOnly && onDeleteLocal && canDeleteLocal(l, sessionId) && (
                   <button
                     type="button"
                     onClick={() => {

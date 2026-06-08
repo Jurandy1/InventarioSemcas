@@ -1,4 +1,5 @@
 import { fsQueryPage } from "../services/firebase.js";
+import { getPhotoBatchDelayMs, getPhotoBatchSize } from "./mobilePerf.js";
 
 export async function paginarItens(unidadeId, pageSize = 50, cursor = null) {
   try {
@@ -62,12 +63,29 @@ export async function getCachedData(key) {
   }
 }
 
+const cacheWriteTimers = new Map();
+
 export async function setCachedData(key, data) {
-  try {
-    localStorage.setItem(`${CACHE_PREFIX}:${key}`, JSON.stringify({ data, ts: Date.now(), buster: getCacheBuster() }));
-  } catch (e) {
-    console.warn("Cache write failed:", e);
-  }
+  return new Promise((resolve) => {
+    const cacheKey = `${CACHE_PREFIX}:${key}`;
+    const prev = cacheWriteTimers.get(cacheKey);
+    if (prev) clearTimeout(prev);
+    cacheWriteTimers.set(
+      cacheKey,
+      setTimeout(() => {
+        cacheWriteTimers.delete(cacheKey);
+        try {
+          localStorage.setItem(
+            cacheKey,
+            JSON.stringify({ data, ts: Date.now(), buster: getCacheBuster() })
+          );
+        } catch (e) {
+          console.warn("Cache write failed:", e);
+        }
+        resolve();
+      }, 450)
+    );
+  });
 }
 
 export async function clearCache(pattern = null) {
@@ -195,19 +213,23 @@ export async function compressPhoto(base64, maxWidth = 800, maxHeight = 600, qua
 
 export async function compressPhotoArray(base64Array, onProgress) {
   const results = [];
-  const BATCH_SIZE = 2; // Processar 2 fotos por vez para evitar travamento
+  const BATCH_SIZE = getPhotoBatchSize();
+  const batchDelay = getPhotoBatchDelayMs();
+  const slow = BATCH_SIZE === 1;
+  const maxW = slow ? 1280 : 1600;
+  const maxH = slow ? 960 : 1200;
+  const targetBytes = slow ? 280 * 1024 : 360 * 1024;
 
   for (let i = 0; i < base64Array.length; i += BATCH_SIZE) {
     const batch = base64Array.slice(i, i + BATCH_SIZE);
     const batchResults = await Promise.all(
-      batch.map((b) => compressPhotoWithTimeout(b, 1600, 1200, 0.82, 5000, 360 * 1024, 0.6))
+      batch.map((b) => compressPhotoWithTimeout(b, maxW, maxH, 0.82, 5000, targetBytes, 0.55))
     );
 
     results.push(...batchResults);
     onProgress?.(Math.min(i + BATCH_SIZE, base64Array.length), base64Array.length);
 
-    // Dar tempo para a UI responder
-    await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, batchDelay));
   }
 
   return results;

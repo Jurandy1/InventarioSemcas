@@ -1,6 +1,7 @@
 import { fsGetAll, fsSet, getFirebaseSession } from "./firebase.js";
 import { fetchInventarioForUnits } from "./inventarioLoad.js";
 import { fetchLocaisForUnits, mergeLocaisRecords } from "./locaisLoad.js";
+import { createVisibilityAwarePoller } from "../utils/mobilePerf.js";
 
 export async function logAuditoria(acao, entidade, entidadeId, antes = null, depois = null) {
   const { uid } = getFirebaseSession();
@@ -119,31 +120,49 @@ export function setupRealtimeSync(unidadeIds, onInventarioChange, onLocaisChange
 
   const fetchLocais = async () => fetchLocaisForUnits(ids);
 
+  const hiddenInvMs = Math.max(invMs * 4, Number(opts.hiddenInventarioMs || invMs * 4) || invMs * 4);
+  const hiddenLocaisMs = Math.max(locaisMs * 3, Number(opts.hiddenLocaisMs || locaisMs * 3) || locaisMs * 3);
+
   if (onInventarioChange) {
-    fetchInventario().then((docs) => onInventarioChange(docs));
-    const interval = setInterval(async () => {
+    const pollInv = async () => {
       const updated = await fetchInventario();
       onInventarioChange(updated);
-    }, invMs);
-    unsubscribers.push(() => clearInterval(interval));
+    };
+    unsubscribers.push(
+      createVisibilityAwarePoller(pollInv, {
+        activeMs: invMs,
+        hiddenMs: hiddenInvMs,
+        runImmediately: true,
+      })
+    );
   }
 
-  if (onLocaisChange) {
-    fetchLocais().then((docs) => onLocaisChange(docs));
-    const interval = setInterval(async () => {
+  if (onLocaisChange && locaisMs < 999999999) {
+    const pollLoc = async () => {
       const updated = await fetchLocais();
       onLocaisChange(updated);
-    }, locaisMs);
-    unsubscribers.push(() => clearInterval(interval));
+    };
+    unsubscribers.push(
+      createVisibilityAwarePoller(pollLoc, {
+        activeMs: locaisMs,
+        hiddenMs: hiddenLocaisMs,
+        runImmediately: true,
+      })
+    );
   }
 
   if (onCoordenadoresChange) {
-    fsGetAll("coordenadores").then((docs) => onCoordenadoresChange(docs));
-    const interval = setInterval(async () => {
+    const pollCoord = async () => {
       const updated = await fsGetAll("coordenadores");
       onCoordenadoresChange(updated);
-    }, coordMs);
-    unsubscribers.push(() => clearInterval(interval));
+    };
+    unsubscribers.push(
+      createVisibilityAwarePoller(pollCoord, {
+        activeMs: coordMs,
+        hiddenMs: coordMs * 4,
+        runImmediately: true,
+      })
+    );
   }
 
   return () => {

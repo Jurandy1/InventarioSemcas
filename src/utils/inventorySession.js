@@ -29,27 +29,70 @@ export function clearSessionId() {
   } catch {}
 }
 
-export function filterLocaisForSession(locais, sessionId, activeUnitIds = [], foundMap = null) {
-  const unitSet = new Set(activeUnitIds || []);
-  const referencedLocalIds = new Set();
-  if (foundMap && unitSet.size) {
-    for (const id in foundMap) {
-      const f = foundMap[id];
-      if (!f?.localId) continue;
-      if (f.unidadeId && !unitSet.has(f.unidadeId)) continue;
-      referencedLocalIds.add(f.localId);
-    }
+export function getLocalUnitIds(local) {
+  if (!local) return [];
+  return Array.isArray(local.unidadeIds)
+    ? local.unidadeIds.filter(Boolean)
+    : local.unidadeId
+      ? [local.unidadeId]
+      : [];
+}
+
+export function localBelongsToUnits(local, activeUnitIds = []) {
+  const unitSet = new Set((activeUnitIds || []).filter(Boolean));
+  if (!unitSet.size) return false;
+  const ids = getLocalUnitIds(local);
+  if (!ids.length) return false;
+  return ids.some((uid) => unitSet.has(uid));
+}
+
+export function collectReferencedLocalIds(foundMap, activeUnitIds = []) {
+  const unitSet = new Set((activeUnitIds || []).filter(Boolean));
+  const out = new Set();
+  if (!foundMap || !unitSet.size) return out;
+  for (const id in foundMap) {
+    const f = foundMap[id];
+    if (!f?.localId) continue;
+    if (f.unidadeId && !unitSet.has(f.unidadeId)) continue;
+    out.add(f.localId);
   }
+  return out;
+}
+
+/**
+ * Locais visíveis na sessão atual.
+ * - Inventário ativo: só locais criados nesta sessão (sessionId) da unidade.
+ * - Finalizado: locais desta finalização + locais já usados por itens (somente leitura).
+ * - includeReferenced: inclui locais antigos referenciados por itens (dropdown ao editar).
+ */
+export function filterLocaisForSession(locais, sessionId, activeUnitIds = [], foundMap = null, options = {}) {
+  const { includeReferenced = false, finalizedMode = false } = options;
+  const referencedLocalIds = collectReferencedLocalIds(foundMap, activeUnitIds);
+  const sid = String(sessionId || "").trim();
+
   return (locais || []).filter((l) => {
     const lid = l.id || l._id;
-    if (referencedLocalIds.has(lid)) return true;
-    const ids = Array.isArray(l.unidadeIds) ? l.unidadeIds : l.unidadeId ? [l.unidadeId] : [];
-    const unitMatch = !unitSet.size || !ids.length || ids.some((uid) => unitSet.has(uid));
-    if (!unitMatch) return false;
-    if (unitSet.size > 0) return true;
-    if (!sessionId) return false;
-    return l.sessionId === sessionId;
+    if (!localBelongsToUnits(l, activeUnitIds)) return false;
+
+    const localSid = String(l.sessionId || "").trim();
+    const isCurrentSession = sid && localSid === sid;
+    const isReferenced = referencedLocalIds.has(lid);
+
+    if (finalizedMode) {
+      return isCurrentSession || isReferenced;
+    }
+
+    if (isCurrentSession) return true;
+    if (includeReferenced && isReferenced) return true;
+    return false;
   });
+}
+
+/** Só locais criados na sessão atual podem ser removidos (não mexe em histórico). */
+export function canDeleteLocal(local, sessionId) {
+  const sid = String(sessionId || "").trim();
+  const localSid = String(local?.sessionId || "").trim();
+  return Boolean(sid && localSid && sid === localSid);
 }
 
 export function loadSessoesPausadas() {

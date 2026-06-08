@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { CameraModal } from "../components/CameraModal.jsx";
 import { TArea, TInput } from "../components/FormFields.jsx";
@@ -16,7 +16,7 @@ import { gerarTodasSugestoes } from "../utils/suggestions.js";
 import { defaultEstadoForItem, inferEspecieFromDesc, parseBrDate, sortByDataNF } from "../utils/itemHelpers.js";
 import { detectTombosDuplicados } from "../utils/tomboDup.js";
 import { buildFormSnapshot, buildItemSnapshot, clearUiResume, loadUiResume, saveUiResume } from "../utils/uiResume.js";
-import { filterLocaisForSession, mergeFoundRecords, resolveUnitForItem } from "../utils/inventorySession.js";
+import { canDeleteLocal, filterLocaisForSession, mergeFoundRecords, resolveUnitForItem } from "../utils/inventorySession.js";
 import { clearInventoryPresence, getTeamMemberEditingItem, loadActiveInventors, pingInventoryPresence } from "../utils/inventoryPresence.js";
 import { isSemTomboItem } from "../utils/semTombo.js";
 import { getFoundEntry, isItemInventariado } from "../utils/patrimonioId.js";
@@ -29,10 +29,6 @@ import { ToastNotification } from "../components/ToastNotification.jsx";
 import { NavBar } from "../components/NavBar.jsx";
 import { ItemDetailModal } from "../components/ItemDetailModal.jsx";
 import { LoginPage } from "../pages/LoginPage.jsx";
-import { InventarioPage } from "../pages/InventarioPage.jsx";
-import { BuscaPage } from "../pages/BuscaPage.jsx";
-import { ItensPage } from "../pages/ItensPage.jsx";
-import { NotasFiscaisPage } from "../pages/NotasFiscaisPage.jsx";
 import { useAuth } from "../hooks/useAuth.js";
 import { useUnidades } from "../hooks/useUnidades.js";
 import { useLocais } from "../hooks/useLocais.js";
@@ -41,11 +37,11 @@ import { useInventario } from "../hooks/useInventario.js";
 import { useCampanha } from "../hooks/useCampanha.js";
 import { useOfflineQueue } from "../hooks/useOfflineQueue.js";
 import { useFinalizacoes } from "../hooks/useFinalizacoes.js";
-import { FinalizadosPage } from "../pages/FinalizadosPage.jsx";
 import { buildFinalizacaoStats, criarFinalizacao, registrarEdicaoFinalizacao, atualizarStatsFinalizacao } from "../services/finalizacoes.js";
 import { CoordenadoresTab } from "./CoordenadoresTab.jsx";
 import { InventariantesTab } from "./InventariantesTab.jsx";
 import { clearChunkReloadFlag, lazyWithRetry } from "../utils/lazyWithRetry.js";
+import { createVisibilityAwarePoller, getSyncIntervals } from "../utils/mobilePerf.js";
 
 const tabFallback = (
   <div style={{ padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>Carregando aba…</div>
@@ -53,6 +49,13 @@ const tabFallback = (
 
 const LazyTombosPage = lazyWithRetry(() => import("../pages/TombosPage.jsx").then((m) => ({ default: m.TombosPage })));
 const LazyDashboardPage = lazyWithRetry(() => import("../pages/DashboardPage.jsx").then((m) => ({ default: m.DashboardPage })));
+const LazyInventarioPage = lazyWithRetry(() => import("../pages/InventarioPage.jsx").then((m) => ({ default: m.InventarioPage })));
+const LazyBuscaPage = lazyWithRetry(() => import("../pages/BuscaPage.jsx").then((m) => ({ default: m.BuscaPage })));
+const LazyItensPage = lazyWithRetry(() => import("../pages/ItensPage.jsx").then((m) => ({ default: m.ItensPage })));
+const LazyNotasFiscaisPage = lazyWithRetry(() => import("../pages/NotasFiscaisPage.jsx").then((m) => ({ default: m.NotasFiscaisPage })));
+const LazyFinalizadosPage = lazyWithRetry(() => import("../pages/FinalizadosPage.jsx").then((m) => ({ default: m.FinalizadosPage })));
+
+const EMPTY_SUGESTOES = { descricoes: [], especies: [], marcas: [], fornecedores: [] };
 
 function getItemCode(item) {
   return item?.patrimonioLabel || item?.id || "—";
@@ -204,20 +207,41 @@ function OrganizedApp({ firebaseOk, isProd }) {
     [editScopeUnits, unidadeAtiva, unidades]
   );
 
+  const activeUnitIdList = useMemo(() => editScopeUnits.map((u) => u.id).filter(Boolean), [editScopeUnits]);
+  const isFinalizadoScope = Boolean(finalizadoEdit?.fin);
+
   const sessionLocais = useMemo(
     () =>
-      filterLocaisForSession(
-        locais.locais,
-        editScopeSessionId,
-        editScopeUnits.map((u) => u.id),
-        found.foundMap
-      ),
-    [locais.locais, editScopeSessionId, editScopeUnits, found.foundMap]
+      filterLocaisForSession(locais.locais, editScopeSessionId, activeUnitIdList, found.foundMap, {
+        finalizedMode: isFinalizadoScope,
+      }),
+    [locais.locais, editScopeSessionId, activeUnitIdList, found.foundMap, isFinalizadoScope]
+  );
+
+  const pickLocais = useMemo(
+    () =>
+      filterLocaisForSession(locais.locais, editScopeSessionId, activeUnitIdList, found.foundMap, {
+        includeReferenced: true,
+        finalizedMode: isFinalizadoScope,
+      }),
+    [locais.locais, editScopeSessionId, activeUnitIdList, found.foundMap, isFinalizadoScope]
+  );
+
+  const handleDeleteLocal = React.useCallback(
+    async (l) => {
+      if (!canDeleteLocal(l, editScopeSessionId)) {
+        showT("Local de outra sessão — não pode remover");
+        return;
+      }
+      await locais.deleteLocal(l, { updateQueueStatus });
+      showT("Local removido");
+    },
+    [editScopeSessionId, locais.deleteLocal, showT, updateQueueStatus]
   );
 
   const createSessionLocal = React.useCallback(
     async (nome, desc = "") => {
-      const unitIds = editScopeUnits.map((u) => u.id);
+      const unitIds = editScopeUnits.map((u) => u.id).filter(Boolean);
       if (!unitIds.length) {
         showT("Nenhuma unidade selecionada");
         return null;
@@ -232,7 +256,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
           nome,
           desc,
           sessionId: sid,
-          unidadeIds: unitIds,
+          unidadeIds: unitIds.length === 1 ? unitIds : unitIds,
         },
         { updateQueueStatus }
       );
@@ -427,19 +451,24 @@ function OrganizedApp({ firebaseOk, isProd }) {
       }).catch(() => {});
     };
 
-    ping();
-    const pingTimer = setInterval(ping, 45000);
-    const teamTimer = setInterval(async () => {
-      try {
-        const others = await loadActiveInventors(unitIds, { excludeUid: auth.logado.uid });
-        setTeamOnline(others);
-      } catch {}
-    }, 20000);
-    loadActiveInventors(unitIds, { excludeUid: auth.logado.uid }).then(setTeamOnline).catch(() => {});
+    const stopPing = createVisibilityAwarePoller(ping, {
+      activeMs: 45000,
+      hiddenMs: 120000,
+      runImmediately: true,
+    });
+    const stopTeam = createVisibilityAwarePoller(
+      async () => {
+        try {
+          const others = await loadActiveInventors(unitIds, { excludeUid: auth.logado.uid });
+          setTeamOnline(others);
+        } catch {}
+      },
+      { activeMs: 20000, hiddenMs: 60000, runImmediately: true }
+    );
 
     return () => {
-      clearInterval(pingTimer);
-      clearInterval(teamTimer);
+      stopPing();
+      stopTeam();
       clearInventoryPresence(auth.logado.uid).catch(() => {});
     };
   }, [auth.logado?.uid, auth.logado?.nome, auth.logado?.email, activeUnitIds.join(","), inventario.invSubTab, inventario.unidadesAtivas.length]);
@@ -505,14 +534,13 @@ function OrganizedApp({ firebaseOk, isProd }) {
         }
       };
 
+    const syncMs = getSyncIntervals({ paused, isMobile: isMob });
     const unsub = setupRealtimeSync(
       activeUnitIds.length ? activeUnitIds : unidadeAtiva?.id,
       onInventarioChange,
       onLocaisChange,
       null,
-      paused
-        ? { inventarioMs: 60000, locaisMs: 999999999 }
-        : { inventarioMs: 15000, locaisMs: 30000 }
+      syncMs
     );
 
     return () => {
@@ -526,6 +554,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     inventario.unidadesAtivas.length,
     inventario.allItens.length,
     unidades.length,
+    isMob,
     updateQueueStatus,
     found.setFound,
     found.foundRef,
@@ -585,22 +614,27 @@ function OrganizedApp({ firebaseOk, isProd }) {
     [unidades]
   );
 
+  const needsSugestoes =
+    tab === "inventario" || modal === "manual" || modal === "detalhe" || modal === "semTombo";
+
   const sugestoes = React.useMemo(() => {
+    if (!needsSugestoes) return EMPTY_SUGESTOES;
     const base =
       inventario.unidadesAtivas.length > 0
         ? inventario.unidadesAtivas.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeNome: u.nome, unidadeId: u.id })))
-        : todosItens.slice(0, 800);
+        : todosItens.slice(0, 400);
     return gerarTodasSugestoes(base);
-  }, [inventario.unidadesAtivas, todosItens]);
+  }, [needsSugestoes, inventario.unidadesAtivas, todosItens]);
 
-  const tombosDup = React.useMemo(
-    () => detectTombosDuplicados(todosItens, found.found),
-    [todosItens, found.found]
-  );
+  const tombosDup = React.useMemo(() => {
+    if (tab !== "tombos") return [];
+    return detectTombosDuplicados(todosItens, found.found);
+  }, [tab, todosItens, found.found]);
 
   const parseNFDate = parseBrDate;
 
   const nfDataMap = React.useMemo(() => {
+    if (tab !== "nf") return {};
     const map = {};
     for (const item of todosItens) {
       const nf = (item.nf || "").trim();
@@ -624,7 +658,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       if (!map[nf].tipoEntrada && item.tipoEntrada) map[nf].tipoEntrada = item.tipoEntrada;
     }
     return map;
-  }, [todosItens]);
+  }, [tab, todosItens]);
   const nfDataList = React.useMemo(
     () => Object.values(nfDataMap).sort((a, b) => parseNFDate(b.dataNF) - parseNFDate(a.dataNF)),
     [nfDataMap, parseNFDate]
@@ -639,8 +673,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
     return noText && noNums && noDocs && noDate;
   });
 
+  const deferredSearch = useDeferredValue(search);
+
   const filtered = React.useMemo(() => {
-    const s = search.toLowerCase();
+    const s = deferredSearch.toLowerCase();
     return inventario.allItens.filter((i) => {
       if (hideFound && isItemInventariado(i.id, found.foundSet)) return false;
       return (
@@ -655,7 +691,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         (found.foundMap[i.id]?.permutaMarca || "").toLowerCase().includes(s)
       );
     });
-  }, [inventario.allItens, hideFound, found.foundSet, found.foundMap, search]);
+  }, [inventario.allItens, hideFound, found.foundSet, found.foundMap, deferredSearch]);
   const sortedFiltered = useMemo(() => [...filtered].sort(sortByDataNF), [filtered]);
   const totalPages = Math.ceil(sortedFiltered.length / PER_PAGE);
   const paged = sortedFiltered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -1851,7 +1887,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
         storageOk={isStorageOk()}
       >
         {tab === "inventario" && (
-          <InventarioPage
+          <Suspense fallback={tabFallback}>
+          <LazyInventarioPage
             invSubTab={inventario.invSubTab}
             setInvSubTab={inventario.setInvSubTab}
             unidades={unidades}
@@ -1942,17 +1979,16 @@ function OrganizedApp({ firebaseOk, isProd }) {
               const entry = await createSessionLocal(nome);
               if (entry) showT("Local da sessão adicionado");
             }}
-            onDeleteLocal={async (l) => {
-              await locais.deleteLocal(l, { updateQueueStatus });
-              showT("Local removido");
-            }}
+            onDeleteLocal={handleDeleteLocal}
             showT={showT}
             onViewImage={onViewImage}
           />
+          </Suspense>
         )}
 
         {tab === "finalizados" && (
-          <FinalizadosPage
+          <Suspense fallback={tabFallback}>
+          <LazyFinalizadosPage
             finalizacoes={finalizacoesState.finalizacoes}
             loading={finalizacoesState.loading}
             onRefresh={finalizacoesState.refresh}
@@ -2030,18 +2066,17 @@ function OrganizedApp({ firebaseOk, isProd }) {
               const entry = await createSessionLocal(nome);
               if (entry) showT("Local adicionado");
             }}
-            onDeleteLocal={async (l) => {
-              await locais.deleteLocal(l, { updateQueueStatus });
-              showT("Local removido");
-            }}
+            onDeleteLocal={handleDeleteLocal}
             onViewImage={onViewImage}
             campanhaFechada={campanhaState.fechada}
             logado={auth.logado}
           />
+          </Suspense>
         )}
 
         {tab === "busca" && (
-          <BuscaPage
+          <Suspense fallback={tabFallback}>
+          <LazyBuscaPage
             globalSearch={globalSearch}
             globalResults={globalResults}
             globalSearching={globalSearching}
@@ -2058,10 +2093,12 @@ function OrganizedApp({ firebaseOk, isProd }) {
             inp={inp}
             cd={cd}
           />
+          </Suspense>
         )}
 
         {tab === "itens" && (
-          <ItensPage
+          <Suspense fallback={tabFallback}>
+          <LazyItensPage
             todosItens={todosItens}
             unidades={unidades}
             foundMap={found.foundMap}
@@ -2076,10 +2113,12 @@ function OrganizedApp({ firebaseOk, isProd }) {
             bs={bs}
             onViewImage={onViewImage}
           />
+          </Suspense>
         )}
 
         {tab === "nf" && (
-          <NotasFiscaisPage
+          <Suspense fallback={tabFallback}>
+          <LazyNotasFiscaisPage
             nfDataList={nfDataList}
             nfSearch={nfSearch}
             setNfSearch={setNfSearch}
@@ -2099,6 +2138,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             cd={cd}
             bs={bs}
           />
+          </Suspense>
         )}
 
         {tab === "tombos" && (
@@ -2164,7 +2204,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             item={formRef.current.detItem}
             foundEntry={getFoundEntry(formRef.current.detItem.id, found.foundMap)}
             foundSet={found.foundSet}
-            locais={sessionLocais.length > 0 ? sessionLocais : locais.locais}
+            locais={pickLocais}
             origemMeta={origemMeta}
             isMobile={isMob}
             ft={ft}
@@ -2387,8 +2427,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
           </select>
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Local</label>
           <select key={"manLocal_" + ft} defaultValue={getField("manLocal") || ""} onChange={(e) => { setField("manLocal", e.target.value); bumpFt(); }} style={inp}>
-            <option value="">{sessionLocais.length ? "— Selecione —" : "— Crie um local na sessão —"}</option>
-            {sessionLocais.map((l) => (
+            <option value="">{pickLocais.length ? "— Selecione —" : "— Crie um local na sessão —"}</option>
+            {pickLocais.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.nome}
               </option>

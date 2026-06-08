@@ -13,9 +13,22 @@ export default defineConfig(({ command }) => {
     envDir: projectRoot,
     base: baseOverride || (command === "build" ? (isCI ? `/${repoName}/` : "/") : "/"),
     plugins: [react({ jsxRuntime: "classic" })],
-    build: command === "build"
-      ? { minify: false, cssMinify: false, reportCompressedSize: false, sourcemap: false }
-      : undefined,
+    build:
+      command === "build"
+        ? {
+            minify: "esbuild",
+            cssMinify: true,
+            sourcemap: false,
+            rollupOptions: {
+              output: {
+                manualChunks(id) {
+                  if (id.includes("node_modules/react-dom") || id.includes("node_modules/react/")) return "react-vendor";
+                  if (id.includes("node_modules/xlsx")) return "xlsx";
+                },
+              },
+            },
+          }
+        : undefined,
     optimizeDeps: {
       noDiscovery: true,
       include: [

@@ -1,9 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { SmartImg } from "../components/SmartImg.jsx";
 import { TInput } from "../components/FormFields.jsx";
 import { Badge } from "../components/Badge.jsx";
 import { EC, SC } from "../constants/inventory.js";
-import { countFoundInLocal } from "../utils/inventorySession.js";
+import { canDeleteLocal, countFoundInLocal } from "../utils/inventorySession.js";
 import { isItemInventariado } from "../utils/patrimonioId.js";
 import { getTeamMemberEditingItem } from "../utils/inventoryPresence.js";
 import { isAjustePendente, isSemTomboItem, SEM_TOMBO_BADGE, showFotoManualBadge } from "../utils/semTombo.js";
@@ -80,6 +80,12 @@ export function InventarioPage({
   const [localNomeRapido, setLocalNomeRapido] = useState("");
   const [localSelecionadoId, setLocalSelecionadoId] = useState("");
   const [localAddSearch, setLocalAddSearch] = useState("");
+  const [localItemsLimit, setLocalItemsLimit] = useState(15);
+  const LOCAL_ITEMS_STEP = 15;
+
+  useEffect(() => {
+    setLocalItemsLimit(LOCAL_ITEMS_STEP);
+  }, [localSelecionadoId]);
   const itemById = useMemo(() => {
     const map = new Map();
     for (const u of unidadesAtivas) for (const i of u.itens) map.set(i.id, { ...i, unidadeId: u.id, unidadeNome: u.nome });
@@ -102,6 +108,7 @@ export function InventarioPage({
   }, [foundMap, localSelecionadoId, activeUnitIds]);
 
   const pendentes = useMemo(() => {
+    if (!localSelecionadoId) return [];
     const out = [];
     for (const u of unidadesAtivas) {
       for (const i of u.itens) {
@@ -109,7 +116,7 @@ export function InventarioPage({
       }
     }
     return out;
-  }, [unidadesAtivas, foundSet]);
+  }, [localSelecionadoId, unidadesAtivas, foundSet]);
 
   const pendentesFiltrados = useMemo(() => {
     const q = String(localAddSearch || "").trim().toLowerCase();
@@ -482,7 +489,7 @@ export function InventarioPage({
           <div style={{ ...cd, marginBottom: 12, border: "1px solid #e2e8f0" }}>
             <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Locais da unidade</p>
             <p style={{ margin: "0 0 10px", fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>
-              Locais compartilhados entre todos na mesma unidade. Qualquer inventariante da equipe vê e usa os mesmos locais.
+              Cada unidade cadastra os locais desta sessão. Só aparecem salas criadas agora — locais de outras unidades ou sessões anteriores não são listados.
             </p>
             <div style={{ display: "flex", gap: 8, marginBottom: locais.length > 0 ? 10 : 0 }}>
               <input
@@ -754,7 +761,7 @@ export function InventarioPage({
                       <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>Nenhum item registrado neste local ainda.</p>
                     ) : (
                       <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(320px,1fr))", gap: 8 }}>
-                        {foundNoLocal.map(({ id, f }) => {
+                        {foundNoLocal.slice(0, localItemsLimit).map(({ id, f }) => {
                           const it = itemById.get(id) || itemById.get(f.patrimonioId || "");
                           const label = it ? getDisplayDesc(it, f) : f?.descricaoEdit || f?.obs || "—";
                           const metaLine = it ? buildMetaLine(it) : `Nº ${id}`;
@@ -810,6 +817,15 @@ export function InventarioPage({
                         })}
                       </div>
                     )}
+                    {foundNoLocal.length > localItemsLimit && (
+                      <button
+                        type="button"
+                        onClick={() => setLocalItemsLimit((n) => n + LOCAL_ITEMS_STEP)}
+                        style={{ ...bs, width: "100%", marginTop: 10, minHeight: 44 }}
+                      >
+                        Carregar mais ({foundNoLocal.length - localItemsLimit} restantes)
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -819,7 +835,9 @@ export function InventarioPage({
               <div style={{ ...cd, marginBottom: 12 }}>
                 <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Locais da unidade</p>
                 <p style={{ margin: "0 0 10px", fontSize: 11, color: "#64748b" }}>
-                  {sessionId ? "Locais compartilhados com toda a equipe nesta unidade." : "Inicie um inventário para criar locais."}
+                  {sessionId
+                    ? "Locais desta sessão, só desta unidade. A equipe na mesma unidade vê os mesmos locais criados aqui."
+                    : "Inicie um inventário para criar locais."}
                 </p>
                 <div style={{ display: "flex", gap: 8 }}>
                   <input
@@ -867,18 +885,20 @@ export function InventarioPage({
                           {l.desc && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#94a3b8" }}>{l.desc}</p>}
                           <p style={{ margin: "6px 0 0", fontSize: 12, color: "#64748b", fontWeight: 700 }}>{c} item(s)</p>
                         </button>
-                        <button
-                          onClick={() => {
-                            if (c > 0) {
-                              showT?.("Remova itens antes");
-                              return;
-                            }
-                            onDeleteLocal?.(l);
-                          }}
-                          style={{ ...bs, padding: "8px 10px", fontSize: 12, color: "#dc2626", borderColor: "#fca5a5" }}
-                        >
-                          Remover
-                        </button>
+                        {canDeleteLocal(l, sessionId) && (
+                          <button
+                            onClick={() => {
+                              if (c > 0) {
+                                showT?.("Remova itens antes");
+                                return;
+                              }
+                              onDeleteLocal?.(l);
+                            }}
+                            style={{ ...bs, padding: "8px 10px", fontSize: 12, color: "#dc2626", borderColor: "#fca5a5" }}
+                          >
+                            Remover
+                          </button>
+                        )}
                       </div>
                     );
                   })}

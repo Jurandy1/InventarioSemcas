@@ -21,6 +21,7 @@ export const COLORS = {
 
 export function getAppStyles(isMobile = false) {
   const fontSize = isMobile ? 16 : 14;
+  const touchMin = isMobile ? { minHeight: 44, minWidth: 44 } : {};
   return {
     inp: {
       width: "100%",
@@ -39,21 +40,27 @@ export function getAppStyles(isMobile = false) {
       color: COLORS.headerText,
       border: `1px solid ${COLORS.primaryDark}`,
       borderRadius: 4,
-      padding: "11px 18px",
-      fontSize: 14,
+      padding: isMobile ? "12px 18px" : "11px 18px",
+      fontSize,
       fontWeight: 700,
       cursor: "pointer",
       letterSpacing: "0.01em",
+      touchAction: "manipulation",
+      WebkitTapHighlightColor: "transparent",
+      ...touchMin,
     },
     bs: {
       background: COLORS.surface,
       color: COLORS.textSecondary,
       border: `1px solid ${COLORS.border}`,
       borderRadius: 4,
-      padding: "11px 18px",
-      fontSize: 14,
+      padding: isMobile ? "12px 18px" : "11px 18px",
+      fontSize,
       fontWeight: 600,
       cursor: "pointer",
+      touchAction: "manipulation",
+      WebkitTapHighlightColor: "transparent",
+      ...touchMin,
     },
     cd: {
       background: COLORS.surface,
