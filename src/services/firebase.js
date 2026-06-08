@@ -357,8 +357,16 @@ export async function fsSetStrict(collection, docId, data) {
   });
   if (r.ok) return true;
   const d = await r.json().catch(() => ({}));
-  const msg = d?.error?.message || `Falha ao salvar em ${collection}/${docId}`;
-  throw new Error(msg);
+  const raw = d?.error?.message || `Falha ao salvar em ${collection}/${docId}`;
+  if (r.status === 403 || String(raw).includes("PERMISSION_DENIED")) {
+    if (collection === "convites_inventariantes") {
+      throw new Error(
+        "Sem permissão para criar convite. Publique as regras atualizadas do firestore.rules no Firebase Console (Firestore → Regras → Publicar)."
+      );
+    }
+    throw new Error(`Sem permissão no Firestore (${collection}). Verifique se as regras foram publicadas.`);
+  }
+  throw new Error(raw);
 }
 
 export async function fsGetAll(collection) {

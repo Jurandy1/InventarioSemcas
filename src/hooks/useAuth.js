@@ -9,8 +9,14 @@ import {
   setFirebaseSession,
 } from "../services/firebase.js";
 import { CoordRedirectError, isCoordRedirectError, redirectToCoordLogin } from "../utils/coordRedirect.js";
+import { isAdminUid } from "../constants/auth.js";
 
 async function resolveLoginRole(user) {
+  if (isAdminUid(user.uid)) {
+    user.role = "admin";
+    return user;
+  }
+
   const invEntry = await obterInventariantePorUid(user.uid);
   if (invEntry) {
     if (invEntry.status === "pendente_aprovacao") {
@@ -44,8 +50,7 @@ async function resolveLoginRole(user) {
     throw new Error("Conta de coordenadora sem permissão de acesso.");
   }
 
-  user.role = "admin";
-  return user;
+  throw new Error("Acesso não autorizado. Cadastre-se via convite de inventariante ou use a conta de coordenadora.");
 }
 
 export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {

@@ -3,7 +3,7 @@ import { Badge } from "../components/Badge.jsx";
 import { CameraModal } from "../components/CameraModal.jsx";
 import { TArea, TInput } from "../components/FormFields.jsx";
 import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js";
-import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken, obterInventariantePorUid } from "../services/firebase.js";
+import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken, obterInventariantePorUid, gerarLinkConviteInventariante } from "../services/firebase.js";
 import { getDisplayPhotoUrl, uploadPhotos, isStorageOk, deletePhoto } from "../services/storage.js";
 import { generateQRCode } from "../services/qr-service.js";
 import { criarBackupManual, logAuditoria, setupRealtimeSync } from "../services/audit.js";
@@ -87,6 +87,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const [modal, setModal] = useState(null);
   const [qrCodeUrl, setQrCodeUrl] = useState(null);
   const [coordRegistroLink, setCoordRegistroLink] = useState("");
+  const [invConviteLink, setInvConviteLink] = useState("");
+  const [invConviteExp, setInvConviteExp] = useState("");
+  const [gerandoInvConvite, setGerandoInvConvite] = useState(false);
   const [cameraTarget, setCameraTarget] = useState(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -254,8 +257,26 @@ function OrganizedApp({ firebaseOk, isProd }) {
     return true;
   }, [campanhaState.fechada, showT]);
 
+  const abrirConvidarColega = React.useCallback(async () => {
+    setGerandoInvConvite(true);
+    setInvConviteLink("");
+    setInvConviteExp("");
+    setModal("convite-inventariante");
+    try {
+      const { convite, link } = await gerarLinkConviteInventariante();
+      setInvConviteLink(link);
+      setInvConviteExp(convite.dataExpiracao || "");
+    } catch (e) {
+      showT(e?.message || "Erro ao gerar convite");
+      setModal(null);
+    } finally {
+      setGerandoInvConvite(false);
+    }
+  }, [showT]);
+
   const assertPodeEditar = React.useCallback(() => {
-    if (campanhaState.fechada && auth.logado?.role !== "admin") {
+    const role = auth.logado?.role;
+    if (campanhaState.fechada && role !== "admin" && role !== "inventariante") {
       showT("Inventário fechado — alterações não permitidas");
       return false;
     }
@@ -634,6 +655,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const { inp, bp, bs, cd } = getAppStyles(isMob);
 
   const isAdmin = auth.logado?.role === "admin";
+  const isInventariante = auth.logado?.role === "inventariante";
+  const canGerirCoord = isAdmin || isInventariante;
   const navs = [
     { id: "inventario", l: "Inventário", badge: inventario.unidadesAtivas.length > 0 ? inventario.unidadesAtivas.length : null },
     { id: "finalizados", l: "Finalizados", badge: finalizacoesState.finalizacoes?.length || null },
@@ -642,17 +665,14 @@ function OrganizedApp({ firebaseOk, isProd }) {
     { id: "nf", l: "Notas" },
     { id: "tombos", l: "Tombos" },
     { id: "dash", l: "Dashboard" },
-    ...(isAdmin
-      ? [
-          { id: "coordenadores", l: "Coordenadores" },
-          { id: "inventariantes", l: "Inventariantes" },
-        ]
-      : []),
+    ...(canGerirCoord ? [{ id: "coordenadores", l: "Coordenadores" }] : []),
+    ...(isAdmin ? [{ id: "inventariantes", l: "Inventariantes" }] : []),
   ];
 
   useEffect(() => {
-    if (!isAdmin && (tab === "coordenadores" || tab === "inventariantes")) setTab("inventario");
-  }, [isAdmin, tab]);
+    if (!canGerirCoord && tab === "coordenadores") setTab("inventario");
+    if (!isAdmin && tab === "inventariantes") setTab("inventario");
+  }, [isAdmin, canGerirCoord, tab]);
 
   const doGlobalSearch = async (q) => {
     if (!q || q.trim().length < 2) {
@@ -1806,6 +1826,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             onOpenLinkTombo={openLinkTomboModal}
             onOpenFinalizar={() => setModal("finalizar")}
             onOpenCancelar={() => setModal("cancelar-inventario")}
+            onOpenConvidarColega={isAdmin ? abrirConvidarColega : undefined}
             sessionId={inventario.sessionId}
             locais={sessionLocais}
             onOpenNextPending={openNextPending}
@@ -2002,7 +2023,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
               campanhaFechada={campanhaState.fechada}
               onFecharCampanha={campanhaState.fechar}
               onReabrirCampanha={campanhaState.reabrir}
-              isAdmin={isAdmin}
+              isAdmin={canGerirCoord}
             />
           </Suspense>
         )}
@@ -2311,6 +2332,61 @@ function OrganizedApp({ firebaseOk, isProd }) {
             >
               Criar
             </button>
+          </div>
+        </Overlay>
+      )}
+
+      {modal === "convite-inventariante" && (
+        <Overlay
+          isMobile={isMob}
+          onClose={() => {
+            setModal(null);
+            setInvConviteLink("");
+            setInvConviteExp("");
+          }}
+        >
+          <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>Convidar colega para inventário</h2>
+          <p style={{ margin: "0 0 14px", fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
+            Envie o link para a pessoa se cadastrar. Após o cadastro, aprove em Inventariantes (admin) e ela poderá inventariar na mesma unidade com você.
+          </p>
+          {gerandoInvConvite ? (
+            <p style={{ margin: 0, fontSize: 13, color: "#64748b", textAlign: "center", padding: 20 }}>Gerando link…</p>
+          ) : invConviteLink ? (
+            <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#15803d" }}>Link válido por 7 dias</p>
+              {invConviteExp && (
+                <p style={{ margin: "0 0 8px", fontSize: 11, color: "#64748b" }}>
+                  Até {new Date(invConviteExp).toLocaleDateString("pt-BR")}
+                </p>
+              )}
+              <p style={{ margin: 0, fontSize: 11, color: "#0f172a", wordBreak: "break-all", lineHeight: 1.4 }}>{invConviteLink}</p>
+            </div>
+          ) : null}
+          <div style={{ display: "flex", gap: 9 }}>
+            <button
+              onClick={() => {
+                setModal(null);
+                setInvConviteLink("");
+              }}
+              style={{ ...bs, flex: 1 }}
+            >
+              Fechar
+            </button>
+            {invConviteLink && (
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(invConviteLink);
+                    showT("Link copiado");
+                  } catch {
+                    showT("Copie o link manualmente");
+                  }
+                }}
+                style={{ ...bp, flex: 1 }}
+              >
+                Copiar link
+              </button>
+            )}
           </div>
         </Overlay>
       )}

@@ -105,7 +105,7 @@ export function FinalizadosPage({
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
   const activeUnitIds = useMemo(() => editUnits.map((u) => u.id), [editUnits]);
-  const canEdit = !campanhaFechada || logado?.role === "admin";
+  const canEdit = !campanhaFechada || logado?.role === "admin" || logado?.role === "inventariante";
 
   const naoEncontrados = useMemo(() => {
     return allItens.filter((i) => isTomboPendente(i, foundSet)).sort(sortByDataNF);
@@ -162,7 +162,7 @@ export function FinalizadosPage({
               )}
             </div>
           </div>
-          {campanhaFechada && logado?.role !== "admin" && (
+          {campanhaFechada && logado?.role !== "admin" && logado?.role !== "inventariante" && (
             <p style={{ margin: "10px 0 0", fontSize: 11, color: "#b45309", fontWeight: 600 }}>
               Campanha fechada — você pode consultar. Apenas administrador pode alterar registros.
             </p>
@@ -288,8 +288,8 @@ export function FinalizadosPage({
             bp={bp}
             bs={bs}
             mode="pro"
-            onOpenSemTombo={campanhaFechada && logado?.role !== "admin" ? undefined : onOpenSemTombo}
-            onOpenFotoVarios={campanhaFechada && logado?.role !== "admin" ? undefined : onOpenFotoVarios}
+            onOpenSemTombo={campanhaFechada && logado?.role !== "admin" && logado?.role !== "inventariante" ? undefined : onOpenSemTombo}
+            onOpenFotoVarios={campanhaFechada && logado?.role !== "admin" && logado?.role !== "inventariante" ? undefined : onOpenFotoVarios}
             onOpenLinkTombo={onOpenLinkTombo}
             onViewImage={onViewImage}
           />

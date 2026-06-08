@@ -62,6 +62,7 @@ export function InventarioPage({
   onOpenFotoVarios,
   onOpenFinalizar,
   onOpenCancelar,
+  onOpenConvidarColega,
   onOpenLinkTombo,
   onOpenNextPending,
   campanhaFechada,
@@ -398,6 +399,11 @@ export function InventarioPage({
                 {!campanhaFechada && (
                   <button onClick={onOpenManual} style={{ ...bs, fontSize: 11, padding: "6px 12px" }}>
                     Manual
+                  </button>
+                )}
+                {onOpenConvidarColega && (
+                  <button onClick={onOpenConvidarColega} style={{ ...bs, fontSize: 11, padding: "6px 12px", borderColor: "#7c3aed", color: "#7c3aed" }}>
+                    Convidar colega
                   </button>
                 )}
                 {totalFound > 0 && (

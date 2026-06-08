@@ -46,7 +46,15 @@ service cloud.firestore {
 
     function isAdminUser() {
 
-      return isAuth() && !exists(invDoc()) && !exists(coordDoc());
+      return isAuth() && request.auth.uid == 'fC7cWAbUKEY7wGMHdN9z9dcdvX03';
+
+    }
+
+
+
+    function isInventarianteOuAdmin() {
+
+      return isAdminUser() || isInventarianteAtivo();
 
     }
 
@@ -100,7 +108,7 @@ service cloud.firestore {
 
     function writesPermitidos() {
 
-      return !campanhaFechada() || isAdminUser();
+      return !campanhaFechada() || isInventarianteOuAdmin();
 
     }
 
@@ -112,9 +120,9 @@ service cloud.firestore {
 
       allow list: if false;
 
-      allow create: if isAdminUser();
+      allow create: if isInventarianteOuAdmin();
 
-      allow update: if isAdminUser() || (
+      allow update: if isInventarianteOuAdmin() || (
         isAuth() &&
         resource.data.status == 'ativo' &&
         request.resource.data.status == 'usado'
@@ -126,13 +134,27 @@ service cloud.firestore {
 
 
 
+    function conviteInventarianteCreateValido() {
+
+      return request.resource.data.status == 'ativo' &&
+
+        request.resource.data.criadoPor == request.auth.uid &&
+
+        request.resource.data.dataCriacao is string &&
+
+        request.resource.data.dataExpiracao is string;
+
+    }
+
+
+
     match /convites_inventariantes/{conviteId} {
 
       allow get: if true;
 
       allow list: if false;
 
-      allow create: if isAdminUser();
+      allow create: if isAuth() && isAdminUser() && conviteInventarianteCreateValido();
 
       allow update: if isAdminUser() || (
         isAuth() &&
@@ -151,7 +173,7 @@ service cloud.firestore {
 
       allow read: if isAuth();
 
-      allow create, update: if isAdminUser() || isCoordAprovada();
+      allow create, update: if isInventarianteOuAdmin() || isCoordAprovada();
 
       allow delete: if isAdminUser();
 
@@ -163,9 +185,11 @@ service cloud.firestore {
 
       allow create: if isAuth() && request.auth.uid == uid;
 
-      allow read: if isAuth() && (request.auth.uid == uid || isAdminUser());
+      allow get: if isAuth() && (request.auth.uid == uid || isInventarianteOuAdmin());
 
-      allow update: if isAuth() && (request.auth.uid == uid || isAdminUser());
+      allow list: if isInventarianteOuAdmin();
+
+      allow update: if isAuth() && (request.auth.uid == uid || isInventarianteOuAdmin());
 
     }
 
@@ -201,7 +225,7 @@ service cloud.firestore {
 
       );
 
-      allow delete: if isAdminUser();
+      allow delete: if isInventarianteOuAdmin();
 
     }
 
@@ -217,7 +241,7 @@ service cloud.firestore {
 
       );
 
-      allow delete: if isAdminUser();
+      allow delete: if isInventarianteOuAdmin();
 
     }
 
@@ -255,7 +279,7 @@ service cloud.firestore {
 
       allow read: if isAuth();
 
-      allow write: if isAuth() && (isAdminUser() || isCoordAprovada());
+      allow write: if isAuth() && (isInventarianteOuAdmin() || isCoordAprovada());
 
     }
 
