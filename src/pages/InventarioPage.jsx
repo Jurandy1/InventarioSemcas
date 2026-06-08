@@ -4,6 +4,7 @@ import { TInput } from "../components/FormFields.jsx";
 import { Badge } from "../components/Badge.jsx";
 import { EC, SC } from "../constants/inventory.js";
 import { canDeleteLocal, countFoundInLocal } from "../utils/inventorySession.js";
+import { sortByDataNF, sortLocaisByNewestNf } from "../utils/itemHelpers.js";
 import { isItemInventariado } from "../utils/patrimonioId.js";
 import { getTeamMemberEditingItem } from "../utils/inventoryPresence.js";
 import { isAjustePendente, isSemTomboItem, SEM_TOMBO_BADGE, showFotoManualBadge } from "../utils/semTombo.js";
@@ -57,6 +58,8 @@ export function InventarioPage({
   setSearch,
   hideFound,
   setHideFound,
+  hideIncorporados,
+  setHideIncorporados,
   openDetModal,
   onOpenManual,
   onOpenSemTombo,
@@ -103,20 +106,31 @@ export function InventarioPage({
       if (activeUnitIds.size && f.unidadeId && !activeUnitIds.has(f.unidadeId)) continue;
       out.push({ id, f });
     }
-    out.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    out.sort((a, b) => {
+      const itA = itemById.get(a.id) || itemById.get(a.f?.patrimonioId || "");
+      const itB = itemById.get(b.id) || itemById.get(b.f?.patrimonioId || "");
+      return sortByDataNF(itA, itB);
+    });
     return out;
-  }, [foundMap, localSelecionadoId, activeUnitIds]);
+  }, [foundMap, localSelecionadoId, activeUnitIds, itemById]);
+
+  const locaisOrdenados = useMemo(
+    () => sortLocaisByNewestNf(locais, foundMap, itemById, [...activeUnitIds]),
+    [locais, foundMap, itemById, activeUnitIds]
+  );
 
   const pendentes = useMemo(() => {
     if (!localSelecionadoId) return [];
     const out = [];
     for (const u of unidadesAtivas) {
       for (const i of u.itens) {
+        if (hideIncorporados && (i.tipoEntrada || "") === "Incorporado") continue;
         if (!isItemInventariado(i.id, foundSet)) out.push({ ...i, unidadeId: u.id, unidadeNome: u.nome });
       }
     }
+    out.sort(sortByDataNF);
     return out;
-  }, [localSelecionadoId, unidadesAtivas, foundSet]);
+  }, [localSelecionadoId, unidadesAtivas, foundSet, hideIncorporados]);
 
   const pendentesFiltrados = useMemo(() => {
     const q = String(localAddSearch || "").trim().toLowerCase();
@@ -136,6 +150,7 @@ export function InventarioPage({
         if (out.length >= 40) break;
       }
     }
+    out.sort(sortByDataNF);
     return out;
   }, [pendentes, localAddSearch]);
 
@@ -262,6 +277,14 @@ export function InventarioPage({
           <div style={{ marginBottom: 8 }}>
             <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Selecione uma ou mais unidades para inventariar juntas</p>
           </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 12, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={!!hideIncorporados}
+              onChange={(e) => setHideIncorporados?.(e.target.checked)}
+            />
+            Ocultar itens Incorporados (padrão ao iniciar)
+          </label>
 
           {pendingUnids.size > 0 && (
             <div style={{ position: "sticky", top: 64, zIndex: 100, background: "#1351B4", borderRadius: 12, padding: "12px 16px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, boxShadow: "0 4px 16px rgba(30,58,138,.35)", flexWrap: "wrap" }}>
@@ -518,7 +541,7 @@ export function InventarioPage({
             </div>
             {locais.length > 0 ? (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {locais.map((l) => {
+                {locaisOrdenados.map((l) => {
                   const countLocal = countFoundInLocal(foundMap, l.id, [...activeUnitIds]);
                   return (
                     <button
@@ -559,6 +582,17 @@ export function InventarioPage({
               }}
             />
             Ocultar itens já encontrados ({totalFound})
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 10, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={!!hideIncorporados}
+              onChange={(e) => {
+                setHideIncorporados?.(e.target.checked);
+                setPage(1);
+              }}
+            />
+            Ocultar itens Incorporados
           </label>
 
           <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10 }}>
@@ -873,7 +907,7 @@ export function InventarioPage({
                 </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
-                  {locais.map((l) => {
+                  {locaisOrdenados.map((l) => {
                     const c = countFoundInLocal(foundMap, l.id, [...activeUnitIds]);
                     return (
                       <div key={l.id} style={{ ...cd, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>

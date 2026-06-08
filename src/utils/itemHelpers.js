@@ -49,3 +49,40 @@ export function maskTipoEntrada(tipo) {
 export function sortByDataNF(a, b) {
   return parseBrDate(b?.dataNF) - parseBrDate(a?.dataNF);
 }
+
+export function getItemNfMs(item) {
+  return parseBrDate(item?.dataNF).getTime();
+}
+
+/** Ordena locais pela NF mais recente entre os itens alocados em cada um. */
+export function sortLocaisByNewestNf(locais = [], foundMap = {}, itemById = new Map(), activeUnitIds = []) {
+  const unitSet = new Set(activeUnitIds || []);
+  const newestByLocal = new Map();
+  for (const id in foundMap || {}) {
+    const f = foundMap[id];
+    if (!f?.localId) continue;
+    if (unitSet.size && f.unidadeId && !unitSet.has(f.unidadeId)) continue;
+    const it = itemById.get(id) || itemById.get(f.patrimonioId || "");
+    const ms = getItemNfMs(it);
+    const lid = f.localId;
+    newestByLocal.set(lid, Math.max(newestByLocal.get(lid) || 0, ms));
+  }
+  return [...(locais || [])].sort((a, b) => {
+    const ma = newestByLocal.get(a.id || a._id) || 0;
+    const mb = newestByLocal.get(b.id || b._id) || 0;
+    if (mb !== ma) return mb - ma;
+    return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
+  });
+}
+
+export function buildDoacaoOrigemExtras(getField, prefix = "man") {
+  const origem = getField(`${prefix}Origem`) || getField("detOrigem") || "";
+  if (origem !== "Doação") return {};
+  const mode = getField(`${prefix}DoacaoModo`) || "uf";
+  if (mode === "texto") {
+    const texto = String(getField(`${prefix}DoacaoTexto`) || "").trim();
+    return texto ? { doacaoOrigem: texto, doacaoOrigemTipo: "texto" } : {};
+  }
+  const uf = String(getField(`${prefix}DoacaoUf`) || "MA").trim().toUpperCase();
+  return uf ? { doacaoOrigem: uf, doacaoOrigemTipo: "uf" } : {};
+}

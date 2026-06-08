@@ -13,7 +13,8 @@ import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "./categori
 import { compressPhotoArray, getCachedData, bumpCacheBuster, perfMonitor, setCachedData } from "../utils/performance.js";
 import { loadUnidades } from "../utils/xlsx.js";
 import { gerarTodasSugestoes } from "../utils/suggestions.js";
-import { defaultEstadoForItem, inferEspecieFromDesc, parseBrDate, sortByDataNF } from "../utils/itemHelpers.js";
+import { buildDoacaoOrigemExtras, defaultEstadoForItem, inferEspecieFromDesc, parseBrDate, sortByDataNF } from "../utils/itemHelpers.js";
+import { DoacaoOrigemFields } from "../components/DoacaoOrigemFields.jsx";
 import { detectTombosDuplicados } from "../utils/tomboDup.js";
 import { buildFormSnapshot, buildItemSnapshot, clearUiResume, loadUiResume, saveUiResume } from "../utils/uiResume.js";
 import { canDeleteLocal, filterLocaisForSession, mergeFoundRecords, resolveUnitForItem } from "../utils/inventorySession.js";
@@ -103,6 +104,21 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [hideFound, setHideFound] = useState(true);
+  const [hideIncorporados, setHideIncorporados] = useState(() => {
+    try {
+      const v = localStorage.getItem("inv-hide-incorporados");
+      return v === null ? true : v === "1";
+    } catch {
+      return true;
+    }
+  });
+
+  const persistHideIncorporados = React.useCallback((next) => {
+    setHideIncorporados(next);
+    try {
+      localStorage.setItem("inv-hide-incorporados", next ? "1" : "0");
+    } catch {}
+  }, []);
   const [tombosTab, setTombosTab] = useState("ne");
   const [globalSearch, setGlobalSearch] = useState("");
   const [globalResults, setGlobalResults] = useState([]);
@@ -675,9 +691,22 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
   const deferredSearch = useDeferredValue(search);
 
+  const sessionItens = React.useMemo(
+    () =>
+      inventario.allItens.filter((i) => !hideIncorporados || (i.tipoEntrada || "Próprio") !== "Incorporado"),
+    [inventario.allItens, hideIncorporados]
+  );
+
+  const sessionTotalBens = sessionItens.length;
+  const sessionTotalFound = React.useMemo(
+    () => sessionItens.filter((i) => isItemInventariado(i.id, found.foundSet)).length,
+    [sessionItens, found.foundSet]
+  );
+  const sessionProgresso = sessionTotalBens > 0 ? Math.round((sessionTotalFound / sessionTotalBens) * 100) : 0;
+
   const filtered = React.useMemo(() => {
     const s = deferredSearch.toLowerCase();
-    return inventario.allItens.filter((i) => {
+    return sessionItens.filter((i) => {
       if (hideFound && isItemInventariado(i.id, found.foundSet)) return false;
       return (
         !s ||
@@ -691,7 +720,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         (found.foundMap[i.id]?.permutaMarca || "").toLowerCase().includes(s)
       );
     });
-  }, [inventario.allItens, hideFound, found.foundSet, found.foundMap, deferredSearch]);
+  }, [sessionItens, hideFound, found.foundSet, found.foundMap, deferredSearch]);
   const sortedFiltered = useMemo(() => [...filtered].sort(sortByDataNF), [filtered]);
   const totalPages = Math.ceil(sortedFiltered.length / PER_PAGE);
   const paged = sortedFiltered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -1141,6 +1170,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
     const manOrigem = getField("manOrigem") || "Próprio";
     const manMarca = getField("manMarca") || "";
 
+    const doacaoExtras = buildDoacaoOrigemExtras(getField, "man");
+
     const buildManualInvEntry = (it, urls = []) => {
       const now = new Date();
       return {
@@ -1153,6 +1184,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         obs: desc.trim(),
         marca: manMarca,
         origem: manOrigem,
+        ...doacaoExtras,
         fotoUrls: urls,
         data: now.toLocaleDateString("pt-BR"),
         hora: now.toLocaleTimeString("pt-BR"),
@@ -1187,6 +1219,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
           obs: desc.trim(),
           marca: manMarca,
           origem: manOrigem,
+          extras: doacaoExtras,
           fotoUrls: [],
           unidadeAtiva,
           logado: auth.logado,
@@ -1228,6 +1261,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         obs: desc.trim(),
         marca: getField("manMarca"),
         origem: getField("manOrigem") || "Próprio",
+        extras: buildDoacaoOrigemExtras(getField, "man"),
         fotoUrls,
         unidadeAtiva,
         logado: auth.logado,
@@ -1282,12 +1316,14 @@ function OrganizedApp({ firebaseOk, isProd }) {
       identificadoPorFoto: true,
     };
 
+    const stOrigem = getField("stOrigem") || "Próprio";
     const stExtras = {
       semTombo: true,
       identificadoPorFoto: true,
       descricaoEdit: desc,
       tomboReferencia: String(getField("stTomboRef") || "").trim(),
       marca: String(getField("stMarca") || "").trim(),
+      ...buildDoacaoOrigemExtras(getField, "st"),
     };
     const stEstado = getField("stEstado") || "Bom";
     const stObs = String(getField("stObs") || "").trim();
@@ -1303,7 +1339,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         localId,
         obs: stObs,
         marca: "",
-        origem: "Próprio",
+        origem: stOrigem,
         fotoUrls: [],
         data: now.toLocaleDateString("pt-BR"),
         hora: now.toLocaleTimeString("pt-BR"),
@@ -1335,7 +1371,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         localId,
         obs: stObs,
         marca: stExtras.marca || "",
-        origem: "Próprio",
+        origem: stOrigem,
         fotoUrls: [],
         extras: stExtras,
         unidadeAtiva: unit,
@@ -1376,7 +1412,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       localId,
       obs: stObs,
       marca: stExtras.marca || "",
-      origem: "Próprio",
+      origem: stOrigem,
       fotoUrls,
       extras: stExtras,
       unidadeAtiva: unit,
@@ -1691,6 +1727,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const getSemTomboPendentes = () => {
     const q = String(formRef.current.stPendSearch || "").trim().toLowerCase();
     return scopeAllItens.filter((i) => {
+      if (hideIncorporados && (i.tipoEntrada || "") === "Incorporado") return false;
       if (isItemInventariado(i.id, found.foundSet)) return false;
       if (isSemTomboItem(i, getFoundEntry(i.id, found.foundMap))) return false;
       if (!q) return true;
@@ -1907,9 +1944,11 @@ function OrganizedApp({ firebaseOk, isProd }) {
             inp={inp}
             bp={bp}
             bs={bs}
-            totalFound={inventario.totalFound}
-            totalBens={inventario.totalBens}
-            progresso={inventario.progresso}
+            totalFound={sessionTotalFound}
+            totalBens={sessionTotalBens}
+            progresso={sessionProgresso}
+            hideIncorporados={hideIncorporados}
+            setHideIncorporados={persistHideIncorporados}
             filtered={filtered}
             paged={paged}
             page={page}
@@ -1927,6 +1966,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 manLocal: String(localId || ""),
                 manQtd: 1,
                 manSharePhotos: true,
+                manOrigem: "Próprio",
+                manDoacaoModo: "uf",
+                manDoacaoUf: "MA",
+                manDoacaoTexto: "",
               };
               bumpFt();
               setModal("manual");
@@ -1941,6 +1984,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 stObs: "",
                 stTomboRef: "",
                 stMarca: "",
+                stOrigem: "Próprio",
+                stDoacaoModo: "uf",
+                stDoacaoUf: "MA",
+                stDoacaoTexto: "",
                 stPhotos: [],
                 stSelectedIds: [],
                 stPendSearch: "",
@@ -1958,6 +2005,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 stObs: "",
                 stTomboRef: "",
                 stMarca: "",
+                stOrigem: "Próprio",
+                stDoacaoModo: "uf",
+                stDoacaoUf: "MA",
+                stDoacaoTexto: "",
                 stPhotos: [],
                 stSelectedIds: [],
                 stPendSearch: "",
@@ -2395,6 +2446,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
               </button>
             ))}
           </div>
+          {(formRef.current.manOrigem || "Próprio") === "Doação" && (
+            <DoacaoOrigemFields prefix="man" getField={getField} setField={setField} bumpFt={bumpFt} inp={inp} ft={ft} />
+          )}
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Estado de Conservação</label>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
             {ESTADOS.map((e) => (
@@ -2774,6 +2828,36 @@ function OrganizedApp({ firebaseOk, isProd }) {
               )}
               <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Marca / fornecedor da mobília</label>
               <TInput key={"stMarca_" + ft} initial={getField("stMarca")} onVal={(v) => setField("stMarca", v)} placeholder="Ex: RM MOVEIS" suggestions={sugestoes.marcas} style={inp} />
+              <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Origem</label>
+              <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+                {["Próprio", "Doação"].map((o) => (
+                  <button
+                    key={o}
+                    type="button"
+                    onClick={() => {
+                      setField("stOrigem", o);
+                      bumpFt();
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: "10px",
+                      borderRadius: 9,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      border: `2px solid ${(getField("stOrigem") || "Próprio") === o ? "#1351B4" : "#e2e8f0"}`,
+                      background: (getField("stOrigem") || "Próprio") === o ? "#dbeafe" : "#fff",
+                      color: (getField("stOrigem") || "Próprio") === o ? "#1351B4" : "#6b7280",
+                      minHeight: 44,
+                    }}
+                  >
+                    {o}
+                  </button>
+                ))}
+              </div>
+              {(getField("stOrigem") || "Próprio") === "Doação" && (
+                <DoacaoOrigemFields prefix="st" getField={getField} setField={setField} bumpFt={bumpFt} inp={inp} ft={ft} />
+              )}
               <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Tombamento sugerido (opcional)</label>
               <TInput key={"stRef_" + ft} initial={getField("stTomboRef")} onVal={(v) => setField("stTomboRef", v)} placeholder="Número se souber..." style={inp} />
             </>

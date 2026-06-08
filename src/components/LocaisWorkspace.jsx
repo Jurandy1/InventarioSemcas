@@ -5,6 +5,7 @@ import { PhotoThumb } from "./PhotoThumb.jsx";
 import { buildOrigemLine, getDisplayDesc, getItemCode } from "./AjusteWorkbench.jsx";
 import { EC, SC } from "../constants/inventory.js";
 import { canDeleteLocal, countFoundInLocal } from "../utils/inventorySession.js";
+import { sortByDataNF, sortLocaisByNewestNf } from "../utils/itemHelpers.js";
 import { isItemInventariado } from "../utils/patrimonioId.js";
 import { isSemTomboItem, SEM_TOMBO_BADGE, showFotoManualBadge } from "../utils/semTombo.js";
 
@@ -63,9 +64,18 @@ export function LocaisWorkspace({
       if (activeUnitIds.size && f.unidadeId && !activeUnitIds.has(f.unidadeId)) continue;
       out.push({ id, f });
     }
-    out.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    out.sort((a, b) => {
+      const itA = itemById.get(a.id) || itemById.get(a.f?.patrimonioId || "");
+      const itB = itemById.get(b.id) || itemById.get(b.f?.patrimonioId || "");
+      return sortByDataNF(itA, itB);
+    });
     return out;
-  }, [foundMap, localSelecionadoId, activeUnitIds]);
+  }, [foundMap, localSelecionadoId, activeUnitIds, itemById]);
+
+  const locaisOrdenados = useMemo(
+    () => sortLocaisByNewestNf(locais, foundMap, itemById, [...activeUnitIds]),
+    [locais, foundMap, itemById, activeUnitIds]
+  );
 
   const pendentes = useMemo(() => {
     const out = [];
@@ -74,6 +84,8 @@ export function LocaisWorkspace({
         if (!isItemInventariado(i.id, foundSet)) out.push({ ...i, unidadeId: u.id, unidadeNome: u.nome });
       }
     }
+    out.sort(sortByDataNF);
+    out.sort(sortByDataNF);
     return out;
   }, [unidadesAtivas, foundSet]);
 
@@ -95,6 +107,7 @@ export function LocaisWorkspace({
         if (out.length >= 40) break;
       }
     }
+    out.sort(sortByDataNF);
     return out;
   }, [pendentes, localAddSearch]);
 
@@ -246,7 +259,7 @@ export function LocaisWorkspace({
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(280px, 1fr))", gap: 10 }}>
-          {locais.map((l) => {
+          {locaisOrdenados.map((l) => {
             const c = countFoundInLocal(foundMap, l.id, [...activeUnitIds]);
             return (
               <div key={l.id} style={{ ...cd, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
