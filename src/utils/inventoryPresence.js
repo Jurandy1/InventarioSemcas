@@ -1,17 +1,27 @@
 import { fsDel, fsGetAll, fsSet } from "../services/firebase.js";
-import { getFirebaseSession } from "../services/firebase.js";
+import { normalizePatrimonioId } from "./patrimonioId.js";
 
 const STALE_MS = 3 * 60 * 1000;
 
-export async function pingInventoryPresence({ uid, nome, email, unidadeIds = [] }) {
+export async function pingInventoryPresence({
+  uid,
+  nome,
+  email,
+  unidadeIds = [],
+  itemEmEdicao = null,
+  itemDescricao = "",
+}) {
   if (!uid) return;
   const ids = Array.isArray(unidadeIds) ? unidadeIds.filter(Boolean) : [];
+  const itemId = itemEmEdicao ? String(itemEmEdicao).trim() : "";
   await fsSet("presenca_inventario", uid, {
     uid,
     nome: nome || "",
     email: email || "",
     unidadeIds: ids,
     ultimoPing: new Date().toISOString(),
+    itemEmEdicao: itemId || "",
+    itemDescricao: itemId ? String(itemDescricao || "").trim() : "",
   });
 }
 
@@ -41,13 +51,38 @@ export async function loadActiveInventors(unidadeIds = [], { excludeUid = "" } =
     if (!ping || now - ping > STALE_MS) continue;
     const units = Array.isArray(d.unidadeIds) ? d.unidadeIds : [];
     if (!units.some((uid) => ids.has(uid))) continue;
+    const itemEmEdicao = String(d.itemEmEdicao || "").trim();
     out.push({
       uid: d.uid,
       nome: d.nome || d.email || "Inventariante",
+      email: d.email || "",
       ultimoPing: d.ultimoPing,
+      itemEmEdicao: itemEmEdicao || null,
+      itemDescricao: String(d.itemDescricao || "").trim(),
     });
   }
   return out.sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+}
+
+/** Quem está editando este item (outro usuário). */
+export function getTeamMemberEditingItem(teamOnline = [], itemId, excludeUid = "") {
+  const norm = normalizePatrimonioId(itemId);
+  if (!norm) return null;
+  for (const t of teamOnline) {
+    if (t.uid === excludeUid) continue;
+    const theirs = normalizePatrimonioId(t.itemEmEdicao || "");
+    if (theirs && theirs === norm) return t;
+  }
+  return null;
+}
+
+export function buildReservedByItemMap(teamOnline = []) {
+  const map = new Map();
+  for (const t of teamOnline) {
+    const id = normalizePatrimonioId(t.itemEmEdicao || "");
+    if (id) map.set(id, t);
+  }
+  return map;
 }
 
 export function collectRecentInventors(foundMap, unidadeIds = [], windowMs = 60 * 60 * 1000) {

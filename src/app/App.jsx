@@ -3,7 +3,7 @@ import { Badge } from "../components/Badge.jsx";
 import { CameraModal } from "../components/CameraModal.jsx";
 import { TArea, TInput } from "../components/FormFields.jsx";
 import { EC, ESTADOS, PER_PAGE, SC, SITUACOES } from "../constants/inventory.js";
-import { clearFirebaseSession, fsDel, fsGetAll, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken, obterInventariantePorUid, gerarLinkConviteInventariante } from "../services/firebase.js";
+import { clearFirebaseSession, fsDel, fsGetAll, fsGetDoc, fsSet, isFirebaseConfigured, setFirebaseSession, fbLogin, fbRegister, refreshAuthToken, obterInventariantePorUid, gerarLinkConviteInventariante } from "../services/firebase.js";
 import { getDisplayPhotoUrl, uploadPhotos, isStorageOk, deletePhoto } from "../services/storage.js";
 import { generateQRCode } from "../services/qr-service.js";
 import { criarBackupManual, logAuditoria, setupRealtimeSync } from "../services/audit.js";
@@ -17,7 +17,7 @@ import { defaultEstadoForItem, inferEspecieFromDesc, parseBrDate, sortByDataNF }
 import { detectTombosDuplicados } from "../utils/tomboDup.js";
 import { buildFormSnapshot, buildItemSnapshot, clearUiResume, loadUiResume, saveUiResume } from "../utils/uiResume.js";
 import { filterLocaisForSession, mergeFoundRecords, resolveUnitForItem } from "../utils/inventorySession.js";
-import { clearInventoryPresence, loadActiveInventors, pingInventoryPresence } from "../utils/inventoryPresence.js";
+import { clearInventoryPresence, getTeamMemberEditingItem, loadActiveInventors, pingInventoryPresence } from "../utils/inventoryPresence.js";
 import { isSemTomboItem } from "../utils/semTombo.js";
 import { getFoundEntry, isItemInventariado } from "../utils/patrimonioId.js";
 import { rankTombosForAjuste } from "../utils/ajusteMatch.js";
@@ -105,9 +105,11 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const [imgViewSrc, setImgViewSrc] = useState(null);
   const [overlayBackdropSuppressMs, setOverlayBackdropSuppressMs] = useState(0);
   const [teamOnline, setTeamOnline] = useState([]);
+  const [saveConflict, setSaveConflict] = useState(null);
   const [finalizadoEdit, setFinalizadoEdit] = useState(null);
 
   const formRef = useRef({});
+  const editingItemRef = useRef(null);
   const manualPatrimonioRef = useRef(null);
   const resumeRestoredRef = useRef(false);
   const cameraTargetRef = useRef(null);
@@ -408,11 +410,14 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
     const unitIds = activeUnitIds;
     const ping = () => {
+      const item = editingItemRef.current;
       pingInventoryPresence({
         uid: auth.logado.uid,
         nome: auth.logado.nome,
         email: auth.logado.email,
         unidadeIds: unitIds,
+        itemEmEdicao: item?.id || null,
+        itemDescricao: item ? String(item.descricao || item.especie || item.id || "").trim() : "",
       }).catch(() => {});
     };
 
@@ -423,7 +428,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         const others = await loadActiveInventors(unitIds, { excludeUid: auth.logado.uid });
         setTeamOnline(others);
       } catch {}
-    }, 30000);
+    }, 20000);
     loadActiveInventors(unitIds, { excludeUid: auth.logado.uid }).then(setTeamOnline).catch(() => {});
 
     return () => {
@@ -438,9 +443,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     const paused = inventario.invSubTab === "inventariar" && inventario.unidadesAtivas.length > 0;
     if (!paused) updateQueueStatus();
 
-    const onInventarioChange = paused
-      ? null
-      : async (docs) => {
+    const onInventarioChange = async (docs) => {
           const incoming = docs.map((d) => normalizeFoundRecord({ ...d, patrimonioId: d.patrimonioId || d._id }));
           const prev = found.foundRef.current || [];
           const scopeItems =
@@ -473,10 +476,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
           }
         };
 
-    const unsub = setupRealtimeSync(
-      activeUnitIds.length ? activeUnitIds : unidadeAtiva?.id,
-      onInventarioChange,
-      async (docs) => {
+    const onLocaisChange = paused
+      ? null
+      : async (docs) => {
         const incoming = docs.map((d) => ({ ...d, id: d._id || d.id }));
         const prev = locais.locaisRef.current || [];
         const nextLocais = mergeLocaisRecords(prev, incoming);
@@ -495,9 +497,16 @@ function OrganizedApp({ firebaseOk, isProd }) {
           locais.setLocais(nextLocais);
           await setCachedData("locais", nextLocais);
         }
-      },
+      };
+
+    const unsub = setupRealtimeSync(
+      activeUnitIds.length ? activeUnitIds : unidadeAtiva?.id,
+      onInventarioChange,
+      onLocaisChange,
       null,
-      { inventarioMs: 45000, locaisMs: 90000 }
+      paused
+        ? { inventarioMs: 60000, locaisMs: 999999999 }
+        : { inventarioMs: 15000, locaisMs: 30000 }
     );
 
     return () => {
@@ -705,9 +714,72 @@ function OrganizedApp({ firebaseOk, isProd }) {
     setGlobalSearching(false);
   };
 
+  const releaseEditingPresence = React.useCallback(() => {
+    editingItemRef.current = null;
+    if (!auth.logado?.uid || inventario.unidadesAtivas.length === 0) return;
+    pingInventoryPresence({
+      uid: auth.logado.uid,
+      nome: auth.logado.nome,
+      email: auth.logado.email,
+      unidadeIds: activeUnitIds,
+      itemEmEdicao: null,
+      itemDescricao: "",
+    }).catch(() => {});
+  }, [auth.logado?.uid, auth.logado?.nome, auth.logado?.email, activeUnitIds, inventario.unidadesAtivas.length]);
+
+  const closeDetModal = React.useCallback(() => {
+    revokeBlobUrls(formRef.current.detNewBase64 || []);
+    clearUiResume();
+    releaseEditingPresence();
+    setModal(null);
+  }, [releaseEditingPresence]);
+
+  const applyServerEntryToDetForm = React.useCallback(
+    (serverEntry) => {
+      const item = formRef.current.detItem;
+      if (!item || !serverEntry) return;
+      formRef.current.detEstado = serverEntry.estado || formRef.current.detEstado;
+      formRef.current.detSituacao = serverEntry.situacao || formRef.current.detSituacao;
+      formRef.current.detLocal = serverEntry.localId || formRef.current.detLocal;
+      formRef.current.detObs = serverEntry.obs || "";
+      formRef.current.detMarca = serverEntry.marca || item.marca || "";
+      formRef.current.detOrigem = serverEntry.origem || formRef.current.detOrigem;
+      formRef.current.detExistingUrls = serverEntry.fotoUrls || [];
+      formRef.current.detNewBase64 = [];
+      formRef.current.detDescricao = serverEntry.descricaoEdit || item.descricao || "";
+      formRef.current.detEspecie = serverEntry.especieEdit || item.especie || "";
+      formRef.current.detPermutaDesc = serverEntry.permutaDesc || "";
+      formRef.current.detPermutaMarca = serverEntry.permutaMarca || "";
+      formRef.current.detPermutaEstado = serverEntry.permutaEstado || "Bom";
+      formRef.current.detTomboRef = serverEntry.tomboReferencia || "";
+      formRef.current.detServerTs = serverEntry.ultimaAtualizacao || null;
+      formRef.current.detServerEmail = serverEntry.email || "";
+      formRef.current.detForceWrite = false;
+      const nextFound = (found.foundRef.current || []).slice();
+      const idx = nextFound.findIndex((f) => (f.patrimonioId || f._id) === item.id);
+      const merged = { ...serverEntry, _id: item.id, patrimonioId: item.id };
+      if (idx >= 0) nextFound[idx] = merged;
+      else nextFound.push(merged);
+      found.setFound(nextFound);
+      bumpFt();
+    },
+    [found]
+  );
+
   const openDetModal = (item, forceLocalId) => {
     const f = getFoundEntry(item.id, found.foundMap);
     const estadoDefault = f?.estado || defaultEstadoForItem(item);
+    editingItemRef.current = item;
+    if (auth.logado?.uid && inventario.unidadesAtivas.length > 0) {
+      pingInventoryPresence({
+        uid: auth.logado.uid,
+        nome: auth.logado.nome,
+        email: auth.logado.email,
+        unidadeIds: activeUnitIds,
+        itemEmEdicao: item.id,
+        itemDescricao: getDisplayDesc(item, f),
+      }).catch(() => {});
+    }
     formRef.current = {
       detItem: item,
       detEstado: estadoDefault,
@@ -725,6 +797,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
       detPermutaMarca: f?.permutaMarca || "",
       detPermutaEstado: f?.permutaEstado || "Bom",
       detTomboRef: f?.tomboReferencia || "",
+      detServerTs: f?.ultimaAtualizacao || null,
+      detServerEmail: f?.email || "",
+      detForceWrite: false,
     };
     bumpFt();
     resumeRestoredRef.current = true;
@@ -738,13 +813,17 @@ function OrganizedApp({ firebaseOk, isProd }) {
   };
 
   const openNextPending = React.useCallback(() => {
-    const next = sortedFiltered.find((i) => !isItemInventariado(i.id, found.foundSet));
+    const myUid = auth.logado?.uid || "";
+    const next = sortedFiltered.find((i) => {
+      if (isItemInventariado(i.id, found.foundSet)) return false;
+      return !getTeamMemberEditingItem(teamOnline, i.id, myUid);
+    });
     if (!next) {
-      showT("Nenhum item pendente nos filtros atuais");
+      showT("Nenhum item pendente nos filtros atuais (itens em uso por colegas são ignorados)");
       return;
     }
     openDetModal(next);
-  }, [sortedFiltered, found.foundSet, showT]);
+  }, [sortedFiltered, found.foundSet, showT, teamOnline, auth.logado?.uid]);
 
   const openCamera = (target) => {
     cameraTargetRef.current = target;
@@ -780,7 +859,12 @@ function OrganizedApp({ firebaseOk, isProd }) {
       detPermutaDesc: fs.detPermutaDesc || f?.permutaDesc || "",
       detPermutaMarca: fs.detPermutaMarca || f?.permutaMarca || "",
       detPermutaEstado: fs.detPermutaEstado || f?.permutaEstado || "Bom",
+      detTomboRef: fs.detTomboRef || f?.tomboReferencia || "",
+      detServerTs: f?.ultimaAtualizacao || null,
+      detServerEmail: f?.email || "",
+      detForceWrite: false,
     };
+    if (formRef.current.detItem) editingItemRef.current = formRef.current.detItem;
   };
 
   const onCameraCapture = async (photoArray) => {
@@ -874,7 +958,12 @@ function OrganizedApp({ firebaseOk, isProd }) {
         detPermutaDesc: fs.detPermutaDesc || f?.permutaDesc || "",
         detPermutaMarca: fs.detPermutaMarca || f?.permutaMarca || "",
         detPermutaEstado: fs.detPermutaEstado || f?.permutaEstado || "Bom",
+        detTomboRef: fs.detTomboRef || f?.tomboReferencia || "",
+        detServerTs: f?.ultimaAtualizacao || null,
+        detServerEmail: f?.email || "",
+        detForceWrite: false,
       };
+      editingItemRef.current = item;
 
       if (pending.length && resume.cameraTarget === "manual") {
         formRef.current.manPhotos = pending;
@@ -1089,7 +1178,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
 
     for (const it of newItems) {
-      const created = await found.markFound({
+      const createdResult = await found.markFound({
         itemId: it.id,
         estado: getField("manEstado") || "Bom",
         situacao: getField("manSituacao") || "Em uso",
@@ -1101,7 +1190,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         unidadeAtiva,
         logado: auth.logado,
       });
-      await logAuditoria("create", "manuais", it.id, null, { ...it, unidadeId: unidadeAtiva?.id, fotoUrls, inventario: created });
+      await logAuditoria("create", "manuais", it.id, null, { ...it, unidadeId: unidadeAtiva?.id, fotoUrls, inventario: createdResult?.entry });
     }
 
     setModal(null);
@@ -1428,6 +1517,16 @@ function OrganizedApp({ firebaseOk, isProd }) {
     if (isItemInventariado(realId, found.foundSet)) {
       showT("Este tombo já foi inventariado");
       return;
+    }
+
+    if (navigator.onLine) {
+      try {
+        const serverDest = await fsGetDoc("inventario", realId);
+        if (serverDest?.ultimaAtualizacao || serverDest?.patrimonioId) {
+          showT("Este tombo já foi inventariado por outro usuário");
+          return;
+        }
+      } catch {}
     }
 
     const stFound = getFoundEntry(stId, found.foundMap);
@@ -1832,6 +1931,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             onOpenNextPending={openNextPending}
             campanhaFechada={campanhaState.fechada}
             teamOnline={teamOnline}
+            myUid={auth.logado?.uid || ""}
             onQuickAddLocal={async (nome) => {
               const entry = await createSessionLocal(nome);
               if (entry) showT("Local da sessão adicionado");
@@ -2060,7 +2160,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         <Overlay
           isMobile={isMob}
           suppressBackdropMs={isMob ? Math.max(overlayBackdropSuppressMs, 1200) : overlayBackdropSuppressMs}
-          onClose={() => { revokeBlobUrls(formRef.current.detNewBase64 || []); clearUiResume(); setModal(null); }}
+          onClose={closeDetModal}
         >
           <ItemDetailModal
             item={formRef.current.detItem}
@@ -2077,9 +2177,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
             sugestoes={sugestoes}
             onOpenCamera={openCamera}
             onViewImage={onViewImage}
-            onClose={() => { revokeBlobUrls(formRef.current.detNewBase64 || []); clearUiResume(); setModal(null); }}
+            onClose={closeDetModal}
             onSave={() => {
               if (!assertPodeEditar()) return;
+              formRef.current.detForceWrite = false;
               found.saveDetail({
                 formRef,
                 getField,
@@ -2087,16 +2188,65 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 itemUnit: resolveItemUnit(formRef.current.detItem),
                 logado: auth.logado,
                 updateQueueStatus,
-                closeModal: () => { revokeBlobUrls(formRef.current.detNewBase64 || []); clearUiResume(); setModal(null); },
+                closeModal: closeDetModal,
+                onConflict: (serverEntry) => {
+                  setSaveConflict({
+                    serverEntry,
+                    item: formRef.current.detItem,
+                    who: serverEntry?.usuario || serverEntry?.user || "outro usuário",
+                    when: serverEntry?.ultimaAtualizacao || serverEntry?.hora || "",
+                  });
+                },
               });
             }}
             onDelete={async () => {
               await found.deleteFound(formRef.current.detItem.id);
-              revokeBlobUrls(formRef.current.detNewBase64 || []);
-              setModal(null);
+              closeDetModal();
               showT("Removido");
             }}
           />
+        </Overlay>
+      )}
+
+      {saveConflict && (
+        <Overlay isMobile={isMob} onClose={() => setSaveConflict(null)}>
+          <div>
+            <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700, color: "#b45309" }}>Conflito ao salvar</h2>
+            <p style={{ margin: "0 0 16px", fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
+              <strong>{saveConflict.who}</strong> salvou este item
+              {saveConflict.when ? ` (${new Date(saveConflict.when).toLocaleString("pt-BR")})` : ""}. Recarregar os dados do servidor?
+            </p>
+            <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+              <button
+                onClick={() => {
+                  applyServerEntryToDetForm(saveConflict.serverEntry);
+                  setSaveConflict(null);
+                  showT("Dados recarregados do servidor");
+                }}
+                style={{ ...bp, flex: 1 }}
+              >
+                Recarregar
+              </button>
+              <button
+                onClick={() => {
+                  formRef.current.detForceWrite = true;
+                  setSaveConflict(null);
+                  found.saveDetail({
+                    formRef,
+                    getField,
+                    unidadeAtiva: resolveItemUnit(formRef.current.detItem),
+                    itemUnit: resolveItemUnit(formRef.current.detItem),
+                    logado: auth.logado,
+                    updateQueueStatus,
+                    closeModal: closeDetModal,
+                  });
+                }}
+                style={{ ...bs, flex: 1, color: "#b45309", borderColor: "#fcd34d" }}
+              >
+                Salvar mesmo assim
+              </button>
+            </div>
+          </div>
         </Overlay>
       )}
 

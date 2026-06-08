@@ -5,6 +5,7 @@ import { Badge } from "../components/Badge.jsx";
 import { EC, SC } from "../constants/inventory.js";
 import { countFoundInLocal } from "../utils/inventorySession.js";
 import { isItemInventariado } from "../utils/patrimonioId.js";
+import { getTeamMemberEditingItem } from "../utils/inventoryPresence.js";
 import { isAjustePendente, isSemTomboItem, SEM_TOMBO_BADGE, showFotoManualBadge } from "../utils/semTombo.js";
 import { PhotoThumb } from "../components/PhotoThumb.jsx";
 import { AjusteWorkbench, buildOrigemLine, getDisplayDesc, getItemCode, TIPO_ENTRADA_BADGE } from "../components/AjusteWorkbench.jsx";
@@ -67,6 +68,7 @@ export function InventarioPage({
   onOpenNextPending,
   campanhaFechada,
   teamOnline,
+  myUid = "",
   locais,
   sessionId,
   onQuickAddLocal,
@@ -435,8 +437,14 @@ export function InventarioPage({
                 <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#166534" }}>
                   Equipe na mesma unidade agora: {teamOnline.map((t) => t.nome).join(", ")}
                 </p>
+                {teamOnline.filter((t) => t.itemEmEdicao).map((t) => (
+                  <p key={t.uid} style={{ margin: "6px 0 0", fontSize: 11, fontWeight: 600, color: "#92400e" }}>
+                    {t.nome} está em: {t.itemDescricao || t.itemEmEdicao}
+                    {t.itemEmEdicao ? ` (Nº ${t.itemEmEdicao})` : ""}
+                  </p>
+                ))}
                 <p style={{ margin: "4px 0 0", fontSize: 10, color: "#15803d", lineHeight: 1.35 }}>
-                  Itens e locais são compartilhados em tempo real. Cada um pode inventariar itens diferentes ao mesmo tempo.
+                  Itens e locais são compartilhados em tempo real. Itens em uso por colegas são pulados em &quot;Próximo pendente&quot;.
                 </p>
               </div>
             )}
@@ -550,16 +558,33 @@ export function InventarioPage({
             {paged.map((item) => {
               const f = foundMap[item.id];
               const isF = !!f;
+              const reservedBy = !isF ? getTeamMemberEditingItem(teamOnline, item.id, myUid) : null;
               const foto = f?.fotoUrls?.[0];
               const displayDesc = getDisplayDesc(item, f);
               const isPermuta = f?.situacao === "Permuta";
               const tipo = item.tipoEntrada || "Próprio";
               const tipoC = TIPO_ENTRADA_BADGE[tipo] || TIPO_ENTRADA_BADGE["Próprio"];
+              const handleOpenItem = () => {
+                if (reservedBy) {
+                  const msg = `${reservedBy.nome} está inventariando este item`;
+                  if (!window.confirm(`${msg}. Abrir mesmo assim?`)) {
+                    showT?.(msg);
+                    return;
+                  }
+                }
+                openDetModal(item);
+              };
               return (
                 <div
                   key={`${item.unidadeId}_${item.id}`}
-                  onClick={() => openDetModal(item)}
-                  style={{ ...cd, cursor: "pointer", border: `1.5px solid ${isPermuta ? "#fcd34d" : isF ? "#bbf7d0" : "#e2e8f0"}`, display: "flex", gap: 12 }}
+                  onClick={handleOpenItem}
+                  style={{
+                    ...cd,
+                    cursor: "pointer",
+                    border: `1.5px solid ${reservedBy ? "#fcd34d" : isPermuta ? "#fcd34d" : isF ? "#bbf7d0" : "#e2e8f0"}`,
+                    display: "flex",
+                    gap: 12,
+                  }}
                 >
                   {foto ? (
                     <PhotoThumb
@@ -608,6 +633,7 @@ export function InventarioPage({
                       ) : (
                         <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
                       )}
+                      {reservedBy && <Badge label={`Em uso — ${reservedBy.nome}`} c={{ bg: "#fef3c7", tx: "#92400e" }} />}
                     </div>
                   </div>
                 </div>

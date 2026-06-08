@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { fsDel, fsGetAll, fsSet } from "../services/firebase.js";
+import { fsDel, fsGetAll, fsGetDoc, fsSet } from "../services/firebase.js";
 import { deletePhoto, isStorageOk, uploadPhotos } from "../services/storage.js";
 import { EVENTOS, notificationService, offlineManager, queueOfflineWithPhotos } from "../services/features.js";
 import { logAuditoria } from "../services/audit.js";
@@ -79,7 +79,25 @@ export function useFound({ showT, applyDescOverride } = {}) {
   }, [syncFoundRef]);
 
   const markFound = useCallback(
-    async ({ itemId, estado, situacao, localId, obs, marca, origem, fotoUrls = [], extras = {}, unidadeAtiva, itemUnit, logado, updateQueueStatus, offlinePhotos = null, localOnly = false }) => {
+    async ({
+      itemId,
+      estado,
+      situacao,
+      localId,
+      obs,
+      marca,
+      origem,
+      fotoUrls = [],
+      extras = {},
+      unidadeAtiva,
+      itemUnit,
+      logado,
+      updateQueueStatus,
+      offlinePhotos = null,
+      localOnly = false,
+      forceWrite = false,
+      serverSinceTs = null,
+    }) => {
       const now = new Date();
       const docId = normalizePatrimonioId(itemId);
       const unit = itemUnit?.id ? itemUnit : unidadeAtiva;
@@ -131,22 +149,45 @@ export function useFound({ showT, applyDescOverride } = {}) {
       };
 
       if (localOnly) {
-        return applyLocal();
+        const saved = await applyLocal();
+        return { conflict: false, entry: saved };
       }
 
       if (!navigator.onLine) {
         await queueOfflineWithPhotos({
           type: "save",
-          data: { collection: "inventario", docId, content: entry },
+          data: {
+            collection: "inventario",
+            docId,
+            content: entry,
+            serverSinceTs: serverSinceTs || entry.ultimaAtualizacao,
+          },
           photos: Array.isArray(offlinePhotos) ? offlinePhotos : null,
           uploadPrefix: docId,
         });
         updateQueueStatus?.();
-        return applyLocal();
+        const saved = await applyLocal();
+        return { conflict: false, entry: saved };
+      }
+
+      if (!forceWrite && navigator.onLine) {
+        try {
+          const server = await fsGetDoc("inventario", docId);
+          if (server?.ultimaAtualizacao && serverSinceTs) {
+            const serverMs = new Date(server.ultimaAtualizacao).getTime();
+            const sinceMs = new Date(serverSinceTs).getTime();
+            const serverEmail = String(server.email || "").trim();
+            const myEmail = String(logado?.email || "").trim();
+            if (serverMs > sinceMs && serverEmail && myEmail && serverEmail !== myEmail) {
+              return { conflict: true, serverEntry: server };
+            }
+          }
+        } catch {}
       }
 
       await fsSet("inventario", docId, entry);
-      return applyLocal();
+      const saved = await applyLocal();
+      return { conflict: false, entry: saved };
     },
     [showT, syncFoundRef]
   );
@@ -165,7 +206,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
   );
 
   const saveDetail = useCallback(
-    async ({ formRef, getField, unidadeAtiva, itemUnit, logado, updateQueueStatus, closeModal }) => {
+    async ({ formRef, getField, unidadeAtiva, itemUnit, logado, updateQueueStatus, closeModal, onConflict }) => {
       const item = formRef.current.detItem;
       if (!item) return;
 
@@ -246,6 +287,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
             docId: item.id,
             content: offlineEntry,
             photoOpId,
+            serverSinceTs: formRef.current.detServerTs || before?.ultimaAtualizacao || null,
           });
           const base = foundRef.current || [];
           const idx = foundPosRef.current.get(item.id);
@@ -280,7 +322,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
           showT?.("Firebase Storage não configurado — fotos não salvas");
         }
 
-        const after = await markFound({
+        const markResult = await markFound({
           itemId: item.id,
           estado: getField("detEstado") || "Bom",
           situacao: situacaoAtual,
@@ -293,7 +335,16 @@ export function useFound({ showT, applyDescOverride } = {}) {
           unidadeAtiva: unit,
           itemUnit: unit,
           logado,
+          forceWrite: !!formRef.current.detForceWrite,
+          serverSinceTs: formRef.current.detServerTs || before?.ultimaAtualizacao || null,
         });
+
+        if (markResult?.conflict) {
+          onConflict?.(markResult.serverEntry);
+          return;
+        }
+
+        const after = markResult?.entry;
 
         await logAuditoria("update", "inventario", item.id, before, after);
         if (descEdit || espEdit) applyDescOverride?.(item.id, descEdit, espEdit);

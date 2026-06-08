@@ -1,4 +1,4 @@
-import { fsDel, fsGetAll, fsSet, fsSetStrict } from "./firebase.js";
+import { fsDel, fsGetAll, fsGetDoc, fsSet, fsSetStrict } from "./firebase.js";
 import { isStorageOk, uploadPhotos } from "./storage.js";
 import { compressPhotoArray } from "../utils/performance.js";
 import { deleteOfflinePhotos, loadOfflinePhotos, saveOfflinePhotos } from "../utils/offlineStore.js";
@@ -104,6 +104,26 @@ export class OfflineManager {
               content.patrimonioId || op.data.docId,
               content.fotoUrls || []
             );
+          }
+          if (op.data.collection === "inventario" && this.isOnline) {
+            try {
+              const server = await fsGetDoc(op.data.collection, op.data.docId);
+              const sinceTs = op.data.serverSinceTs || op.data.content?.ultimaAtualizacao;
+              if (server?.ultimaAtualizacao && sinceTs) {
+                const serverMs = new Date(server.ultimaAtualizacao).getTime();
+                const sinceMs = new Date(sinceTs).getTime();
+                if (serverMs > sinceMs) {
+                  op.status = "discarded";
+                  this.queue = this.queue.filter((o) => o.id !== op.id);
+                  this.persistQueue();
+                  notificationService.notify(EVENTOS.ITEM_ENCONTRADO, {
+                    message: "Alteração local descartada — item já atualizado por outro usuário",
+                    type: "warning",
+                  });
+                  return { success: false, discarded: true };
+                }
+              }
+            } catch {}
           }
           await fsSetStrict(op.data.collection, op.data.docId, content);
           break;

@@ -267,7 +267,9 @@ service cloud.firestore {
 
       allow read: if isAuth();
 
-      allow create, update: if isAuth() && request.auth.uid == uid;
+      allow create, update: if isAuth() && request.auth.uid == uid
+        && (!('itemEmEdicao' in request.resource.data) || request.resource.data.itemEmEdicao is string)
+        && (!('itemDescricao' in request.resource.data) || request.resource.data.itemDescricao is string);
 
       allow delete: if isAuth() && request.auth.uid == uid;
 
