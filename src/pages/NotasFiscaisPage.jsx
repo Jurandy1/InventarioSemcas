@@ -25,6 +25,11 @@ export function NotasFiscaisPage({
   cd,
   bs,
 }) {
+  const [expandedNf, setExpandedNf] = React.useState(null);
+  const [expandedSearch, setExpandedSearch] = React.useState("");
+  const defExpandedSearch = React.useDeferredValue(expandedSearch);
+  const defNfSearch = React.useDeferredValue(nfSearch);
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
@@ -59,7 +64,7 @@ export function NotasFiscaisPage({
       </div>
 
       {(() => {
-        const term = nfSearch.toLowerCase().trim();
+        const term = defNfSearch.toLowerCase().trim();
         const list = nfDataList.filter((n) => {
           const tipoOk = nfTipo === "Todos" || (n.tipoEntrada || "Próprio") === nfTipo;
           const txtOk = !term || String(n.nf || "").toLowerCase().includes(term) || String(n.fornecedor || "").toLowerCase().includes(term);
@@ -113,41 +118,91 @@ export function NotasFiscaisPage({
                     </div>
 
                     <div style={{ display: "grid", gap: 6 }}>
-                      {n.itens.slice(0, 4).map((i) => {
-                        const fEntry = foundMap[i.id];
-                        const isPermutaNF = fEntry?.situacao === "Permuta";
-                        return (
-                          <div
-                            key={i.id}
-                            onClick={() => {
-                              const u = unidades.find((x) => x.id === i.unidadeId);
-                              if (u) saveAtiva(u);
-                              onOpenItem(i);
-                            }}
-                            style={{
-                              display: "flex",
-                              gap: 10,
-                              alignItems: "center",
-                              padding: "8px 10px",
-                              borderRadius: 10,
-                              cursor: "pointer",
-                              border: `1px solid ${isPermutaNF ? "#fcd34d" : foundSet.has(i.id) ? "#bbf7d0" : "#e2e8f0"}`,
-                              background: isPermutaNF ? "#fefce8" : foundSet.has(i.id) ? "#f0fdf4" : "#fff",
-                            }}
-                          >
-                            <div style={{ minWidth: 0 }}>
-                              <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                {getDisplayDesc(i, fEntry)}
-                              </p>
-                              {isPermutaNF && fEntry?.permutaDesc && <p style={{ margin: "1px 0 0", fontSize: 10, color: "#92400e", fontWeight: 700 }}>Permuta real: {fEntry.permutaDesc}</p>}
-                              <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {i.id} · {i.unidadeNome}</p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                      {(() => {
+                        const isExpanded = expandedNf === n.nf;
+                        let displayItens = n.itens;
+                        if (isExpanded) {
+                          const q = defExpandedSearch.trim().toLowerCase();
+                          if (q) {
+                            displayItens = displayItens.filter((i) => {
+                              const fEntry = foundMap[i.id];
+                              const desc = getDisplayDesc(i, fEntry).toLowerCase();
+                              return String(i.id || "").toLowerCase().includes(q) || desc.includes(q);
+                            });
+                          }
+                        } else {
+                          displayItens = displayItens.slice(0, 4);
+                        }
 
-                    {n.itens.length > 4 && <p style={{ margin: "10px 0 0", fontSize: 11, color: "#94a3b8", textAlign: "center" }}>+{n.itens.length - 4} item(ns) nesta NF</p>}
+                        return (
+                          <>
+                            {isExpanded && (
+                              <div style={{ marginBottom: 4 }}>
+                                <TInput
+                                  initial={expandedSearch}
+                                  onVal={setExpandedSearch}
+                                  placeholder="Buscar item nesta NF..."
+                                  style={{ ...inp, padding: "6px 10px", fontSize: 12 }}
+                                />
+                              </div>
+                            )}
+                            <div style={{ maxHeight: isExpanded ? 300 : "none", overflowY: isExpanded ? "auto" : "visible", display: "grid", gap: 6, paddingRight: isExpanded ? 4 : 0 }}>
+                              {displayItens.map((i) => {
+                                const fEntry = foundMap[i.id];
+                                const isPermutaNF = fEntry?.situacao === "Permuta";
+                                return (
+                                  <div
+                                    key={i.id}
+                                    onClick={() => {
+                                      const u = unidades.find((x) => x.id === i.unidadeId);
+                                      if (u) saveAtiva(u);
+                                      onOpenItem(i);
+                                    }}
+                                    style={{
+                                      display: "flex",
+                                      gap: 10,
+                                      alignItems: "center",
+                                      padding: "8px 10px",
+                                      borderRadius: 10,
+                                      cursor: "pointer",
+                                      border: `1px solid ${isPermutaNF ? "#fcd34d" : foundSet.has(i.id) ? "#bbf7d0" : "#e2e8f0"}`,
+                                      background: isPermutaNF ? "#fefce8" : foundSet.has(i.id) ? "#f0fdf4" : "#fff",
+                                    }}
+                                  >
+                                    <div style={{ minWidth: 0 }}>
+                                      <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                        {getDisplayDesc(i, fEntry)}
+                                      </p>
+                                      {isPermutaNF && fEntry?.permutaDesc && <p style={{ margin: "1px 0 0", fontSize: 10, color: "#92400e", fontWeight: 700 }}>Permuta real: {fEntry.permutaDesc}</p>}
+                                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {i.id} · {i.unidadeNome}</p>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              {isExpanded && displayItens.length === 0 && (
+                                <p style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", margin: "10px 0" }}>Nenhum item corresponde à busca.</p>
+                              )}
+                            </div>
+                            
+                            {n.itens.length > 4 && (
+                              <button
+                                onClick={() => {
+                                  if (isExpanded) {
+                                    setExpandedNf(null);
+                                  } else {
+                                    setExpandedNf(n.nf);
+                                    setExpandedSearch("");
+                                  }
+                                }}
+                                style={{ ...bs, width: "100%", marginTop: 4, padding: "6px 0", fontSize: 11, border: "none", background: "#f1f5f9", color: "#475569", fontWeight: 700 }}
+                              >
+                                {isExpanded ? "Fechar" : `Ver todos os ${n.itens.length} itens`}
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
                 );
               })}

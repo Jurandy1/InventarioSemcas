@@ -7,7 +7,9 @@ import {
   rejeitarInventariante,
   desativarInventariante,
   gerarLinkConviteInventariante,
+  sincronizarIndiceCadastro,
 } from "../services/firebase.js";
+import { acharDuplicatasNaLista } from "../utils/cadastroDedup.js";
 
 export function InventariantesTab({ showT, isMob }) {
   const [pendentes, setPendentes] = useState([]);
@@ -22,6 +24,7 @@ export function InventariantesTab({ showT, isMob }) {
   const [linkGerado, setLinkGerado] = useState(null);
   const [gerando, setGerando] = useState(false);
   const [copiado, setCopiado] = useState(false);
+  const [duplicataFlags, setDuplicataFlags] = useState(new Map());
 
   const carregar = async () => {
     setLoading(true);
@@ -36,6 +39,8 @@ export function InventariantesTab({ showT, isMob }) {
       setAprovados(a);
       setRejeitados(r);
       setDesativados(d);
+      setDuplicataFlags(acharDuplicatasNaLista([...p, ...a]));
+      sincronizarIndiceCadastro().catch((e) => console.warn("Sincronização do índice de cadastro:", e));
     } catch (e) {
       console.error(e);
       showT("Erro ao carregar inventariantes");
@@ -135,11 +140,16 @@ export function InventariantesTab({ showT, isMob }) {
     </div>
   );
 
-  const InvCard = ({ inv, actions }) => (
-    <div style={{ ...cd, border: `1.5px solid ${statusColor[inv.status]?.bg || "#e2e8f0"}` }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+  const InvCard = ({ inv, actions, duplicataMsg }) => (
+    <div style={{ ...cd, border: `1.5px solid ${duplicataMsg ? "#fcd34d" : statusColor[inv.status]?.bg || "#e2e8f0"}` }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{inv.nome || "—"}</p>
+          {duplicataMsg && (
+            <p style={{ margin: "4px 0 0", fontSize: 11, color: "#b45309", fontWeight: 700 }}>
+              ⚠ {duplicataMsg}
+            </p>
+          )}
           <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>{inv.email}</p>
           {inv.matricula && <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>Matrícula: {inv.matricula}</p>}
           {inv.cargo && <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>{inv.cargo}</p>}
@@ -226,7 +236,11 @@ export function InventariantesTab({ showT, isMob }) {
           pendentes.length === 0
             ? <Empty msg="Nenhum inventariante aguardando aprovação" />
             : pendentes.map((inv) => (
-                <InvCard key={inv.uid || inv._id} inv={inv} actions={[
+                <InvCard
+                  key={inv.uid || inv._id}
+                  inv={inv}
+                  duplicataMsg={duplicataFlags.get(inv.uid || inv._id)}
+                  actions={[
                   { label: "Aprovar", onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("aprovar"); } },
                   { label: "Rejeitar", danger: true, onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("rejeitar"); } },
                 ]} />
@@ -236,7 +250,11 @@ export function InventariantesTab({ showT, isMob }) {
           aprovados.length === 0
             ? <Empty msg="Nenhum inventariante aprovado ainda" />
             : aprovados.map((inv) => (
-                <InvCard key={inv.uid || inv._id} inv={inv} actions={[
+                <InvCard
+                  key={inv.uid || inv._id}
+                  inv={inv}
+                  duplicataMsg={duplicataFlags.get(inv.uid || inv._id)}
+                  actions={[
                   { label: "Desativar", danger: true, onClick: () => { setSelected(inv); setForm({ motivo: "", observacoes: "" }); setModal("desativar"); } },
                 ]} />
               ))
@@ -293,7 +311,7 @@ export function InventariantesTab({ showT, isMob }) {
               <div style={{ background: "#fff", border: "1px solid #d1fae5", borderRadius: 8, padding: "10px 12px", marginBottom: 10, wordBreak: "break-all", fontSize: 12, fontFamily: "monospace", color: "#064e3b" }}>
                 {linkGerado.link}
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
                   onClick={() => copiarLink(linkGerado.link)}
                   style={{ ...bp, flex: 1, fontSize: 13, background: copiado ? "#16a34a" : "#1351B4" }}
@@ -334,7 +352,7 @@ export function InventariantesTab({ showT, isMob }) {
             placeholder="Ex: Aprovado após verificação com RH..."
             style={{ ...inp, resize: "none" }}
           />
-          <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
+          <div style={{ display: "flex", gap: 9, marginTop: 16, flexWrap: "wrap" }}>
             <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>Cancelar</button>
             <button onClick={handleAprovar} style={{ ...bp, flex: 1, background: "#16a34a" }}>Confirmar aprovação</button>
           </div>

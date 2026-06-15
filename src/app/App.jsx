@@ -342,7 +342,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     const localIds = [
       ...new Set(
         Object.values(found.foundMap || {})
-          .filter((f) => f?.localId && (!f.unidadeId || ids.includes(f.unidadeId)))
+          .filter((f) => f?.localId)
           .map((f) => f.localId)
       ),
     ];
@@ -2345,7 +2345,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
           suppressBackdropMs={isMob ? Math.max(overlayBackdropSuppressMs, 400) : overlayBackdropSuppressMs}
           onClose={() => { revokeBlobUrls(formRef.current.manPhotos || []); clearUiResume(); setModal(null); }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
             <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Adicionar Manual</h2>
             <button onClick={() => { revokeBlobUrls(formRef.current.manPhotos || []); clearUiResume(); setModal(null); }} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer", padding: "4px 8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
               Fechar
@@ -2540,7 +2540,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
               <span style={{ fontSize: 12, color: "#64748b" }}>Adicionar fotos</span>
             </button>
           )}
-          <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
+          <div style={{ display: "flex", gap: 9, marginTop: 16, flexWrap: "wrap" }}>
             <button onClick={() => { revokeBlobUrls(formRef.current.manPhotos || []); clearUiResume(); setModal(null); }} style={{ ...bs, flex: 1 }}>
               Cancelar
             </button>
@@ -2604,7 +2604,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
               <p style={{ margin: 0, fontSize: 11, color: "#0f172a", wordBreak: "break-all", lineHeight: 1.4 }}>{invConviteLink}</p>
             </div>
           ) : null}
-          <div style={{ display: "flex", gap: 9 }}>
+          <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
             <button
               onClick={() => {
                 setModal(null);
@@ -2691,7 +2691,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             <p style={{ color: "#64748b", margin: "0 0 12px", fontSize: 13 }}>
               {getField("coordNome")} · matr. {getField("coordMatricula")}
             </p>
-            <img src={qrCodeUrl} alt="QR Code" style={{ width: 240, height: 240, margin: "0 auto", border: "1px solid #e2e8f0", borderRadius: 8 }} />
+            <img src={qrCodeUrl} alt="QR Code" style={{ width: 240, maxWidth: "100%", height: "auto", margin: "0 auto", border: "1px solid #e2e8f0", borderRadius: 8 }} />
             {coordRegistroLink && (
               <div style={{ marginTop: 12, textAlign: "left", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10 }}>
                 <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#475569" }}>Link de cadastro (válido por 7 dias)</p>

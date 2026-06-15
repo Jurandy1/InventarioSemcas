@@ -329,6 +329,26 @@ service cloud.firestore {
 
 
 
+    match /cadastro_indice/{docId} {
+
+      allow get: if true;
+
+      allow list: if false;
+
+      allow create: if isAuth() && request.resource.data.uid == request.auth.uid;
+
+      allow update: if isAdminUser() || (
+        isAuth() &&
+        resource.data.uid == request.auth.uid &&
+        request.resource.data.uid == request.auth.uid
+      );
+
+      allow delete: if isAdminUser();
+
+    }
+
+
+
     match /{document=**} {
 
       allow read, write: if isAdminUser();

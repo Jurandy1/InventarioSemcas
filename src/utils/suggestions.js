@@ -1,3 +1,5 @@
+import sugestoesDoacao from "../data/sugestoesDoacao.json";
+
 function stripDiacritics(s) {
   const str = String(s);
   if (typeof str.normalize === "function") {
@@ -26,7 +28,7 @@ function safeLocaleCompare(a, b) {
   }
 }
 
-function uniqueSorted(values, limit = 600) {
+function uniqueSorted(values, limit = 1200) {
   const seen = new Set();
   const out = [];
   for (const v of values) {
@@ -44,7 +46,8 @@ function uniqueSorted(values, limit = 600) {
 }
 
 export function gerarSugestoesDescricao(todosItens) {
-  return uniqueSorted((todosItens || []).map((i) => i?.descricao));
+  const extras = sugestoesDoacao.map(s => s.descricao);
+  return uniqueSorted([...extras, ...(todosItens || []).map((i) => i?.descricao)]);
 }
 
 export function gerarSugestoesEspecie(todosItens) {
@@ -56,7 +59,8 @@ export function gerarSugestoesMarca(todosItens) {
 }
 
 export function gerarSugestoesFornecedor(todosItens) {
-  return uniqueSorted((todosItens || []).map((i) => i?.fornecedor));
+  const extras = sugestoesDoacao.map(s => s.origem);
+  return uniqueSorted([...extras, ...(todosItens || []).map((i) => i?.fornecedor)]);
 }
 
 export function gerarTodasSugestoes(todosItens) {

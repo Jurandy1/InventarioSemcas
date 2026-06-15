@@ -57,6 +57,7 @@ body {
   line-height: 1.5;
   color: var(--gov-text);
   background-color: var(--gov-bg);
+  overscroll-behavior-y: none;
 }
 
 h1 { font-size: clamp(22px, 4vw, 28px); font-weight: 700; color: var(--gov-primary-dark); }
@@ -547,10 +548,11 @@ p {
   width: 100%;
   max-height: 90dvh;
   overflow-y: auto;
-  padding: 24px;
+  padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px));
   border: 1px solid var(--gov-border-light);
   box-shadow: var(--gov-shadow-md);
   border-radius: var(--gov-radius) var(--gov-radius) 0 0;
+  overscroll-behavior-y: contain;
 }
 
 @media (min-width: 769px) {

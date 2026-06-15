@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { getCategoryGroup } from "../app/categories.js";
 import { SmartImg } from "../components/SmartImg.jsx";
 import { TInput } from "../components/FormFields.jsx";
 import { Badge } from "../components/Badge.jsx";
@@ -79,6 +80,8 @@ export function InventarioPage({
   showT,
   onViewImage,
 }) {
+  const [viewMode, setViewMode] = useState("padrao");
+  const [expandedCats, setExpandedCats] = useState({});
   const [unidadeSearch, setUnidadeSearch] = useState("");
   const [localNomeRapido, setLocalNomeRapido] = useState("");
   const [localSelecionadoId, setLocalSelecionadoId] = useState("");
@@ -138,21 +141,29 @@ export function InventarioPage({
     const out = [];
     for (const it of pendentes) {
       if (
-        String(it.id || "").toLowerCase().includes(q) ||
-        String(it.patrimonioLabel || "").toLowerCase().includes(q) ||
-        String(it.descricao || "").toLowerCase().includes(q) ||
-        String(it.especie || "").toLowerCase().includes(q) ||
-        String(it.fornecedor || "").toLowerCase().includes(q) ||
-        String(it.marca || "").toLowerCase().includes(q) ||
-        String(it.nf || "").toLowerCase().includes(q)
+        (it.especie || "").toLowerCase().includes(q) ||
+        (it.descricao || "").toLowerCase().includes(q) ||
+        (it.patrimonioLabel || "").toLowerCase().includes(q) ||
+        (it.id || "").toLowerCase().includes(q)
       ) {
         out.push(it);
-        if (out.length >= 40) break;
       }
     }
-    out.sort(sortByDataNF);
-    return out;
+    return out.slice(0, 40);
   }, [pendentes, localAddSearch]);
+
+  const groupedCategories = useMemo(() => {
+    if (viewMode !== "categorias") return [];
+    const groups = {};
+    for (const item of filtered) {
+      const cat = getCategoryGroup(item.especie);
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(item);
+    }
+    return Object.entries(groups).map(([cat, items]) => ({ cat, items })).sort((a, b) => a.cat.localeCompare(b.cat));
+  }, [viewMode, filtered]);
+
+  const toggleCat = (cat) => setExpandedCats(prev => ({ ...prev, [cat]: !prev[cat] }));
 
   const ajusteCount = useMemo(() => {
     let n = 0;
@@ -167,7 +178,7 @@ export function InventarioPage({
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
         <button
           onClick={() => setInvSubTab("inventariar")}
           style={{
@@ -514,7 +525,7 @@ export function InventarioPage({
             <p style={{ margin: "0 0 10px", fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>
               Cada unidade cadastra os locais desta sessão. Só aparecem salas criadas agora — locais de outras unidades ou sessões anteriores não são listados.
             </p>
-            <div style={{ display: "flex", gap: 8, marginBottom: locais.length > 0 ? 10 : 0 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: locais.length > 0 ? 10 : 0 }}>
               <input
                 value={localNomeRapido}
                 onChange={(e) => setLocalNomeRapido(e.target.value)}
@@ -595,8 +606,13 @@ export function InventarioPage({
             Ocultar itens Incorporados
           </label>
 
-          <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10 }}>
-            {paged.map((item) => {
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+            <button onClick={() => setViewMode("padrao")} style={{ ...bp, background: viewMode === "padrao" ? "#0f172a" : "#fff", color: viewMode === "padrao" ? "#fff" : "#0f172a", borderColor: "#0f172a", padding: "6px 12px", fontSize: 12 }}>Visualização Padrão</button>
+            <button onClick={() => setViewMode("categorias")} style={{ ...bp, background: viewMode === "categorias" ? "#0f172a" : "#fff", color: viewMode === "categorias" ? "#fff" : "#0f172a", borderColor: "#0f172a", padding: "6px 12px", fontSize: 12 }}>Agrupar por Categoria</button>
+          </div>
+
+          {(() => {
+            const renderItemCard = (item) => {
               const f = foundMap[item.id];
               const isF = !!f;
               const reservedBy = !isF ? getTeamMemberEditingItem(teamOnline, item.id, myUid) : null;
@@ -675,14 +691,58 @@ export function InventarioPage({
                         <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
                       )}
                       {reservedBy && <Badge label={`Em uso — ${reservedBy.nome}`} c={{ bg: "#fef3c7", tx: "#92400e" }} />}
+                      {(item?.isManual || f?.isManual || String(item?.id || "").startsWith("MAN_")) && <Badge label="Inserido Manualmente" c={{ bg: "#fef08a", tx: "#854d0e" }} />}
+                      {item?.unidadeId && f?.unidadeId && item.unidadeId !== f.unidadeId && <Badge label="De Outra Unidade" c={{ bg: "#fecaca", tx: "#991b1b" }} />}
                     </div>
+                    {(String(item.id || "").startsWith("MAN_") || String(item.id || "").startsWith("ST_")) && onOpenLinkTombo && (
+                      <div style={{ marginTop: 10 }}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenLinkTombo(item, f);
+                          }}
+                          style={{ ...bp, padding: "6px 12px", fontSize: 11, background: "#0f766e", borderColor: "#0f766e" }}
+                        >
+                          Reconciliar Tombo
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
-            })}
-          </div>
+            };
 
-          {totalPages > 1 && (
+            if (viewMode === "categorias") {
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {groupedCategories.map(({ cat, items }) => {
+                    const isExp = expandedCats[cat];
+                    return (
+                      <div key={cat} style={{ ...cd, padding: 0, overflow: "hidden" }}>
+                        <button onClick={() => toggleCat(cat)} style={{ width: "100%", padding: 14, display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc", border: "none", cursor: "pointer" }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>{cat} ({items.length})</span>
+                          <span style={{ fontSize: 16, color: "#64748b" }}>{isExp ? "▲" : "▼"}</span>
+                        </button>
+                        {isExp && (
+                          <div style={{ padding: 12, display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10, borderTop: "1px solid #e2e8f0" }}>
+                            {items.map((it) => renderItemCard(it))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            return (
+              <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10 }}>
+                {paged.map((item) => renderItemCard(item))}
+              </div>
+            );
+          })()}
+
+          {viewMode === "padrao" && totalPages > 1 && (
             <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 16, flexWrap: "wrap" }}>
               <button onClick={() => setPage(1)} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
                 «
@@ -873,7 +933,7 @@ export function InventarioPage({
                     ? "Locais desta sessão, só desta unidade. A equipe na mesma unidade vê os mesmos locais criados aqui."
                     : "Inicie um inventário para criar locais."}
                 </p>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <input
                     value={localNomeRapido}
                     onChange={(e) => setLocalNomeRapido(e.target.value)}

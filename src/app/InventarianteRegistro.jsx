@@ -1,7 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AuthPageLayout } from "../components/AuthPageLayout.jsx";
 import { getAppStyles } from "../constants/theme.js";
-import { fsGetDocPublic, fsSetStrict, isFirebaseConfigured, fbRegister, setFirebaseSession, marcarConviteInventarianteUsado } from "../services/firebase.js";
+import {
+  fsGetDocPublic,
+  fsSetStrict,
+  isFirebaseConfigured,
+  fbRegister,
+  setFirebaseSession,
+  marcarConviteInventarianteUsado,
+  verificarCadastroDuplicado,
+  registrarCadastroIndice,
+} from "../services/firebase.js";
 import { TInput } from "../components/FormFields.jsx";
 
 function getTokenFromLocation() {
@@ -25,6 +34,9 @@ export function InventarianteRegistro() {
   const [convite, setConvite] = useState(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [duplicataAviso, setDuplicataAviso] = useState("");
+  const [checandoDuplicata, setChecandoDuplicata] = useState(false);
+  const debounceRef = useRef(null);
   const [formData, setFormData] = useState({
     nome: "",
     email: "",
@@ -102,6 +114,37 @@ export function InventarianteRegistro() {
     boot();
   }, [firebaseOk]);
 
+  useEffect(() => {
+    if (status !== "formulario") return;
+    const email = formData.email.trim();
+    const matricula = formData.matricula.trim();
+    const nome = formData.nome.trim();
+    if (!email && !matricula && !nome) {
+      setDuplicataAviso("");
+      return;
+    }
+
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setChecandoDuplicata(true);
+      try {
+        const dup = await verificarCadastroDuplicado({
+          email,
+          matricula,
+          nome,
+          papel: "inventariante",
+        });
+        setDuplicataAviso(dup.blocked ? dup.message : "");
+      } catch {
+        setDuplicataAviso("");
+      } finally {
+        setChecandoDuplicata(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(debounceRef.current);
+  }, [status, formData.email, formData.matricula, formData.nome]);
+
   const handleSubmit = async () => {
     setError("");
 
@@ -113,11 +156,34 @@ export function InventarianteRegistro() {
 
     setSubmitting(true);
     try {
-      // Create Firebase Auth account
+      const dupPre = await verificarCadastroDuplicado({
+        email: formData.email.trim(),
+        matricula: formData.matricula.trim(),
+        nome: formData.nome.trim(),
+        papel: "inventariante",
+      });
+      if (dupPre.blocked) {
+        setError(dupPre.message);
+        return;
+      }
+
       const user = await fbRegister(formData.email.trim(), formData.senha);
       setFirebaseSession({ token: user.token, uid: user.uid });
 
-      // Save to inventariantes collection (pending approval)
+      const dupPos = await verificarCadastroDuplicado({
+        email: formData.email.trim(),
+        matricula: formData.matricula.trim(),
+        nome: formData.nome.trim(),
+        papel: "inventariante",
+        excludeUid: user.uid,
+      });
+      if (dupPos.blocked) {
+        setError(
+          dupPos.message + " A conta foi criada, mas o cadastro não foi concluído. Contate o administrador."
+        );
+        return;
+      }
+
       const invData = {
         uid: user.uid,
         nome: formData.nome.trim(),
@@ -130,6 +196,19 @@ export function InventarianteRegistro() {
         criadoEm: new Date().toISOString(),
       };
       await fsSetStrict("inventariantes", user.uid, invData);
+
+      try {
+        await registrarCadastroIndice({
+          uid: user.uid,
+          email: formData.email.trim(),
+          matricula: formData.matricula.trim(),
+          nome: formData.nome.trim(),
+          papel: "inventariante",
+          status: "pendente_aprovacao",
+        });
+      } catch (idxErr) {
+        console.warn("Índice anti-duplicação não gravado:", idxErr);
+      }
 
       try {
         await marcarConviteInventarianteUsado(token, convite, user.uid);
@@ -200,6 +279,15 @@ export function InventarianteRegistro() {
       <div className="gov-alert gov-alert--success" style={{ marginBottom: 16 }}>
         Convite válido até {new Date(convite?.dataExpiracao).toLocaleDateString("pt-BR")}
       </div>
+
+      {duplicataAviso && (
+        <div className="gov-alert gov-alert--warning" style={{ marginBottom: 16 }}>
+          {duplicataAviso}
+        </div>
+      )}
+      {checandoDuplicata && !duplicataAviso && (
+        <p style={{ fontSize: 12, color: "var(--gov-text-muted)", marginBottom: 12 }}>Verificando duplicidade...</p>
+      )}
 
       {error && <div className="gov-alert gov-alert--danger" style={{ marginBottom: 16 }}>{error}</div>}
 
@@ -282,7 +370,7 @@ export function InventarianteRegistro() {
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || Boolean(duplicataAviso)}
           className="gov-btn gov-btn--primary"
           style={{ width: "100%", marginTop: 4, opacity: submitting ? 0.8 : 1 }}
         >

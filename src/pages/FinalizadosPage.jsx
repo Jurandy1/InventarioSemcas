@@ -57,15 +57,29 @@ export function FinalizadosPage({
   logado,
 }) {
   const [buscaLista, setBuscaLista] = useState("");
+  const defBuscaLista = React.useDeferredValue(buscaLista);
   const [editTab, setEditTab] = useState("itens");
   const [search, setSearch] = useState("");
+  const defSearch = React.useDeferredValue(search);
   const [neSearch, setNeSearch] = useState("");
+  const defNeSearch = React.useDeferredValue(neSearch);
   const [hideFound, setHideFound] = useState(false);
   const [page, setPage] = useState(1);
   const [nePage, setNePage] = useState(1);
 
+  const [hideIncorporados, setHideIncorporados] = useState(() => {
+    try { return localStorage.getItem("inv-hide-incorporados") === "1"; } catch { return false; }
+  });
+
+  const toggleHideInc = (next) => {
+    setHideIncorporados(next);
+    try { localStorage.setItem("inv-hide-incorporados", next ? "1" : "0"); } catch {}
+    setPage(1);
+    setNePage(1);
+  };
+
   const listaFiltrada = useMemo(() => {
-    const q = buscaLista.trim().toLowerCase();
+    const q = defBuscaLista.trim().toLowerCase();
     if (!q) return finalizacoes;
     return finalizacoes.filter(
       (f) =>
@@ -73,7 +87,7 @@ export function FinalizadosPage({
         String(f.coordenadora?.nome || "").toLowerCase().includes(q) ||
         String(f.finalizedAt || "").toLowerCase().includes(q)
     );
-  }, [finalizacoes, buscaLista]);
+  }, [finalizacoes, defBuscaLista]);
 
   const allItens = useMemo(
     () => editUnits.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeId: u.id, unidadeNome: u.nome }))),
@@ -85,8 +99,9 @@ export function FinalizadosPage({
   const progresso = totalBens > 0 ? Math.round((totalFound / totalBens) * 100) : 0;
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = defSearch.trim().toLowerCase();
     let list = allItens;
+    if (hideIncorporados) list = list.filter((i) => (i.tipoEntrada || "Próprio") !== "Incorporado");
     if (hideFound) list = list.filter((i) => !isItemInventariado(i.id, foundSet));
     if (!q) return [...list].sort(sortByDataNF);
     return list
@@ -100,7 +115,7 @@ export function FinalizadosPage({
           String(i.nf || "").toLowerCase().includes(q)
       )
       .sort(sortByDataNF);
-  }, [allItens, search, hideFound, foundSet]);
+  }, [allItens, defSearch, hideFound, foundSet, hideIncorporados]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -108,11 +123,13 @@ export function FinalizadosPage({
   const canEdit = !campanhaFechada || logado?.role === "admin" || logado?.role === "inventariante";
 
   const naoEncontrados = useMemo(() => {
-    return allItens.filter((i) => isTomboPendente(i, foundSet)).sort(sortByDataNF);
-  }, [allItens, foundSet]);
+    let list = allItens;
+    if (hideIncorporados) list = list.filter((i) => (i.tipoEntrada || "Próprio") !== "Incorporado");
+    return list.filter((i) => isTomboPendente(i, foundSet)).sort(sortByDataNF);
+  }, [allItens, foundSet, hideIncorporados]);
 
   const naoEncontradosFiltrados = useMemo(() => {
-    const q = neSearch.trim().toLowerCase();
+    const q = defNeSearch.trim().toLowerCase();
     if (!q) return naoEncontrados;
     return naoEncontrados.filter(
       (i) =>
@@ -123,7 +140,7 @@ export function FinalizadosPage({
         String(i.nf || "").toLowerCase().includes(q) ||
         String(i.tipoEntrada || "").toLowerCase().includes(q)
     );
-  }, [naoEncontrados, neSearch]);
+  }, [naoEncontrados, defNeSearch]);
 
   const neTotalPages = Math.max(1, Math.ceil(naoEncontradosFiltrados.length / PER_PAGE));
   const nePaged = naoEncontradosFiltrados.slice((nePage - 1) * PER_PAGE, nePage * PER_PAGE);
@@ -132,6 +149,19 @@ export function FinalizadosPage({
     () => getTombosDivergentes(foundMap, editUnits, activeUnitIds),
     [foundMap, editUnits, activeUnitIds]
   );
+
+  const finalizadosLocais = useMemo(() => {
+    if (editFin?.locais && Object.keys(editFin.locais).length > 0) {
+      return Object.entries(editFin.locais).map(([id, val]) => ({ id, ...val }));
+    }
+    return locais;
+  }, [editFin, locais]);
+
+  const getLocalNome = (localId) => {
+    if (!localId) return "—";
+    const L = finalizadosLocais.find((l) => l.id === localId);
+    return L ? L.nome : "—";
+  };
 
   if (editFin && editUnits.length > 0) {
     return (
@@ -221,6 +251,10 @@ export function FinalizadosPage({
               <input type="checkbox" checked={hideFound} onChange={(e) => { setHideFound(e.target.checked); setPage(1); }} />
               Ocultar itens já encontrados ({totalFound})
             </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 10, cursor: "pointer" }}>
+              <input type="checkbox" checked={!!hideIncorporados} onChange={(e) => toggleHideInc(e.target.checked)} />
+              Ocultar itens Incorporados
+            </label>
             <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10 }}>
               {paged.map((item) => {
                 const f = foundMap[item.id];
@@ -248,6 +282,9 @@ export function FinalizadosPage({
                       <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>
                         Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                       </p>
+                      <p style={{ margin: "1px 0 2px", fontSize: 11, color: "#475569", fontWeight: 600 }}>
+                        Local: {getLocalNome(f?.localId)}
+                      </p>
                       {editUnits.length > 1 && (
                         <p style={{ margin: "1px 0 2px", fontSize: 10, fontWeight: 700, color: "#6366f1" }}>{shortUnitName(item.unidadeNome)}</p>
                       )}
@@ -261,6 +298,8 @@ export function FinalizadosPage({
                         ) : (
                           <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
                         )}
+                        {(item?.isManual || f?.isManual || String(item?.id || "").startsWith("MAN_")) && <Badge label="Inserido Manualmente" c={{ bg: "#fef08a", tx: "#854d0e" }} />}
+                        {item?.unidadeId && f?.unidadeId && item.unidadeId !== f.unidadeId && <Badge label="De Outra Unidade" c={{ bg: "#fecaca", tx: "#991b1b" }} />}
                       </div>
                     </div>
                   </div>
@@ -300,7 +339,7 @@ export function FinalizadosPage({
             unidadesAtivas={editUnits}
             foundSet={foundSet}
             foundMap={foundMap}
-            locais={locais}
+            locais={finalizadosLocais}
             sessionId={sessionId}
             isMob={isMob}
             cd={cd}
@@ -338,6 +377,10 @@ export function FinalizadosPage({
               placeholder="Buscar tombo, NF, descrição, marca, tipo..."
               style={{ ...inp, marginBottom: 10 }}
             />
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 10, cursor: "pointer" }}>
+              <input type="checkbox" checked={!!hideIncorporados} onChange={(e) => toggleHideInc(e.target.checked)} />
+              Ocultar itens Incorporados
+            </label>
             {nePaged.length === 0 ? (
               <div style={{ ...cd, padding: 32, textAlign: "center" }}>
                 <p style={{ margin: 0, fontSize: 13, color: "#64748b", fontWeight: 700 }}>

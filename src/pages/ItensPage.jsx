@@ -21,8 +21,21 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
   const [localUnit, setLocalUnit] = useState("Todas");
   const [localStat, setLocalStat] = useState("Todos");
   const [localQ, setLocalQ] = useState("");
+  const defQ = React.useDeferredValue(localQ);
   const [localPage, setLocalPage] = useState(1);
   const IPER = 24;
+
+  const [hideIncorporados, setHideIncorporados] = useState(() => {
+    try { return localStorage.getItem("inv-hide-incorporados") === "1"; } catch { return false; }
+  });
+
+  const resetPage = () => setLocalPage(1);
+
+  const toggleHideInc = (next) => {
+    setHideIncorporados(next);
+    try { localStorage.setItem("inv-hide-incorporados", next ? "1" : "0"); } catch {}
+    resetPage();
+  };
 
   const catCounts = React.useMemo(() => {
     const m = { Todas: todosItens.length };
@@ -47,8 +60,9 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
   const activeCatDef = React.useMemo(() => CATEGORY_TREE.find((c) => c.name === localCat) || null, [localCat]);
 
   const filtered = React.useMemo(() => {
-    const q = localQ.toLowerCase().trim();
+    const q = defQ.toLowerCase().trim();
     return todosItens.filter((i) => {
+      if (hideIncorporados && (i.tipoEntrada || "Próprio") === "Incorporado") return false;
       const esp = i.especie || "";
       if (localCat !== "Todas") {
         if (getCategoryGroup(esp) !== localCat) return false;
@@ -82,7 +96,6 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
   const totalPages = Math.max(1, Math.ceil(filtered.length / IPER));
   const curPage = Math.min(localPage, totalPages);
   const paged = filtered.slice((curPage - 1) * IPER, curPage * IPER);
-  const resetPage = () => setLocalPage(1);
 
   const selectCat = (name) => {
     setLocalCat(name);
@@ -286,6 +299,8 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
                 c={item.tipoEntrada === "Doação" ? { bg: "#fef3c7", tx: "#92400e" } : { bg: "#d1fae5", tx: "#065f46" }}
               />
             )}
+            {(item?.isManual || f?.isManual || String(item?.id || "").startsWith("MAN_")) && <Badge label="Inserido Manualmente" c={{ bg: "#fef08a", tx: "#854d0e" }} />}
+            {item?.unidadeId && f?.unidadeId && item.unidadeId !== f.unidadeId && <Badge label="De Outra Unidade" c={{ bg: "#fecaca", tx: "#991b1b" }} />}
           </div>
           <p style={{ margin: "3px 0 0", fontSize: 10, color: "#059669", fontWeight: 700 }}>R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
         </div>
@@ -527,6 +542,15 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
             ))}
           </select>
         </div>
+
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 12, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={!!hideIncorporados}
+            onChange={(e) => toggleHideInc(e.target.checked)}
+          />
+          Ocultar itens Incorporados
+        </label>
 
         {paged.length === 0 ? (
           <div style={{ ...cd, textAlign: "center", padding: 48 }}>

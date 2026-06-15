@@ -1,3 +1,13 @@
+import {
+  cadastroEmailDocId,
+  cadastroMatriculaDocId,
+  cadastroNomeDocId,
+  isCadastroStatusAtivo,
+  montarMensagemDuplicata,
+  avaliarNomeSimilar,
+  normalizeCadastroMatricula,
+} from "../utils/cadastroDedup.js";
+
 const FB = {
   apiKey: import.meta.env.VITE_FB_API_KEY || "",
   projectId: import.meta.env.VITE_FB_PROJECT_ID || "",
@@ -519,6 +529,11 @@ export async function aprovarCoordenador(uid, observacoes = "") {
   coord.aprovadoPor = authUid;
 
   await fsSet("coordenadores", coord._id || uid, coord);
+  try {
+    await atualizarStatusCadastroIndice(coord, "coordenador", "aprovada");
+  } catch (e) {
+    console.warn("Índice de cadastro não atualizado:", e);
+  }
   return coord;
 }
 
@@ -535,6 +550,11 @@ export async function rejeitarCoordenador(uid, motivo = "") {
   coord.rejeitadaPor = authUid;
 
   await fsSet("coordenadores", coord._id || uid, coord);
+  try {
+    await atualizarStatusCadastroIndice(coord, "coordenador", "rejeitada");
+  } catch (e) {
+    console.warn("Índice de cadastro não atualizado:", e);
+  }
   return coord;
 }
 
@@ -551,6 +571,11 @@ export async function desativarCoordenador(uid, motivo = "") {
   coord.desativadaPor = authUid;
 
   await fsSet("coordenadores", coord._id || uid, coord);
+  try {
+    await atualizarStatusCadastroIndice(coord, "coordenador", "desativada");
+  } catch (e) {
+    console.warn("Índice de cadastro não atualizado:", e);
+  }
   return coord;
 }
 
@@ -647,6 +672,11 @@ export async function aprovarInventariante(uid, observacoes = "") {
   inv.aprovadoPor = authUid;
 
   await fsSet("inventariantes", inv._id || uid, inv);
+  try {
+    await atualizarStatusCadastroIndice(inv, "inventariante", "aprovado");
+  } catch (e) {
+    console.warn("Índice de cadastro não atualizado:", e);
+  }
   return inv;
 }
 
@@ -663,6 +693,11 @@ export async function rejeitarInventariante(uid, motivo = "") {
   inv.rejeitadoPor = authUid;
 
   await fsSet("inventariantes", inv._id || uid, inv);
+  try {
+    await atualizarStatusCadastroIndice(inv, "inventariante", "rejeitado");
+  } catch (e) {
+    console.warn("Índice de cadastro não atualizado:", e);
+  }
   return inv;
 }
 
@@ -679,5 +714,141 @@ export async function desativarInventariante(uid, motivo = "") {
   inv.desativadoPor = authUid;
 
   await fsSet("inventariantes", inv._id || uid, inv);
+  try {
+    await atualizarStatusCadastroIndice(inv, "inventariante", "desativado");
+  } catch (e) {
+    console.warn("Índice de cadastro não atualizado:", e);
+  }
   return inv;
+}
+
+async function lerIndiceCadastro(docId) {
+  if (!docId) return null;
+  try {
+    return await fsGetDocPublic("cadastro_indice", docId);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verifica e-mail, matrícula e nome antes do cadastro (leitura pública do índice).
+ * @returns {{ blocked: boolean, hits: object[], message: string }}
+ */
+export async function verificarCadastroDuplicado({ email, matricula, nome, papel, excludeUid } = {}) {
+  const hits = [];
+
+  const considerar = (row, tipo, extra = {}) => {
+    if (!row || !isCadastroStatusAtivo(row.status)) return;
+    if (excludeUid && row.uid === excludeUid) return;
+    hits.push({ tipo, ...row, ...extra });
+  };
+
+  const [emailRow, matRow] = await Promise.all([
+    lerIndiceCadastro(cadastroEmailDocId(email)),
+    lerIndiceCadastro(cadastroMatriculaDocId(matricula)),
+  ]);
+
+  considerar(emailRow, "email");
+  considerar(matRow, "matricula");
+
+  const nomeId = cadastroNomeDocId(nome);
+  if (nomeId) {
+    const nomeRow = await lerIndiceCadastro(nomeId);
+    if (nomeRow && isCadastroStatusAtivo(nomeRow.status) && nomeRow.uid !== excludeUid) {
+      const matNova = normalizeCadastroMatricula(matricula);
+      const matExistente = normalizeCadastroMatricula(nomeRow.matricula);
+      const aval = avaliarNomeSimilar(nome, nomeRow);
+      if (aval?.tipo === "nome" || (aval && matNova === matExistente)) {
+        considerar(nomeRow, "nome");
+      } else if (aval?.tipo === "nome_similar" && matNova !== matExistente) {
+        considerar(nomeRow, "nome_similar", { similaridade: aval.similaridade });
+      }
+    }
+  }
+
+  const blocked = hits.length > 0;
+  return {
+    blocked,
+    hits,
+    message: blocked ? montarMensagemDuplicata(hits, papel) : "",
+  };
+}
+
+/** Grava índice anti-duplicação (e-mail, matrícula e nome). */
+export async function registrarCadastroIndice({ uid, email, matricula, nome, papel, status }) {
+  if (!uid || !email?.trim()) return;
+
+  const base = {
+    uid,
+    email: String(email).trim(),
+    matricula: String(matricula || "").trim(),
+    nome: String(nome || "").trim(),
+    papel,
+    status: status || "pendente_aprovacao",
+    atualizadoEm: new Date().toISOString(),
+  };
+
+  const writes = [];
+  const emailId = cadastroEmailDocId(email);
+  if (emailId) writes.push(fsSetStrict("cadastro_indice", emailId, { ...base, chave: "email" }));
+
+  const matId = cadastroMatriculaDocId(matricula);
+  if (matId) writes.push(fsSetStrict("cadastro_indice", matId, { ...base, chave: "matricula" }));
+
+  const nomeId = cadastroNomeDocId(nome);
+  if (nomeId) writes.push(fsSetStrict("cadastro_indice", nomeId, { ...base, chave: "nome" }));
+
+  await Promise.all(writes);
+}
+
+/** Atualiza status no índice após aprovação/rejeição/desativação. */
+export async function atualizarStatusCadastroIndice(usuario, papel, status) {
+  if (!usuario?.uid || !usuario?.email) return;
+  await registrarCadastroIndice({
+    uid: usuario.uid,
+    email: usuario.email,
+    matricula: usuario.matricula,
+    nome: usuario.nome,
+    papel,
+    status,
+  });
+}
+
+/** Reconstrói índice a partir de inventariantes e coordenadores (admin). */
+export async function sincronizarIndiceCadastro() {
+  assertFirebaseConfigured();
+  if (!authToken) return { total: 0 };
+
+  const [invs, coords] = await Promise.all([
+    obterInventariantes("todos"),
+    obterCoordenadores("todos"),
+  ]);
+
+  let total = 0;
+  for (const inv of invs) {
+    if (!inv.uid || !inv.email) continue;
+    await registrarCadastroIndice({
+      uid: inv.uid,
+      email: inv.email,
+      matricula: inv.matricula,
+      nome: inv.nome,
+      papel: "inventariante",
+      status: inv.status,
+    });
+    total++;
+  }
+  for (const coord of coords) {
+    if (!coord.uid || !coord.email) continue;
+    await registrarCadastroIndice({
+      uid: coord.uid,
+      email: coord.email,
+      matricula: coord.matricula,
+      nome: coord.nome,
+      papel: "coordenador",
+      status: coord.status,
+    });
+    total++;
+  }
+  return { total };
 }

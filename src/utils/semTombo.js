@@ -15,8 +15,9 @@ export function isAjustePendente(item, foundEntry) {
   if (!foundEntry) return false;
   const id = String(item?.id || foundEntry.patrimonioId || foundEntry._id || "");
   if (foundEntry.vinculadoDeSemTombo && !id.startsWith("ST_")) return false;
-  if (String(id).startsWith("ST_")) return true;
+  if (String(id).startsWith("ST_") || String(id).startsWith("MAN_")) return true;
   if (foundEntry.semTombo || foundEntry.identificadoPorFoto) return true;
+  if (item?.isManual || foundEntry.isManual) return true;
   return isSemTomboItem(item, foundEntry);
 }
 

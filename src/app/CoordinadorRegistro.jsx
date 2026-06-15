@@ -1,7 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { AuthPageLayout } from "../components/AuthPageLayout.jsx";
 import { getAppStyles } from "../constants/theme.js";
-import { fsGetDocPublic, fsSetStrict, isFirebaseConfigured, fbRegister, setFirebaseSession, marcarConviteCoordUsado } from "../services/firebase.js";
+import {
+  fsGetDocPublic,
+  fsSetStrict,
+  isFirebaseConfigured,
+  fbRegister,
+  setFirebaseSession,
+  marcarConviteCoordUsado,
+  verificarCadastroDuplicado,
+  registrarCadastroIndice,
+} from "../services/firebase.js";
 import { TInput } from "../components/FormFields.jsx";
 
 function getTokenFromLocation() {
@@ -25,6 +34,9 @@ export function CoordinadorRegistro() {
     matricula: "",
   });
   const [submitting, setSubmitting] = useState(false);
+  const [duplicataAviso, setDuplicataAviso] = useState("");
+  const [checandoDuplicata, setChecandoDuplicata] = useState(false);
+  const debounceRef = useRef(null);
 
   const firebaseOk = isFirebaseConfigured();
   const { inp } = getAppStyles(false);
@@ -93,6 +105,37 @@ export function CoordinadorRegistro() {
     boot();
   }, [firebaseOk]);
 
+  useEffect(() => {
+    if (status !== "formulario") return;
+    const email = formData.email.trim();
+    const matricula = formData.matricula.trim();
+    const nome = formData.nome.trim();
+    if (!email && !matricula && !nome) {
+      setDuplicataAviso("");
+      return;
+    }
+
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setChecandoDuplicata(true);
+      try {
+        const dup = await verificarCadastroDuplicado({
+          email,
+          matricula,
+          nome,
+          papel: "coordenador",
+        });
+        setDuplicataAviso(dup.blocked ? dup.message : "");
+      } catch {
+        setDuplicataAviso("");
+      } finally {
+        setChecandoDuplicata(false);
+      }
+    }, 600);
+
+    return () => clearTimeout(debounceRef.current);
+  }, [status, formData.email, formData.matricula, formData.nome]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -121,8 +164,33 @@ export function CoordinadorRegistro() {
     setSubmitting(true);
 
     try {
+      const dupPre = await verificarCadastroDuplicado({
+        email: formData.email.trim(),
+        matricula: formData.matricula.trim(),
+        nome: formData.nome.trim(),
+        papel: "coordenador",
+      });
+      if (dupPre.blocked) {
+        setError(dupPre.message);
+        return;
+      }
+
       const user = await fbRegister(formData.email.trim(), formData.senha);
       setFirebaseSession({ token: user.token, uid: user.uid });
+
+      const dupPos = await verificarCadastroDuplicado({
+        email: formData.email.trim(),
+        matricula: formData.matricula.trim(),
+        nome: formData.nome.trim(),
+        papel: "coordenador",
+        excludeUid: user.uid,
+      });
+      if (dupPos.blocked) {
+        setError(
+          dupPos.message + " A conta foi criada, mas o cadastro não foi concluído. Contate o administrador."
+        );
+        return;
+      }
 
       const coordData = {
         uid: user.uid,
@@ -148,6 +216,19 @@ export function CoordinadorRegistro() {
       };
 
       await fsSetStrict("coordenadores", user.uid, coordData);
+
+      try {
+        await registrarCadastroIndice({
+          uid: user.uid,
+          email: formData.email.trim(),
+          matricula: formData.matricula.trim(),
+          nome: formData.nome.trim(),
+          papel: "coordenador",
+          status: "pendente_aprovacao",
+        });
+      } catch (idxErr) {
+        console.warn("Índice anti-duplicação não gravado:", idxErr);
+      }
 
       try {
         await marcarConviteCoordUsado(token, convite);
@@ -211,6 +292,15 @@ export function CoordinadorRegistro() {
       subtitle={convite?.unidadeNome ? `Unidade: ${convite.unidadeNome}` : "Inventário SEMCAS"}
       footer="Após o registro, aguarde a aprovação do administrador"
     >
+      {duplicataAviso && (
+        <div className="gov-alert gov-alert--warning" style={{ marginBottom: 16 }}>
+          {duplicataAviso}
+        </div>
+      )}
+      {checandoDuplicata && !duplicataAviso && (
+        <p style={{ fontSize: 12, color: "var(--gov-text-muted)", marginBottom: 12 }}>Verificando duplicidade...</p>
+      )}
+
       {error && <div className="gov-alert gov-alert--danger" style={{ marginBottom: 16 }}>{error}</div>}
 
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -269,7 +359,7 @@ export function CoordinadorRegistro() {
 
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || Boolean(duplicataAviso)}
             className="gov-btn gov-btn--primary"
             style={{ width: "100%", marginTop: 8, opacity: submitting ? 0.8 : 1 }}
           >

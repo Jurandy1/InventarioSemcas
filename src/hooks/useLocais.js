@@ -31,11 +31,12 @@ export function useLocais() {
       }
 
       // Escopo por unidade: não acumular locais de outras unidades/sessões na memória.
+      const reqIds = Array.isArray(options.localIds) ? options.localIds : [];
       const scopedBase =
         ids.length > 0
           ? (basePrev || []).filter((l) => {
               const uids = Array.isArray(l.unidadeIds) ? l.unidadeIds : l.unidadeId ? [l.unidadeId] : [];
-              return uids.some((uid) => ids.includes(uid));
+              return uids.some((uid) => ids.includes(uid)) || reqIds.includes(l.id || l._id);
             })
           : basePrev;
       const nextLocais = ids.length > 0 ? mergeLocaisRecords(scopedBase, incoming) : mergeLocaisRecords(basePrev, incoming);

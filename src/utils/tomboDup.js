@@ -26,7 +26,9 @@ export function detectTombosDuplicados(todosItens, foundList) {
   const byLabel = new Map();
   for (const item of todosItens || []) {
     const label = normLabel(item);
-    if (!label || label.toUpperCase() === "S/T") continue;
+    if (!label) continue;
+    const labelUpper = label.toUpperCase();
+    if (labelUpper === "S/T" || labelUpper === "ST" || labelUpper === "SEM TOMBO" || labelUpper === "SEM TOMBAMENTO") continue;
     const key = label.toLowerCase();
     if (!byLabel.has(key)) byLabel.set(key, []);
     byLabel.get(key).push(item);

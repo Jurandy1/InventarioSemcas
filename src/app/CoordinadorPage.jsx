@@ -583,7 +583,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
                   ))}
                 </div>
                 {pendTotalPages > 1 && (
-                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
                     <button disabled={pendPage <= 1} onClick={() => setPendPage((p) => Math.max(1, p - 1))} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
                       ‹
                     </button>
@@ -673,7 +673,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
       {/* Detail modal */}
       {modal === "detalhe" && detItem && (
         <Overlay onClose={() => { setModal(null); setDetItem(null); }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
             <div>
               <h2 style={{ margin: "0 0 4px", fontSize: 17, fontWeight: 700 }}>{detItem.descricao || detItem.especie || "—"}</h2>
               <p style={{ margin: 0, fontSize: 12, color: "#64748b" }}>Nº {detItem.id}</p>
@@ -762,7 +762,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
           <TArea initial={detObs} onVal={setDetObs} rows={3} placeholder="Sua observação..." style={{ ...inp, resize: "none" }} />
 
           <div style={{ marginTop: 12, padding: 12, background: "#f8fafc", borderRadius: 12, border: "1px solid #e2e8f0" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a" }}>
                 {isRegistroInventariante(foundMap[detItem.id]) ? "Fotos da verificação" : "Fotos"}
               </p>
@@ -775,7 +775,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
             </p>
           </div>
 
-          <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
+          <div style={{ display: "flex", gap: 9, marginTop: 16, flexWrap: "wrap" }}>
             <button onClick={() => { setModal(null); setDetItem(null); }} style={{ ...bs, flex: 1 }}>Cancelar</button>
             <button onClick={saveItem} disabled={saving} style={{ ...bp, flex: 1, background: "#16a34a", opacity: saving ? 0.8 : 1 }}>
               Salvar
