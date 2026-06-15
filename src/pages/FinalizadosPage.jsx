@@ -1,14 +1,16 @@
 import React, { useMemo, useState } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { TInput } from "../components/FormFields.jsx";
-import { PhotoThumb } from "../components/PhotoThumb.jsx";
 import { AjusteWorkbench, TIPO_ENTRADA_BADGE, getDisplayDesc, getItemCode, buildOrigemLine, formatNfLabel } from "../components/AjusteWorkbench.jsx";
 import { LocaisWorkspace } from "../components/LocaisWorkspace.jsx";
 import { getTombosDivergentes, TOMBO_DIVERGENTE_BADGE } from "../utils/tomboEstrangeiro.js";
+
 import { isTomboPendente, showFotoManualBadge } from "../utils/semTombo.js";
 import { sortByDataNF } from "../utils/itemHelpers.js";
+import MiniSearch from "minisearch";
 import { EC, SC } from "../constants/inventory.js";
 import { isItemInventariado } from "../utils/patrimonioId.js";
+import { PhotoThumb } from "../components/PhotoThumb.jsx";
 
 const PER_PAGE = 24;
 
@@ -66,6 +68,7 @@ export function FinalizadosPage({
   const [hideFound, setHideFound] = useState(false);
   const [page, setPage] = useState(1);
   const [nePage, setNePage] = useState(1);
+  const [perPage, setPerPage] = useState(24);
 
   const [hideIncorporados, setHideIncorporados] = useState(() => {
     try { return localStorage.getItem("inv-hide-incorporados") === "1"; } catch { return false; }
@@ -94,31 +97,35 @@ export function FinalizadosPage({
     [editUnits]
   );
 
+  const miniSearch = useMemo(() => {
+    const ms = new MiniSearch({
+      fields: ["id", "descricao", "especie", "marca", "fornecedor", "nf", "tipoEntrada"],
+      storeFields: ["id"],
+      searchOptions: { prefix: true, fuzzy: 0.2 },
+      tokenize: (str) => str.toLowerCase().split(/[\s,]+/),
+    });
+    ms.addAll(allItens);
+    return ms;
+  }, [allItens]);
+
   const totalBens = allItens.length;
   const totalFound = useMemo(() => allItens.filter((i) => isItemInventariado(i.id, foundSet)).length, [allItens, foundSet]);
   const progresso = totalBens > 0 ? Math.round((totalFound / totalBens) * 100) : 0;
 
-  const filtered = useMemo(() => {
+  const searchResults = useMemo(() => {
     const q = defSearch.trim().toLowerCase();
+    if (!q) return null;
+    return new Set(miniSearch.search(q).map((r) => r.id));
+  }, [miniSearch, defSearch]);
+
+  const filtered = useMemo(() => {
     let list = allItens;
     if (hideIncorporados) list = list.filter((i) => (i.tipoEntrada || "Próprio") !== "Incorporado");
     if (hideFound) list = list.filter((i) => !isItemInventariado(i.id, foundSet));
-    if (!q) return [...list].sort(sortByDataNF);
-    return list
-      .filter(
-        (i) =>
-          String(i.id || "").toLowerCase().includes(q) ||
-          String(i.descricao || "").toLowerCase().includes(q) ||
-          String(i.especie || "").toLowerCase().includes(q) ||
-          String(i.fornecedor || "").toLowerCase().includes(q) ||
-          String(i.marca || "").toLowerCase().includes(q) ||
-          String(i.nf || "").toLowerCase().includes(q)
-      )
-      .sort(sortByDataNF);
-  }, [allItens, defSearch, hideFound, foundSet, hideIncorporados]);
+    if (searchResults) list = list.filter((i) => searchResults.has(i.id));
+    return [...list].sort(sortByDataNF);
+  }, [allItens, searchResults, hideFound, foundSet, hideIncorporados]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
   const activeUnitIds = useMemo(() => editUnits.map((u) => u.id), [editUnits]);
   const canEdit = !campanhaFechada || logado?.role === "admin" || logado?.role === "inventariante";
 
@@ -128,22 +135,16 @@ export function FinalizadosPage({
     return list.filter((i) => isTomboPendente(i, foundSet)).sort(sortByDataNF);
   }, [allItens, foundSet, hideIncorporados]);
 
-  const naoEncontradosFiltrados = useMemo(() => {
+  const neSearchResults = useMemo(() => {
     const q = defNeSearch.trim().toLowerCase();
-    if (!q) return naoEncontrados;
-    return naoEncontrados.filter(
-      (i) =>
-        String(i.id || "").toLowerCase().includes(q) ||
-        String(i.descricao || "").toLowerCase().includes(q) ||
-        String(i.especie || "").toLowerCase().includes(q) ||
-        String(i.marca || "").toLowerCase().includes(q) ||
-        String(i.nf || "").toLowerCase().includes(q) ||
-        String(i.tipoEntrada || "").toLowerCase().includes(q)
-    );
-  }, [naoEncontrados, defNeSearch]);
+    if (!q) return null;
+    return new Set(miniSearch.search(q).map((r) => r.id));
+  }, [miniSearch, defNeSearch]);
 
-  const neTotalPages = Math.max(1, Math.ceil(naoEncontradosFiltrados.length / PER_PAGE));
-  const nePaged = naoEncontradosFiltrados.slice((nePage - 1) * PER_PAGE, nePage * PER_PAGE);
+  const naoEncontradosFiltrados = useMemo(() => {
+    if (!neSearchResults) return naoEncontrados;
+    return naoEncontrados.filter((i) => neSearchResults.has(i.id));
+  }, [naoEncontrados, neSearchResults]);
 
   const tombosDivergentes = useMemo(
     () => getTombosDivergentes(foundMap, editUnits, activeUnitIds),
@@ -255,64 +256,96 @@ export function FinalizadosPage({
               <input type="checkbox" checked={!!hideIncorporados} onChange={(e) => toggleHideInc(e.target.checked)} />
               Ocultar itens Incorporados
             </label>
-            <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10 }}>
-              {paged.map((item) => {
-                const f = foundMap[item.id];
-                const isF = !!f;
-                const foto = f?.fotoUrls?.[0];
-                const displayDesc = getDisplayDesc(item, f);
-                const isPermuta = f?.situacao === "Permuta";
-                const tipo = item.tipoEntrada || "Próprio";
-                const tipoC = TIPO_ENTRADA_BADGE[tipo] || TIPO_ENTRADA_BADGE["Próprio"];
-                return (
-                  <div
-                    key={`${item.unidadeId}_${item.id}`}
-                    onClick={() => openDetModal?.(item)}
-                    style={{ ...cd, cursor: "pointer", border: `1.5px solid ${isPermuta ? "#fcd34d" : isF ? "#bbf7d0" : "#e2e8f0"}`, display: "flex", gap: 12 }}
-                  >
-                    {foto ? (
-                      <PhotoThumb src={foto} badge={showFotoManualBadge(item, f)} size={56} onImageClick={() => onViewImage?.(foto)} />
-                    ) : (
-                      <div style={{ width: 56, height: 56, borderRadius: 8, background: isPermuta ? "#fef3c7" : isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0, color: "#64748b", fontWeight: 800 }}>
-                        {isPermuta ? "Permuta" : isF ? "OK" : ""}
-                      </div>
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{displayDesc}</p>
-                      <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>
-                        Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                      </p>
-                      <p style={{ margin: "1px 0 2px", fontSize: 11, color: "#475569", fontWeight: 600 }}>
-                        Local: {getLocalNome(f?.localId)}
-                      </p>
-                      {editUnits.length > 1 && (
-                        <p style={{ margin: "1px 0 2px", fontSize: 10, fontWeight: 700, color: "#6366f1" }}>{shortUnitName(item.unidadeNome)}</p>
-                      )}
-                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
-                        <Badge label={tipo} c={tipoC} />
-                        {isF ? (
-                          <>
-                            <Badge label={f.estado} c={EC[f.estado]} />
-                            <Badge label={f.situacao} c={SC[f.situacao]} />
-                          </>
-                        ) : (
-                          <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
-                        )}
-                        {(item?.isManual || f?.isManual || String(item?.id || "").startsWith("MAN_")) && <Badge label="Inserido Manualmente" c={{ bg: "#fef08a", tx: "#854d0e" }} />}
-                        {item?.unidadeId && f?.unidadeId && item.unidadeId !== f.unidadeId && <Badge label="De Outra Unidade" c={{ bg: "#fecaca", tx: "#991b1b" }} />}
-                      </div>
-                    </div>
+            {(() => {
+              const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+              const safePage = Math.min(page, totalPages);
+              const pageItems = filtered.slice((safePage - 1) * perPage, safePage * perPage);
+
+              const buildPageButtons = (tPages, cPage) => {
+                if (tPages <= 7) return Array.from({ length: tPages }, (_, i) => i + 1);
+                const pages = new Set([1, 2, tPages - 1, tPages, cPage - 1, cPage, cPage + 1].filter(p => p >= 1 && p <= tPages));
+                const sorted = [...pages].sort((a, b) => a - b);
+                const result = [];
+                for (let i = 0; i < sorted.length; i++) {
+                  if (i > 0 && sorted[i] - sorted[i - 1] > 1) result.push("...");
+                  result.push(sorted[i]);
+                }
+                return result;
+              };
+
+              const btnStyle = (active) => ({
+                minWidth: 32, height: 32, borderRadius: 8,
+                border: active ? "2px solid #1351B4" : "1.5px solid #e2e8f0",
+                background: active ? "#1351B4" : "#fff",
+                color: active ? "#fff" : "#374151",
+                fontWeight: active ? 800 : 600, fontSize: 13,
+                cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                padding: "0 6px", transition: "all .15s"
+              });
+
+              return (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10 }}>
+                    {pageItems.map((item) => {
+                      const f = foundMap[item.id];
+                      const isF = !!f;
+                      const foto = f?.fotoUrls?.[0];
+                      const displayDesc = getDisplayDesc(item, f);
+                      const isPermuta = f?.situacao === "Permuta";
+                      const tipo = item.tipoEntrada || "Próprio";
+                      const tipoC = TIPO_ENTRADA_BADGE[tipo] || TIPO_ENTRADA_BADGE["Próprio"];
+                      return (
+                        <div key={`${item.unidadeId}_${item.id}`} onClick={() => openDetModal?.(item)} style={{ ...cd, cursor: "pointer", border: `1.5px solid ${isPermuta ? "#fcd34d" : isF ? "#bbf7d0" : "#e2e8f0"}`, display: "flex", gap: 12 }}>
+                          {foto ? (
+                            <PhotoThumb src={foto} badge={showFotoManualBadge(item, f)} size={56} onImageClick={() => onViewImage?.(foto)} />
+                          ) : (
+                            <div style={{ width: 56, height: 56, borderRadius: 8, background: isPermuta ? "#fef3c7" : isF ? "#f0fdf4" : "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, flexShrink: 0, color: "#64748b", fontWeight: 800 }}>
+                              {isPermuta ? "Permuta" : isF ? "OK" : ""}
+                            </div>
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{displayDesc}</p>
+                            <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>
+                              Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                            </p>
+                            <p style={{ margin: "1px 0 2px", fontSize: 11, color: "#475569", fontWeight: 600 }}>Local: {getLocalNome(f?.localId)}</p>
+                            {editUnits.length > 1 && (
+                              <p style={{ margin: "1px 0 2px", fontSize: 10, fontWeight: 700, color: "#6366f1" }}>{shortUnitName(item.unidadeNome)}</p>
+                            )}
+                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
+                              <Badge label={tipo} c={tipoC} />
+                              {isF ? (
+                                <>
+                                  <Badge label={f.estado} c={EC[f.estado]} />
+                                  <Badge label={f.situacao} c={SC[f.situacao]} />
+                                </>
+                              ) : (
+                                <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
+                              )}
+                              {(item?.isManual || f?.isManual || String(item?.id || "").startsWith("MAN_")) && <Badge label="Inserido Manualmente" c={{ bg: "#fef08a", tx: "#854d0e" }} />}
+                              {item?.unidadeId && f?.unidadeId && item.unidadeId !== f.unidadeId && <Badge label="De Outra Unidade" c={{ bg: "#fecaca", tx: "#991b1b" }} />}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-            {totalPages > 1 && (
-              <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 16, flexWrap: "wrap" }}>
-                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>‹</button>
-                <span style={{ fontSize: 12, color: "#64748b" }}>Pág {page}/{totalPages}</span>
-                <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>›</button>
-              </div>
-            )}
+
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 20, flexWrap: "wrap" }}>
+                    <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage === 1} style={{ ...btnStyle(false), opacity: safePage === 1 ? 0.4 : 1 }}>‹</button>
+                    {buildPageButtons(totalPages, safePage).map((p, i) =>
+                      p === "..." ? <span key={`ellipsis-${i}`} style={{ padding: "0 4px", color: "#94a3b8", fontSize: 13 }}>…</span> :
+                        <button key={p} onClick={() => setPage(p)} style={btnStyle(p === safePage)}>{p}</button>
+                    )}
+                    <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} style={{ ...btnStyle(false), opacity: safePage === totalPages ? 0.4 : 1 }}>›</button>
+                    <select value={perPage} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); setNePage(1); }} style={{ marginLeft: 12, height: 32, borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#374151", padding: "0 8px", cursor: "pointer" }}>
+                      {[12, 24, 48, 96].map((n) => <option key={n} value={n}>{n} por página</option>)}
+                    </select>
+                    <span style={{ fontSize: 12, color: "#64748b", marginLeft: 4 }}>Pág {safePage} de {totalPages}</span>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 
@@ -372,7 +405,6 @@ export function FinalizadosPage({
               initial={neSearch}
               onVal={(v) => {
                 setNeSearch(v);
-                setNePage(1);
               }}
               placeholder="Buscar tombo, NF, descrição, marca, tipo..."
               style={{ ...inp, marginBottom: 10 }}
@@ -381,49 +413,76 @@ export function FinalizadosPage({
               <input type="checkbox" checked={!!hideIncorporados} onChange={(e) => toggleHideInc(e.target.checked)} />
               Ocultar itens Incorporados
             </label>
-            {nePaged.length === 0 ? (
+            {naoEncontradosFiltrados.length === 0 ? (
               <div style={{ ...cd, padding: 32, textAlign: "center" }}>
                 <p style={{ margin: 0, fontSize: 13, color: "#64748b", fontWeight: 700 }}>
                   {naoEncontrados.length === 0 ? "Todos os tombos desta unidade foram inventariados." : "Nenhum resultado na busca."}
                 </p>
               </div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(360px,1fr))", gap: 8 }}>
-                {nePaged.map((it) => {
-                  const tipo = it.tipoEntrada || "Próprio";
-                  const tipoC = TIPO_ENTRADA_BADGE[tipo] || TIPO_ENTRADA_BADGE["Próprio"];
-                  return (
-                    <div
-                      key={it.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => canEdit && openDetModal?.(it)}
-                      onKeyDown={(e) => {
-                        if ((e.key === "Enter" || e.key === " ") && canEdit) openDetModal?.(it);
-                      }}
-                      style={{ ...cd, border: "1.5px solid #ffedd5", cursor: canEdit ? "pointer" : "default", padding: 12 }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                        <p style={{ margin: 0, fontSize: 12, fontWeight: 800, flex: 1 }}>{it.descricao || it.especie || "—"}</p>
-                        <Badge label={tipo} c={tipoC} />
-                      </div>
-                      <p style={{ margin: "4px 0 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(it)}</p>
-                      {it.marca ? <p style={{ margin: "2px 0 0", fontSize: 11, color: "#7c3aed", fontWeight: 600 }}>Marca: {it.marca}</p> : null}
-                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#9a3412", fontWeight: 600 }}>
-                        {formatNfLabel(it)} · Data NF: {it.dataNF || "—"}
-                      </p>
-                      <p style={{ margin: "2px 0 0", fontSize: 10, color: "#94a3b8" }}>{buildOrigemLine(it)}</p>
+              (() => {
+                const totalPages = Math.max(1, Math.ceil(naoEncontradosFiltrados.length / perPage));
+                const safePage = Math.min(nePage, totalPages);
+                const pageItems = naoEncontradosFiltrados.slice((safePage - 1) * perPage, safePage * perPage);
+
+                const buildPageButtons = (tPages, cPage) => {
+                  if (tPages <= 7) return Array.from({ length: tPages }, (_, i) => i + 1);
+                  const pages = new Set([1, 2, tPages - 1, tPages, cPage - 1, cPage, cPage + 1].filter(p => p >= 1 && p <= tPages));
+                  const sorted = [...pages].sort((a, b) => a - b);
+                  const result = [];
+                  for (let i = 0; i < sorted.length; i++) {
+                    if (i > 0 && sorted[i] - sorted[i - 1] > 1) result.push("...");
+                    result.push(sorted[i]);
+                  }
+                  return result;
+                };
+
+                const btnStyle = (active) => ({
+                  minWidth: 32, height: 32, borderRadius: 8,
+                  border: active ? "2px solid #1351B4" : "1.5px solid #e2e8f0",
+                  background: active ? "#1351B4" : "#fff",
+                  color: active ? "#fff" : "#374151",
+                  fontWeight: active ? 800 : 600, fontSize: 13,
+                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  padding: "0 6px", transition: "all .15s"
+                });
+
+                return (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(360px,1fr))", gap: 8 }}>
+                      {pageItems.map((it) => {
+                        const tipo = it.tipoEntrada || "Próprio";
+                        const tipoC = TIPO_ENTRADA_BADGE[tipo] || TIPO_ENTRADA_BADGE["Próprio"];
+                        return (
+                          <div key={it.id} role="button" tabIndex={0} onClick={() => canEdit && openDetModal?.(it)} onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && canEdit) openDetModal?.(it); }} style={{ ...cd, border: "1.5px solid #ffedd5", cursor: canEdit ? "pointer" : "default", padding: 12 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                              <p style={{ margin: 0, fontSize: 12, fontWeight: 800, flex: 1 }}>{it.descricao || it.especie || "—"}</p>
+                              <Badge label={tipo} c={tipoC} />
+                            </div>
+                            <p style={{ margin: "4px 0 0", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(it)}</p>
+                            {it.marca ? <p style={{ margin: "2px 0 0", fontSize: 11, color: "#7c3aed", fontWeight: 600 }}>Marca: {it.marca}</p> : null}
+                            <p style={{ margin: "2px 0 0", fontSize: 11, color: "#9a3412", fontWeight: 600 }}>{formatNfLabel(it)} · Data NF: {it.dataNF || "—"}</p>
+                            <p style={{ margin: "2px 0 0", fontSize: 10, color: "#94a3b8" }}>{buildOrigemLine(it)}</p>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
-            )}
-            {neTotalPages > 1 && (
-              <div style={{ display: "flex", justifyContent: "center", gap: 6, marginTop: 16 }}>
-                <button type="button" onClick={() => setNePage((p) => Math.max(1, p - 1))} disabled={nePage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>‹</button>
-                <span style={{ fontSize: 12, color: "#64748b" }}>Pág {nePage}/{neTotalPages}</span>
-                <button type="button" onClick={() => setNePage((p) => Math.min(neTotalPages, p + 1))} disabled={nePage === neTotalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>›</button>
-              </div>
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 20, flexWrap: "wrap" }}>
+                      <button onClick={() => setNePage((p) => Math.max(1, p - 1))} disabled={safePage === 1} style={{ ...btnStyle(false), opacity: safePage === 1 ? 0.4 : 1 }}>‹</button>
+                      {buildPageButtons(totalPages, safePage).map((p, i) =>
+                        p === "..." ? <span key={`ellipsis-${i}`} style={{ padding: "0 4px", color: "#94a3b8", fontSize: 13 }}>…</span> :
+                          <button key={p} onClick={() => setNePage(p)} style={btnStyle(p === safePage)}>{p}</button>
+                      )}
+                      <button onClick={() => setNePage((p) => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} style={{ ...btnStyle(false), opacity: safePage === totalPages ? 0.4 : 1 }}>›</button>
+                      <select value={perPage} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); setNePage(1); }} style={{ marginLeft: 12, height: 32, borderRadius: 8, border: "1.5px solid #e2e8f0", background: "#fff", fontSize: 12, fontWeight: 600, color: "#374151", padding: "0 8px", cursor: "pointer" }}>
+                        {[12, 24, 48, 96].map((n) => <option key={n} value={n}>{n} por página</option>)}
+                      </select>
+                      <span style={{ fontSize: 12, color: "#64748b", marginLeft: 4 }}>Pág {safePage} de {totalPages}</span>
+                    </div>
+                  </>
+                );
+              })()
             )}
           </div>
         )}

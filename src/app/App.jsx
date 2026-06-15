@@ -18,6 +18,7 @@ import { DoacaoOrigemFields } from "../components/DoacaoOrigemFields.jsx";
 import { detectTombosDuplicados } from "../utils/tomboDup.js";
 import { buildFormSnapshot, buildItemSnapshot, clearUiResume, loadUiResume, saveUiResume } from "../utils/uiResume.js";
 import { canDeleteLocal, filterLocaisForSession, mergeFoundRecords, resolveUnitForItem } from "../utils/inventorySession.js";
+import { normalizeFoundRecord } from "../services/inventarioLoad.js";
 import { clearInventoryPresence, getTeamMemberEditingItem, loadActiveInventors, pingInventoryPresence } from "../utils/inventoryPresence.js";
 import { isSemTomboItem } from "../utils/semTombo.js";
 import { getFoundEntry, isItemInventariado } from "../utils/patrimonioId.js";
@@ -41,6 +42,11 @@ import { useFinalizacoes } from "../hooks/useFinalizacoes.js";
 import { buildFinalizacaoStats, criarFinalizacao, registrarEdicaoFinalizacao, atualizarStatsFinalizacao } from "../services/finalizacoes.js";
 import { CoordenadoresTab } from "./CoordenadoresTab.jsx";
 import { InventariantesTab } from "./InventariantesTab.jsx";
+import { ManualModal } from "../components/modals/ManualModal.jsx";
+import { SemTomboModal } from "../components/modals/SemTomboModal.jsx";
+import { AddLocalModal } from "../components/modals/AddLocalModal.jsx";
+import { FinalizarModal } from "../components/modals/FinalizarModal.jsx";
+import { AjusteLinkModal } from "../components/modals/AjusteLinkModal.jsx";
 import { clearChunkReloadFlag, lazyWithRetry } from "../utils/lazyWithRetry.js";
 import { createVisibilityAwarePoller, getSyncIntervals } from "../utils/mobilePerf.js";
 
@@ -64,16 +70,22 @@ function getItemCode(item) {
 
 function buildManualPatrimonio(rawValue) {
   const raw = String(rawValue || "").trim();
-  if (!raw) return { id: `MAN_${Date.now()}`, patrimonioLabel: null };
+  if (!raw) return { id: `MAN_${Date.now()}`, patrimonioLabel: null, tomboRef: null };
 
   const upper = raw.toUpperCase();
   if (upper === "S/T" || upper === "ST" || upper === "SEM TOMBAMENTO") {
-    return { id: `ST_${Date.now()}`, patrimonioLabel: "S/T" };
+    return { id: `ST_${Date.now()}`, patrimonioLabel: "S/T", tomboRef: null };
   }
 
+  // Quando o usuário digita um tombamento, registramos como item manual mas
+  // guardamos o tombamento sugerido em tomboRef para exibição e ligação futura.
+  // O id usa prefixo MAN_ para garantir que foundMap[item.id] sempre funcione
+  // (normalizePatrimonioId preserva prefixos MAN_/ST_).
+  const rand = Math.random().toString(36).slice(2, 6);
   return {
-    id: raw.replaceAll("/", "-"),
+    id: `MAN_${Date.now()}_${rand}`,
     patrimonioLabel: raw,
+    tomboRef: raw,
   };
 }
 
@@ -1135,7 +1147,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
     const ids = [];
     if (qty === 1) {
       const id = manualPatrimonio.id;
-      if (existingIds.has(id)) {
+      // IDs MAN_ são sempre únicos (baseados em Date.now + rand), sem risco de duplicata
+      if (!id.startsWith("MAN_") && !id.startsWith("ST_") && existingIds.has(id)) {
         showT("Já existe um item com esse patrimônio nesta unidade");
         return;
       }
@@ -1150,6 +1163,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
     const baseItem = {
       patrimonioLabel: manualPatrimonio.patrimonioLabel,
+      ...(manualPatrimonio.tomboRef ? { tomboRef: manualPatrimonio.tomboRef } : {}),
       data: new Date().toLocaleDateString("pt-BR"),
       especie: getField("manEspecie") || desc.split(" ")[0].toUpperCase(),
       descricao: desc.trim(),
@@ -1192,6 +1206,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         email: auth.logado?.email || "",
         ultimaAtualizacao: now.toISOString(),
         user: auth.logado?.nome || "",
+        isManual: true,
       };
     };
 
@@ -1224,6 +1239,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
           unidadeAtiva,
           logado: auth.logado,
           localOnly: true,
+          isManual: true,
         });
       }
       setModal(null);
@@ -1265,6 +1281,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         fotoUrls,
         unidadeAtiva,
         logado: auth.logado,
+        isManual: true,
       });
       await logAuditoria("create", "manuais", it.id, null, { ...it, unidadeId: unidadeAtiva?.id, fotoUrls, inventario: createdResult?.entry });
     }
@@ -1950,10 +1967,6 @@ function OrganizedApp({ firebaseOk, isProd }) {
             hideIncorporados={hideIncorporados}
             setHideIncorporados={persistHideIncorporados}
             filtered={filtered}
-            paged={paged}
-            page={page}
-            totalPages={totalPages}
-            setPage={setPage}
             search={search}
             setSearch={setSearch}
             hideFound={hideFound}
@@ -2340,242 +2353,45 @@ function OrganizedApp({ firebaseOk, isProd }) {
       )}
 
       {modal === "manual" && (
-        <Overlay
-          isMobile={isMob}
-          suppressBackdropMs={isMob ? Math.max(overlayBackdropSuppressMs, 400) : overlayBackdropSuppressMs}
-          onClose={() => { revokeBlobUrls(formRef.current.manPhotos || []); clearUiResume(); setModal(null); }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap" }}>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Adicionar Manual</h2>
-            <button onClick={() => { revokeBlobUrls(formRef.current.manPhotos || []); clearUiResume(); setModal(null); }} style={{ background: "none", border: "none", fontSize: 20, color: "#64748b", cursor: "pointer", padding: "4px 8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              Fechar
-            </button>
-          </div>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Descrição *</label>
-          <TInput
-            key={"manDesc_" + ft}
-            initial={getField("manDesc")}
-            onVal={(v) => {
-              setField("manDesc", v);
-              if (!String(getField("manEspecie") || "").trim()) {
-                setField("manEspecie", inferEspecieFromDesc(v, sugestoes.especies));
-                bumpFt();
-              }
-            }}
-            placeholder="Descreva o item..."
-            suggestions={sugestoes.descricoes}
-            style={inp}
-          />
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Nº do Patrimônio</label>
-          <input
-            ref={manualPatrimonioRef}
-            key={"manPat_" + ft}
-            defaultValue={getField("manPatrimonio")}
-            onChange={(e) => setField("manPatrimonio", e.target.value)}
-            placeholder="Digite o patrimônio ou S/T"
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="characters"
-            spellCheck={false}
-            style={inp}
-          />
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Quantidade</label>
-          <input
-            key={"manQtd_" + ft}
-            defaultValue={String(formRef.current.manQtd || 1)}
-            onChange={(e) => {
-              const n = Math.max(1, Math.min(50, Math.floor(Number(e.target.value || 1) || 1)));
-              formRef.current.manQtd = n;
-              bumpFt();
-            }}
-            type="number"
-            min={1}
-            max={50}
-            step={1}
-            inputMode="numeric"
-            style={inp}
-          />
-          <p style={{ margin: "6px 0 0", fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>
-            Para economizar fotos no Firebase, uma mesma foto pode ser aplicada a todos os itens desta quantidade.
-          </p>
-          <div style={{ display: "flex", gap: 8, marginTop: 8, marginBottom: 2 }}>
-            <button
-              onClick={() => {
-                formRef.current.manPatrimonio = "S/T";
-                if (manualPatrimonioRef.current) {
-                  manualPatrimonioRef.current.value = "S/T";
-                  manualPatrimonioRef.current.focus();
-                }
-              }}
-              style={{ ...bs, fontSize: 12, padding: "8px 12px" }}
-            >
-              Marcar S/T
-            </button>
-            <span style={{ fontSize: 11, color: "#64748b", alignSelf: "center" }}>Se deixar em branco, o sistema gera um código automático.</span>
-          </div>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Espécie</label>
-          <TInput key={"manEsp_" + ft} initial={getField("manEspecie")} onVal={(v) => setField("manEspecie", v)} placeholder="Ex: CADEIRA, MESA..." suggestions={sugestoes.especies} style={inp} />
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Marca</label>
-          <TInput key="manMarca" initial={getField("manMarca")} onVal={(v) => setField("manMarca", v)} placeholder="Marca..." suggestions={sugestoes.marcas} style={inp} />
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Fornecedor</label>
-          <TInput key="manForn" initial={getField("manFornecedor")} onVal={(v) => setField("manFornecedor", v)} placeholder="Fornecedor..." suggestions={sugestoes.fornecedores} style={inp} />
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Valor</label>
-          <TInput key="manVal" initial={getField("manValor")} onVal={(v) => setField("manValor", v)} type="number" placeholder="0.00" style={inp} />
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Origem</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            {["Próprio", "Doação", "Permuta"].map((o) => (
-              <button
-                key={o}
-                onClick={() => {
-                  formRef.current.manOrigem = o;
-                  bumpFt();
-                }}
-                style={{
-                  flex: 1,
-                  padding: "10px",
-                  borderRadius: 9,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  border: `2px solid ${(formRef.current.manOrigem || "Próprio") === o ? "#1351B4" : "#e2e8f0"}`,
-                  background: (formRef.current.manOrigem || "Próprio") === o ? "#dbeafe" : "#fff",
-                  color: (formRef.current.manOrigem || "Próprio") === o ? "#1351B4" : "#6b7280",
-                }}
-              >
-                {o}
-              </button>
-            ))}
-          </div>
-          {(formRef.current.manOrigem || "Próprio") === "Doação" && (
-            <DoacaoOrigemFields prefix="man" getField={getField} setField={setField} bumpFt={bumpFt} inp={inp} ft={ft} />
-          )}
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Estado de Conservação</label>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
-            {ESTADOS.map((e) => (
-              <button
-                key={e}
-                onClick={() => {
-                  formRef.current.manEstado = e;
-                  bumpFt();
-                }}
-                style={{
-                  padding: "8px 4px",
-                  borderRadius: 8,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  border: `2px solid ${(formRef.current.manEstado || "Bom") === e ? EC[e].tx : "#e2e8f0"}`,
-                  background: (formRef.current.manEstado || "Bom") === e ? EC[e].bg : "#fff",
-                  color: (formRef.current.manEstado || "Bom") === e ? EC[e].tx : "#6b7280",
-                }}
-              >
-                {e}
-              </button>
-            ))}
-          </div>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Situação</label>
-          <select key="manSit" defaultValue={getField("manSituacao") || "Em uso"} onChange={(e) => setField("manSituacao", e.target.value)} style={inp}>
-            {SITUACOES.map((s) => (
-              <option key={s}>{s}</option>
-            ))}
-          </select>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Local</label>
-          <select key={"manLocal_" + ft} defaultValue={getField("manLocal") || ""} onChange={(e) => { setField("manLocal", e.target.value); bumpFt(); }} style={inp}>
-            <option value="">{pickLocais.length ? "— Selecione —" : "— Crie um local na sessão —"}</option>
-            {pickLocais.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.nome}
-              </option>
-            ))}
-          </select>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Fotos</label>
-          {Number(formRef.current.manQtd || 1) > 1 && (
-            <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 8px", fontSize: 12, color: "#334155", fontWeight: 700 }}>
-              <input
-                type="checkbox"
-                checked={formRef.current.manSharePhotos !== false}
-                onChange={(e) => {
-                  formRef.current.manSharePhotos = !!e.target.checked;
-                  bumpFt();
-                }}
-              />
-              Usar as mesmas fotos para todos
-            </label>
-          )}
-          {formRef.current.manPhotos?.length > 0 ? (
-            <div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {formRef.current.manPhotos.map((ph, i) => (
-                  <div key={i} style={{ position: "relative" }}>
-                    <SmartImg
-                      src={ph}
-                      alt=""
-                      style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6, cursor: "zoom-in" }}
-                      onClick={() => onViewImage(ph)}
-                    />
-                    <button
-                      onClick={() => {
-                        const old = formRef.current.manPhotos?.[i];
-                        if (String(old || "").startsWith("blob:")) {
-                          try {
-                            URL.revokeObjectURL(String(old));
-                          } catch {}
-                        }
-                        formRef.current.manPhotos = formRef.current.manPhotos.filter((_, j) => j !== i);
-                        bumpFt();
-                      }}
-                      style={{ position: "absolute", top: -4, right: -4, background: "#dc2626", color: "#fff", border: "none", borderRadius: "50%", width: 16, height: 16, fontSize: 9, cursor: "pointer" }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <button onClick={() => openCamera("manual")} style={{ width: "100%", border: "1.5px dashed #93c5fd", background: "#eff6ff", borderRadius: 8, padding: 8, cursor: "pointer", fontSize: 12, color: "#1d4ed8", fontWeight: 600 }}>
-                + Mais fotos
-              </button>
-            </div>
-          ) : (
-            <button onClick={() => openCamera("manual")} style={{ width: "100%", border: "2px dashed #cbd5e1", background: "#f8fafc", borderRadius: 10, padding: 16, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-              <span style={{ fontSize: 12, color: "#64748b" }}>Adicionar fotos</span>
-            </button>
-          )}
-          <div style={{ display: "flex", gap: 9, marginTop: 16, flexWrap: "wrap" }}>
-            <button onClick={() => { revokeBlobUrls(formRef.current.manPhotos || []); clearUiResume(); setModal(null); }} style={{ ...bs, flex: 1 }}>
-              Cancelar
-            </button>
-            <button onClick={addManual} style={{ ...bp, flex: 1 }}>
-              Criar
-            </button>
-          </div>
-        </Overlay>
+        <ManualModal
+          isMob={isMob}
+          overlayBackdropSuppressMs={overlayBackdropSuppressMs}
+          revokeBlobUrls={revokeBlobUrls}
+          formRef={formRef}
+          clearUiResume={clearUiResume}
+          setModal={setModal}
+          getField={getField}
+          setField={setField}
+          inferEspecieFromDesc={inferEspecieFromDesc}
+          sugestoes={sugestoes}
+          bumpFt={bumpFt}
+          manualPatrimonioRef={manualPatrimonioRef}
+          bs={bs}
+          inp={inp}
+          bp={bp}
+          ESTADOS={ESTADOS}
+          EC={EC}
+          SITUACOES={SITUACOES}
+          pickLocais={pickLocais}
+          openCamera={openCamera}
+          onViewImage={onViewImage}
+          addManual={addManual}
+          ft={ft}
+        />
       )}
 
       {modal === "addLocal" && (
-        <Overlay isMobile={isMob} onClose={() => setModal(null)}>
-          <h2 style={{ margin: "0 0 16px", fontSize: 17, fontWeight: 700 }}>Novo Local</h2>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Nome *</label>
-          <TInput initial="" onVal={(v) => setField("localNome", v)} placeholder="Ex: Sala de Reunião..." style={inp} />
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Descrição</label>
-          <TInput initial="" onVal={(v) => setField("localDesc", v)} placeholder="Andar, ala..." style={inp} />
-          <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
-            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
-              Cancelar
-            </button>
-            <button
-              onClick={async () => {
-                const n = getField("localNome");
-                if (!String(n || "").trim()) return;
-                await createSessionLocal(n);
-                setModal(null);
-                showT("Local criado");
-              }}
-              style={{ ...bp, flex: 1 }}
-            >
-              Criar
-            </button>
-          </div>
-        </Overlay>
+        <AddLocalModal
+          isMob={isMob}
+          setModal={setModal}
+          setField={setField}
+          getField={getField}
+          createSessionLocal={createSessionLocal}
+          showT={showT}
+          bs={bs}
+          bp={bp}
+          inp={inp}
+        />
       )}
 
       {modal === "convite-inventariante" && (
@@ -2634,47 +2450,17 @@ function OrganizedApp({ firebaseOk, isProd }) {
       )}
 
       {modal === "finalizar" && (
-        <Overlay isMobile={isMob} onClose={() => setModal(null)}>
-          <div>
-            <h2 style={{ margin: "0 0 8px", fontSize: 18, fontWeight: 700 }}>Finalizar inventário</h2>
-            <p style={{ color: "#64748b", margin: "0 0 16px", fontSize: 13, lineHeight: 1.5 }}>
-              {inventario.unidadesAtivas.length === 1
-                ? inventario.unidadesAtivas[0].nome
-                : `${inventario.unidadesAtivas.length} unidades em inventário`}
-            </p>
-            <p style={{ margin: "0 0 14px", fontSize: 12, color: "#15803d", lineHeight: 1.45, background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 12px" }}>
-              Finalizar encerra a sessão ativa, mas o inventário continua editável na aba <strong>Finalizados</strong> — ajustes, locais e ligação de mobiliário permanecem disponíveis.
-            </p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12 }}>
-                <p style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#15803d" }}>{inventario.totalFound}</p>
-                <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>Encontrados</p>
-              </div>
-              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 12 }}>
-                <p style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#b91c1c" }}>{inventario.totalBens - inventario.totalFound}</p>
-                <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>Não encontrados</p>
-              </div>
-            </div>
-            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 14, marginBottom: 16 }}>
-              <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: "#0f172a" }}>Dados da coordenadora</p>
-              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 600, color: "#475569" }}>Nome completo</p>
-              <TInput initial={getField("coordNome")} onVal={(v) => setField("coordNome", v)} placeholder="Ex: Maria Silva" style={{ ...inp, marginBottom: 10 }} />
-              <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 600, color: "#475569" }}>Matrícula</p>
-              <TInput initial={getField("coordMatricula")} onVal={(v) => setField("coordMatricula", v)} placeholder="Ex: 123456" style={inp} />
-              <p style={{ margin: "10px 0 0", fontSize: 11, color: "#64748b", lineHeight: 1.45 }}>
-                Será gerado um link e QR Code. A coordenadora se cadastra pelo link; o administrador aprova em Coordenadores.
-              </p>
-            </div>
-            <div style={{ display: "flex", gap: 9 }}>
-              <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
-                Cancelar
-              </button>
-              <button onClick={finalizarComCoordenadora} style={{ ...bp, flex: 1 }}>
-                Gerar link e QR Code
-              </button>
-            </div>
-          </div>
-        </Overlay>
+        <FinalizarModal
+          isMob={isMob}
+          setModal={setModal}
+          inventario={inventario}
+          getField={getField}
+          setField={setField}
+          finalizarComCoordenadora={finalizarComCoordenadora}
+          bs={bs}
+          bp={bp}
+          inp={inp}
+        />
       )}
 
       {modal === "qrcode-resultado" && qrCodeUrl && (
@@ -2750,261 +2536,48 @@ function OrganizedApp({ firebaseOk, isProd }) {
       )}
 
       {modal === "semTombo" && (
-        <Overlay isMobile={isMob} onClose={() => { revokeBlobUrls(formRef.current.stPhotos || []); setModal(null); }}>
-          <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>
-            {(formRef.current.stMode || "novo") === "pendentes" ? "Mesma foto em vários tombos" : "Foto e descrição (sem tombo)"}
-          </h2>
-          <p style={{ margin: "0 0 14px", fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
-            {(formRef.current.stMode || "novo") === "pendentes"
-              ? "Tire uma foto e marque vários itens pendentes da planilha com ela."
-              : "Registre o que encontrou por foto. Depois vincule ao tombo correto na aba Ajuste."}
-          </p>
-          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            {[
-              { id: "novo", label: "Novo sem tombo" },
-              { id: "pendentes", label: "Marcar pendentes" },
-            ].map((m) => (
-              <button
-                key={m.id}
-                onClick={() => {
-                  formRef.current.stMode = m.id;
-                  bumpFt();
-                }}
-                style={{
-                  flex: 1,
-                  padding: "10px",
-                  borderRadius: 9,
-                  border: `2px solid ${(formRef.current.stMode || "novo") === m.id ? "#1351B4" : "#e2e8f0"}`,
-                  background: (formRef.current.stMode || "novo") === m.id ? "#dbeafe" : "#fff",
-                  color: (formRef.current.stMode || "novo") === m.id ? "#1351B4" : "#64748b",
-                  fontWeight: 700,
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>Local da sessão *</label>
-          <select key={"stLoc_" + ft} defaultValue={getField("stLocal")} onChange={(e) => setField("stLocal", e.target.value)} style={inp}>
-            <option value="">— Selecione —</option>
-            {sessionLocais.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.nome}
-              </option>
-            ))}
-          </select>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Fotos *</label>
-          {formRef.current.stPhotos?.length > 0 ? (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-              {formRef.current.stPhotos.map((ph, i) => (
-                <img key={i} src={ph} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", border: "1px solid #e2e8f0" }} />
-              ))}
-            </div>
-          ) : null}
-          <button onClick={() => openCamera("semTombo")} style={{ width: "100%", border: "1.5px dashed #cbd5e1", background: "#f8fafc", borderRadius: 8, padding: 12, cursor: "pointer", fontSize: 13, color: "#334155", fontWeight: 600, marginBottom: 12 }}>
-            {formRef.current.stPhotos?.length ? "Tirar outra foto" : "Tirar foto"}
-          </button>
-
-          {(formRef.current.stMode || "novo") === "novo" ? (
-            <>
-              <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: 10, marginBottom: 14 }}>
-                <p style={{ margin: 0, fontSize: 12, color: "#92400e", fontWeight: 600 }}>Será marcado como item sem tombo (identificado por foto).</p>
-              </div>
-              <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>Nome / descrição do item *</label>
-              <TArea key={"stDesc_" + ft} initial={getField("stDesc")} onVal={(v) => setField("stDesc", v)} rows={2} placeholder="Ex: Cadeira giratória preta..." style={{ ...inp, resize: "none" }} />
-              {inventario.unidadesAtivas.length > 1 && (
-                <>
-                  <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Unidade</label>
-                  <select key={"stUn_" + ft} defaultValue={getField("stUnidadeId")} onChange={(e) => setField("stUnidadeId", e.target.value)} style={inp}>
-                    {inventario.unidadesAtivas.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.nome}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              )}
-              <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Marca / fornecedor da mobília</label>
-              <TInput key={"stMarca_" + ft} initial={getField("stMarca")} onVal={(v) => setField("stMarca", v)} placeholder="Ex: RM MOVEIS" suggestions={sugestoes.marcas} style={inp} />
-              <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Origem</label>
-              <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
-                {["Próprio", "Doação"].map((o) => (
-                  <button
-                    key={o}
-                    type="button"
-                    onClick={() => {
-                      setField("stOrigem", o);
-                      bumpFt();
-                    }}
-                    style={{
-                      flex: 1,
-                      padding: "10px",
-                      borderRadius: 9,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      border: `2px solid ${(getField("stOrigem") || "Próprio") === o ? "#1351B4" : "#e2e8f0"}`,
-                      background: (getField("stOrigem") || "Próprio") === o ? "#dbeafe" : "#fff",
-                      color: (getField("stOrigem") || "Próprio") === o ? "#1351B4" : "#6b7280",
-                      minHeight: 44,
-                    }}
-                  >
-                    {o}
-                  </button>
-                ))}
-              </div>
-              {(getField("stOrigem") || "Próprio") === "Doação" && (
-                <DoacaoOrigemFields prefix="st" getField={getField} setField={setField} bumpFt={bumpFt} inp={inp} ft={ft} />
-              )}
-              <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Tombamento sugerido (opcional)</label>
-              <TInput key={"stRef_" + ft} initial={getField("stTomboRef")} onVal={(v) => setField("stTomboRef", v)} placeholder="Número se souber..." style={inp} />
-            </>
-          ) : (
-            <>
-              <p style={{ margin: "0 0 8px", fontSize: 12, color: "#64748b" }}>Busque itens pendentes e selecione vários para usar a mesma foto.</p>
-              <TInput
-                key={"stPendS_" + ft}
-                initial={getField("stPendSearch")}
-                onVal={(v) => {
-                  setField("stPendSearch", v);
-                  bumpFt();
-                }}
-                placeholder="Buscar por tombo, descrição, fornecedor..."
-                style={{ ...inp, marginBottom: 8 }}
-              />
-              <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10, padding: 8, marginBottom: 8 }}>
-                {getSemTomboPendentes().slice(0, 40).map((it) => {
-                  const sel = (formRef.current.stSelectedIds || []).includes(it.id);
-                  return (
-                    <label key={it.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 6px", borderBottom: "1px solid #f1f5f9", cursor: "pointer" }}>
-                      <input type="checkbox" checked={sel} onChange={() => toggleStPending(it.id)} style={{ marginTop: 3 }} />
-                      <span style={{ minWidth: 0 }}>
-                        <span style={{ display: "block", fontSize: 12, fontWeight: 700 }}>{it.descricao || it.especie || "—"}</span>
-                        <span style={{ display: "block", fontSize: 11, color: "#64748b" }}>Nº {getItemCode(it)} · {it.fornecedor || "—"}</span>
-                      </span>
-                    </label>
-                  );
-                })}
-                {getSemTomboPendentes().length === 0 && (
-                  <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", textAlign: "center", padding: 12 }}>Nenhum pendente encontrado.</p>
-                )}
-              </div>
-              <p style={{ margin: 0, fontSize: 11, color: "#64748b" }}>
-                Selecionados: {(formRef.current.stSelectedIds || []).length}
-              </p>
-            </>
-          )}
-
-          <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
-            <button onClick={() => { revokeBlobUrls(formRef.current.stPhotos || []); setModal(null); }} style={{ ...bs, flex: 1 }}>
-              Cancelar
-            </button>
-            <button
-              onClick={(formRef.current.stMode || "novo") === "pendentes" ? addSemTomboPendentes : addSemTomboItem}
-              style={{ ...bp, flex: 1 }}
-            >
-              Registrar
-            </button>
-          </div>
-        </Overlay>
+        <SemTomboModal
+          isMob={isMob}
+          revokeBlobUrls={revokeBlobUrls}
+          formRef={formRef}
+          setModal={setModal}
+          bumpFt={bumpFt}
+          getField={getField}
+          setField={setField}
+          sessionLocais={sessionLocais}
+          openCamera={openCamera}
+          inventario={inventario}
+          sugestoes={sugestoes}
+          getSemTomboPendentes={getSemTomboPendentes}
+          toggleStPending={toggleStPending}
+          getItemCode={getItemCode}
+          addSemTomboPendentes={addSemTomboPendentes}
+          addSemTomboItem={addSemTomboItem}
+          bs={bs}
+          bp={bp}
+          inp={inp}
+          ft={ft}
+        />
       )}
 
       {modal === "ajusteLink" && formRef.current.ajusteStItem && (
-        <Overlay isMobile={isMob} onClose={() => setModal(null)}>
-          <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>Vincular foto ao tombo</h2>
-          <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
-            Foto/descrição: <strong>{formRef.current.ajusteStItem.descricao || formRef.current.ajusteStFound?.descricaoEdit || "—"}</strong>
-          </p>
-          <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: 10, marginBottom: 12 }}>
-            <p style={{ margin: 0, fontSize: 11, color: "#92400e" }}>
-              Escolha um tombo da planilha que ainda não foi inventariado. A foto será transferida para esse patrimônio.
-            </p>
-          </div>
-          <TInput
-            key={"ajS_" + ft}
-            initial={getField("ajusteSearch")}
-            onVal={(v) => {
-              setField("ajusteSearch", v);
-              bumpFt();
-            }}
-            placeholder="Buscar tombo pendente..."
-            style={{ ...inp, marginBottom: 8 }}
-          />
-          <div style={{ maxHeight: 240, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10 }}>
-            {(() => {
-              const stUnitId = formRef.current.ajusteStItem?.unidadeId || formRef.current.ajusteStFound?.unidadeId;
-              const q = String(formRef.current.ajusteSearch || "").trim().toLowerCase();
-              const pool = scopeAllItens.filter((i) => {
-                if (i.id === formRef.current.ajusteStId) return false;
-                if (isSemTomboItem(i, found.foundMap[i.id])) return false;
-                if (String(i.id || "").startsWith("ST_") || String(i.id || "").startsWith("MAN_")) return false;
-                if (found.foundSet.has(i.id)) return false;
-                if (stUnitId && i.unidadeId && i.unidadeId !== stUnitId) return false;
-                if (!q) return true;
-                return (
-                  String(i.id || "").toLowerCase().includes(q) ||
-                  String(i.patrimonioLabel || "").toLowerCase().includes(q) ||
-                  String(i.descricao || "").toLowerCase().includes(q) ||
-                  String(i.especie || "").toLowerCase().includes(q) ||
-                  String(i.fornecedor || "").toLowerCase().includes(q) ||
-                  String(i.marca || "").toLowerCase().includes(q)
-                );
-              });
-              const ranked = rankTombosForAjuste(formRef.current.ajusteStItem, formRef.current.ajusteStFound, pool, {
-                minScore: 0,
-                limit: 50,
-              });
-              const rankedIds = new Set(ranked.map((r) => r.item.id));
-              const rest = pool.filter((i) => !rankedIds.has(i.id));
-              const candidates = [...ranked.map((r) => ({ ...r.item, _match: r })), ...rest.map((item) => ({ ...item, _match: null }))].slice(0, 40);
-              if (!candidates.length) {
-                return <p style={{ margin: 0, padding: 16, fontSize: 12, color: "#94a3b8", textAlign: "center" }}>Nenhum tombo pendente encontrado.</p>;
-              }
-              return candidates.map((it) => {
-                const sel = formRef.current.ajusteRealId === it.id;
-                const match = it._match;
-                return (
-                  <button
-                    key={it.id}
-                    type="button"
-                    onClick={() => {
-                      formRef.current.ajusteRealId = it.id;
-                      bumpFt();
-                    }}
-                    style={{
-                      width: "100%",
-                      textAlign: "left",
-                      border: "none",
-                      borderBottom: "1px solid #f1f5f9",
-                      background: sel ? "#eff6ff" : match?.score >= 40 ? "#f0fdf4" : "#fff",
-                      padding: "10px 12px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <span style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
-                      <span style={{ display: "block", fontSize: 12, fontWeight: 700, flex: 1 }}>{it.descricao || it.especie || "—"}</span>
-                      {match?.score >= 15 && (
-                        <span style={{ fontSize: 10, fontWeight: 800, color: match.score >= 60 ? "#15803d" : "#1d4ed8", flexShrink: 0 }}>
-                          {match.score}% · {match.reasons?.join(", ")}
-                        </span>
-                      )}
-                    </span>
-                    <span style={{ display: "block", fontSize: 11, color: "#64748b", marginTop: 2 }}>
-                      Nº {it.patrimonioLabel || it.id} · {it.fornecedor || "—"}
-                      {it.marca ? ` · Marca: ${it.marca}` : ""}
-                    </span>
-                  </button>
-                );
-              });
-            })()}
-          </div>
-          <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
-            <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>Cancelar</button>
-            <button onClick={linkSemTomboToTombo} style={{ ...bp, flex: 1 }}>Vincular</button>
-          </div>
-        </Overlay>
+        <AjusteLinkModal
+          isMob={isMob}
+          setModal={setModal}
+          formRef={formRef}
+          getField={getField}
+          setField={setField}
+          bumpFt={bumpFt}
+          scopeAllItens={scopeAllItens}
+          isSemTomboItem={isSemTomboItem}
+          found={found}
+          rankTombosForAjuste={rankTombosForAjuste}
+          linkSemTomboToTombo={linkSemTomboToTombo}
+          bs={bs}
+          bp={bp}
+          inp={inp}
+          ft={ft}
+        />
       )}
 
       {modal === "cancelar-inventario" && (

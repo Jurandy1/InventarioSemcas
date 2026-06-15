@@ -51,10 +51,6 @@ export function InventarioPage({
   totalBens,
   progresso,
   filtered,
-  paged,
-  page,
-  totalPages,
-  setPage,
   search,
   setSearch,
   hideFound,
@@ -81,6 +77,8 @@ export function InventarioPage({
   onViewImage,
 }) {
   const [viewMode, setViewMode] = useState("padrao");
+  const [localPage, setLocalPage] = useState(1);
+  const [perPage, setPerPage] = useState(24);
   const [expandedCats, setExpandedCats] = useState({});
   const [unidadeSearch, setUnidadeSearch] = useState("");
   const [localNomeRapido, setLocalNomeRapido] = useState("");
@@ -578,7 +576,7 @@ export function InventarioPage({
             initial={search}
             onVal={(v) => {
               setSearch(v);
-              setPage(1);
+              setLocalPage(1);
             }}
             placeholder="Buscar Nº, espécie, descrição..."
             style={{ ...inp, marginBottom: 8 }}
@@ -589,7 +587,7 @@ export function InventarioPage({
               checked={!!hideFound}
               onChange={(e) => {
                 setHideFound?.(e.target.checked);
-                setPage(1);
+                setLocalPage(1);
               }}
             />
             Ocultar itens já encontrados ({totalFound})
@@ -600,7 +598,7 @@ export function InventarioPage({
               checked={!!hideIncorporados}
               onChange={(e) => {
                 setHideIncorporados?.(e.target.checked);
-                setPage(1);
+                setLocalPage(1);
               }}
             />
             Ocultar itens Incorporados
@@ -735,32 +733,92 @@ export function InventarioPage({
               );
             }
 
+            const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+            const safePage = Math.min(localPage, totalPages);
+            const pageItems = filtered.slice((safePage - 1) * perPage, safePage * perPage);
+
+            const buildPageButtons = () => {
+              if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+              const pages = new Set([1, 2, totalPages - 1, totalPages, safePage - 1, safePage, safePage + 1].filter(p => p >= 1 && p <= totalPages));
+              const sorted = [...pages].sort((a, b) => a - b);
+              const result = [];
+              for (let i = 0; i < sorted.length; i++) {
+                if (i > 0 && sorted[i] - sorted[i - 1] > 1) result.push("...");
+                result.push(sorted[i]);
+              }
+              return result;
+            };
+
+            const btnStyle = (active) => ({
+              minWidth: 32,
+              height: 32,
+              borderRadius: 8,
+              border: active ? "2px solid #1351B4" : "1.5px solid #e2e8f0",
+              background: active ? "#1351B4" : "#fff",
+              color: active ? "#fff" : "#374151",
+              fontWeight: active ? 800 : 600,
+              fontSize: 13,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "0 6px",
+              transition: "all .15s",
+            });
+
             return (
-              <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10 }}>
-                {paged.map((item) => renderItemCard(item))}
-              </div>
+              <>
+                <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(380px,1fr))", gap: 10 }}>
+                  {pageItems.map((item) => renderItemCard(item))}
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 20, flexWrap: "wrap" }}>
+                  <button onClick={() => setLocalPage((p) => Math.max(1, p - 1))} disabled={safePage === 1} style={{ ...btnStyle(false), opacity: safePage === 1 ? 0.4 : 1 }} title="Página anterior">
+                    ‹
+                  </button>
+
+                  {buildPageButtons().map((p, i) =>
+                    p === "..." ? (
+                      <span key={`ellipsis-${i}`} style={{ padding: "0 4px", color: "#94a3b8", fontSize: 13 }}>…</span>
+                    ) : (
+                      <button key={p} onClick={() => setLocalPage(p)} style={btnStyle(p === safePage)}>
+                        {p}
+                      </button>
+                    )
+                  )}
+
+                  <button onClick={() => setLocalPage((p) => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} style={{ ...btnStyle(false), opacity: safePage === totalPages ? 0.4 : 1 }} title="Próxima página">
+                    ›
+                  </button>
+
+                  <select
+                    value={perPage}
+                    onChange={(e) => { setPerPage(Number(e.target.value)); setLocalPage(1); }}
+                    style={{
+                      marginLeft: 12,
+                      height: 32,
+                      borderRadius: 8,
+                      border: "1.5px solid #e2e8f0",
+                      background: "#fff",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#374151",
+                      padding: "0 8px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {[12, 24, 48, 96].map((n) => (
+                      <option key={n} value={n}>{n} por página</option>
+                    ))}
+                  </select>
+
+                  <span style={{ fontSize: 12, color: "#64748b", marginLeft: 4 }}>
+                    Pág {safePage} de {totalPages} ({filtered.length} itens)
+                  </span>
+                </div>
+              </>
             );
           })()}
-
-          {viewMode === "padrao" && totalPages > 1 && (
-            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 16, flexWrap: "wrap" }}>
-              <button onClick={() => setPage(1)} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                «
-              </button>
-              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                ‹
-              </button>
-              <span style={{ fontSize: 12, color: "#64748b" }}>
-                Pág {page}/{totalPages} · {filtered.length} itens
-              </span>
-              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                ›
-              </button>
-              <button onClick={() => setPage(totalPages)} disabled={page === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                »
-              </button>
-            </div>
-          )}
         </div>
       )}
 

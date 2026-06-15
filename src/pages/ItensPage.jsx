@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
+import MiniSearch from "minisearch";
 import { Badge } from "../components/Badge.jsx";
 import { TInput } from "../components/FormFields.jsx";
 import { ESTADOS, EC } from "../constants/inventory.js";
 import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "../app/categories.js";
-import { getDisplayPhotoUrl } from "../services/storage.js";
 import { SmartImg } from "../components/SmartImg.jsx";
 
 function getItemCode(item) {
@@ -21,20 +21,19 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
   const [localUnit, setLocalUnit] = useState("Todas");
   const [localStat, setLocalStat] = useState("Todos");
   const [localQ, setLocalQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(24);
   const defQ = React.useDeferredValue(localQ);
-  const [localPage, setLocalPage] = useState(1);
-  const IPER = 24;
+
+  const resetPage = () => setPage(1);
 
   const [hideIncorporados, setHideIncorporados] = useState(() => {
     try { return localStorage.getItem("inv-hide-incorporados") === "1"; } catch { return false; }
   });
 
-  const resetPage = () => setLocalPage(1);
-
   const toggleHideInc = (next) => {
     setHideIncorporados(next);
     try { localStorage.setItem("inv-hide-incorporados", next ? "1" : "0"); } catch {}
-    resetPage();
   };
 
   const catCounts = React.useMemo(() => {
@@ -59,8 +58,33 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
 
   const activeCatDef = React.useMemo(() => CATEGORY_TREE.find((c) => c.name === localCat) || null, [localCat]);
 
-  const filtered = React.useMemo(() => {
+  const miniSearch = React.useMemo(() => {
+    const ms = new MiniSearch({
+      fields: ["id", "descricao", "especie", "marca", "fornecedor", "nf", "descricaoEdit", "permutaDesc", "permutaMarca"],
+      storeFields: ["id"],
+      searchOptions: {
+        prefix: true,
+        fuzzy: 0.2,
+      },
+      tokenize: (str) => str.toLowerCase().split(/[\s,]+/),
+    });
+    const docs = todosItens.map((i) => ({
+      ...i,
+      descricaoEdit: foundMap[i.id]?.descricaoEdit || "",
+      permutaDesc: foundMap[i.id]?.permutaDesc || "",
+      permutaMarca: foundMap[i.id]?.permutaMarca || "",
+    }));
+    ms.addAll(docs);
+    return ms;
+  }, [todosItens, foundMap]);
+
+  const searchResults = React.useMemo(() => {
     const q = defQ.toLowerCase().trim();
+    if (!q) return null;
+    return new Set(miniSearch.search(q).map((r) => r.id));
+  }, [miniSearch, defQ]);
+
+  const filtered = React.useMemo(() => {
     return todosItens.filter((i) => {
       if (hideIncorporados && (i.tipoEntrada || "Próprio") === "Incorporado") return false;
       const esp = i.especie || "";
@@ -74,28 +98,10 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
       if (localUnit !== "Todas" && i.unidadeId !== localUnit) return false;
       if (localStat === "Inventariados" && !foundSet.has(i.id)) return false;
       if (localStat === "Pendentes" && foundSet.has(i.id)) return false;
-      if (
-        q &&
-        !(
-          i.id.toLowerCase().includes(q) ||
-          (i.descricao || "").toLowerCase().includes(q) ||
-          (i.especie || "").toLowerCase().includes(q) ||
-          (i.marca || "").toLowerCase().includes(q) ||
-          (i.fornecedor || "").toLowerCase().includes(q) ||
-          (i.nf || "").toLowerCase().includes(q) ||
-          (foundMap[i.id]?.descricaoEdit || "").toLowerCase().includes(q) ||
-          (foundMap[i.id]?.permutaDesc || "").toLowerCase().includes(q) ||
-          (foundMap[i.id]?.permutaMarca || "").toLowerCase().includes(q)
-        )
-      )
-        return false;
+      if (searchResults && !searchResults.has(i.id)) return false;
       return true;
     });
-  }, [todosItens, foundMap, foundSet, localCat, localSub, localEst, localUnit, localStat, localQ]);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / IPER));
-  const curPage = Math.min(localPage, totalPages);
-  const paged = filtered.slice((curPage - 1) * IPER, curPage * IPER);
+  }, [todosItens, foundMap, foundSet, localCat, localSub, localEst, localUnit, localStat, searchResults, hideIncorporados]);
 
   const selectCat = (name) => {
     setLocalCat(name);
@@ -106,6 +112,9 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
     setLocalSub(sub);
     resetPage();
   };
+
+  // Reset página quando filtros mudam
+  React.useEffect(() => { resetPage(); }, [localEst, localUnit, localStat, defQ]);
 
   const SidebarCatBtn = ({ cat }) => {
     const active = localCat === cat.name;
@@ -428,7 +437,6 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
               key={s.key}
               onClick={() => {
                 setLocalStat(s.key);
-                resetPage();
               }}
               style={{
                 display: "block",
@@ -508,7 +516,6 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
             initial={localQ}
             onVal={(v) => {
               setLocalQ(v);
-              resetPage();
             }}
             placeholder="Buscar descrição, Nº, marca, NF..."
             style={inp}
@@ -517,7 +524,6 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
             value={localEst}
             onChange={(e) => {
               setLocalEst(e.target.value);
-              resetPage();
             }}
             style={inp}
           >
@@ -530,7 +536,6 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
             value={localUnit}
             onChange={(e) => {
               setLocalUnit(e.target.value);
-              resetPage();
             }}
             style={inp}
           >
@@ -552,7 +557,7 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
           Ocultar itens Incorporados
         </label>
 
-        {paged.length === 0 ? (
+        {filtered.length === 0 ? (
           <div style={{ ...cd, textAlign: "center", padding: 48 }}>
             <p style={{ color: "#94a3b8", margin: 0 }}>Nenhum item com esses filtros.</p>
             <button
@@ -566,35 +571,133 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
               Limpar filtros
             </button>
           </div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: isMob ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(185px, 1fr))", gap: 10 }}>
-            {paged.map((item) => (
-              <ItemCard key={`${item.unidadeId}_${item.id}`} item={item} />
-            ))}
-          </div>
-        )}
+        ) : (() => {
+          const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+          const safePage = Math.min(page, totalPages);
+          const pageItems = filtered.slice((safePage - 1) * perPage, safePage * perPage);
 
-        {totalPages > 1 && (
-          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 16, flexWrap: "wrap" }}>
-            <button onClick={() => setLocalPage(1)} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-              «
-            </button>
-            <button onClick={() => setLocalPage((p) => Math.max(1, p - 1))} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-              ‹
-            </button>
-            <span style={{ fontSize: 12, color: "#64748b" }}>
-              Pág {curPage}/{totalPages} · {filtered.length.toLocaleString("pt-BR")} itens
-            </span>
-            <button onClick={() => setLocalPage((p) => Math.min(totalPages, p + 1))} disabled={curPage === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-              ›
-            </button>
-            <button onClick={() => setLocalPage(totalPages)} disabled={curPage === totalPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-              »
-            </button>
-          </div>
-        )}
+          // Gera botões de página: sempre mostra primeiros, últimos e vizinhos da página atual
+          const buildPageButtons = () => {
+            if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+            const pages = new Set([1, 2, totalPages - 1, totalPages, safePage - 1, safePage, safePage + 1].filter(p => p >= 1 && p <= totalPages));
+            const sorted = [...pages].sort((a, b) => a - b);
+            const result = [];
+            for (let i = 0; i < sorted.length; i++) {
+              if (i > 0 && sorted[i] - sorted[i - 1] > 1) result.push("...");
+              result.push(sorted[i]);
+            }
+            return result;
+          };
+
+          const btnStyle = (active) => ({
+            minWidth: 32,
+            height: 32,
+            borderRadius: 8,
+            border: active ? "2px solid #1351B4" : "1.5px solid #e2e8f0",
+            background: active ? "#1351B4" : "#fff",
+            color: active ? "#fff" : "#374151",
+            fontWeight: active ? 800 : 600,
+            fontSize: 13,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0 6px",
+            transition: "all .15s",
+          });
+
+          return (
+            <>
+              {/* Grid de cards */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: isMob ? "repeat(2, 1fr)" : "repeat(auto-fill, minmax(185px, 1fr))",
+                  gap: 10,
+                }}
+              >
+                {pageItems.map((item) => (
+                  <ItemCard key={`${item.unidadeId}_${item.id}`} item={item} />
+                ))}
+              </div>
+
+              {/* Controles de paginação */}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  marginTop: 20,
+                  flexWrap: "wrap",
+                }}
+              >
+                {/* Botão anterior */}
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage === 1}
+                  style={{ ...btnStyle(false), opacity: safePage === 1 ? 0.4 : 1 }}
+                  title="Página anterior"
+                >
+                  ‹
+                </button>
+
+                {/* Números de página */}
+                {buildPageButtons().map((p, i) =>
+                  p === "..." ? (
+                    <span key={`ellipsis-${i}`} style={{ padding: "0 4px", color: "#94a3b8", fontSize: 13 }}>…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      style={btnStyle(p === safePage)}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+
+                {/* Botão próximo */}
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safePage === totalPages}
+                  style={{ ...btnStyle(false), opacity: safePage === totalPages ? 0.4 : 1 }}
+                  title="Próxima página"
+                >
+                  ›
+                </button>
+
+                {/* Seletor de itens por página */}
+                <select
+                  value={perPage}
+                  onChange={(e) => { setPerPage(Number(e.target.value)); resetPage(); }}
+                  style={{
+                    marginLeft: 12,
+                    height: 32,
+                    borderRadius: 8,
+                    border: "1.5px solid #e2e8f0",
+                    background: "#fff",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "#374151",
+                    padding: "0 8px",
+                    cursor: "pointer",
+                  }}
+                >
+                  {[12, 24, 48, 96].map((n) => (
+                    <option key={n} value={n}>{n} por página</option>
+                  ))}
+                </select>
+
+                {/* Indicador de página */}
+                <span style={{ fontSize: 12, color: "#64748b", marginLeft: 4 }}>
+                  Página {safePage} de {totalPages}
+                </span>
+              </div>
+            </>
+          );
+        })()}
       </div>
     </div>
   );
 }
-

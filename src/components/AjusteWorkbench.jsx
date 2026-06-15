@@ -243,6 +243,11 @@ export function AjusteWorkbench({
                         {f?.tomboReferencia && (
                           <p style={{ margin: "2px 0 0", fontSize: 11, color: "#92400e" }}>Tombo indicado: {f.tomboReferencia}</p>
                         )}
+                        {item.tomboRef && (
+                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#1351B4", fontWeight: 600 }}>
+                            🔗 Tombo digitado: {item.tomboRef}
+                          </p>
+                        )}
                         {unidadesAtivas.length > 1 && (
                           <p style={{ margin: "2px 0 0", fontSize: 10, color: "#64748b" }}>{item.unidadeNome}</p>
                         )}

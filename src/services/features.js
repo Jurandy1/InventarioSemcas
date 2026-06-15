@@ -4,6 +4,8 @@ import { compressPhotoArray } from "../utils/performance.js";
 import { deleteOfflinePhotos, loadOfflinePhotos, saveOfflinePhotos } from "../utils/offlineStore.js";
 import { createVisibilityAwarePoller, isLikelySlowDevice, isPageHidden } from "../utils/mobilePerf.js";
 
+import { get, set } from "idb-keyval";
+
 export class OfflineManager {
   constructor() {
     this.queue = [];
@@ -20,9 +22,9 @@ export class OfflineManager {
     this.startPeriodicSync();
   }
 
-  loadQueue() {
+  async loadQueue() {
     try {
-      const stored = localStorage.getItem("offline-queue");
+      const stored = await get("offline-queue");
       this.queue = stored ? JSON.parse(stored) : [];
     } catch (e) {
       console.error("Erro ao carregar fila offline:", e);
@@ -30,9 +32,9 @@ export class OfflineManager {
     }
   }
 
-  persistQueue() {
+  async persistQueue() {
     try {
-      localStorage.setItem("offline-queue", JSON.stringify(this.queue));
+      await set("offline-queue", JSON.stringify(this.queue));
     } catch (e) {
       console.error("Erro ao salvar fila offline:", e);
     }

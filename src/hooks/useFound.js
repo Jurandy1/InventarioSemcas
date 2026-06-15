@@ -33,8 +33,13 @@ export function useFound({ showT, applyDescOverride } = {}) {
   const foundMap = useMemo(() => {
     const m = {};
     for (const f of found) {
-      const id = normalizePatrimonioId(f.patrimonioId || f._id);
-      if (id) m[id] = f;
+      const rawId = f.patrimonioId || f._id;
+      const normalizedId = normalizePatrimonioId(rawId);
+      if (normalizedId) m[normalizedId] = f;
+      // Também indexar pelo ID bruto para casos onde item.id não está normalizado
+      // (ex: itens manuais com tombamento digitado como "123/2024" → id "123-2024")
+      const rawStr = String(rawId || "");
+      if (rawStr && rawStr !== normalizedId) m[rawStr] = f;
     }
     return m;
   }, [found]);
@@ -97,6 +102,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
       localOnly = false,
       forceWrite = false,
       serverSinceTs = null,
+      isManual = false,
     }) => {
       const now = new Date();
       const docId = normalizePatrimonioId(itemId);
@@ -121,6 +127,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
         ultimaAtualizacao: now.toISOString(),
         ultimoUsuarioAnterior: undefined,
         user: logado?.nome || "",
+        ...(isManual ? { isManual: true } : {}),
         ...extras,
       };
 

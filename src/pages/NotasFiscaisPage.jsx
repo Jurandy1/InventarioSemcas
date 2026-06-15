@@ -1,4 +1,6 @@
 import React from "react";
+import MiniSearch from "minisearch";
+import { VirtuosoGrid } from "react-virtuoso";
 import { TInput } from "../components/FormFields.jsx";
 
 function getDisplayDesc(item, foundEntry) {
@@ -25,6 +27,7 @@ export function NotasFiscaisPage({
   cd,
   bs,
 }) {
+
   const [expandedNf, setExpandedNf] = React.useState(null);
   const [expandedSearch, setExpandedSearch] = React.useState("");
   const defExpandedSearch = React.useDeferredValue(expandedSearch);
@@ -53,7 +56,6 @@ export function NotasFiscaisPage({
           value={nfTipo}
           onChange={(e) => {
             setNfTipo(e.target.value);
-            setNfPage(1);
           }}
           style={inp}
         >
@@ -64,28 +66,59 @@ export function NotasFiscaisPage({
       </div>
 
       {(() => {
-        const term = defNfSearch.toLowerCase().trim();
+        const miniSearchNF = React.useMemo(() => {
+          const ms = new MiniSearch({
+            fields: ["nf", "fornecedor"],
+            storeFields: ["nf"],
+            searchOptions: { prefix: true, fuzzy: 0.2 },
+            tokenize: (str) => str.toLowerCase().split(/[\s,]+/),
+          });
+          ms.addAll(nfDataList.map((n) => ({ id: n.nf, nf: n.nf, fornecedor: n.fornecedor })));
+          return ms;
+        }, [nfDataList]);
+
+        const searchResultsNf = React.useMemo(() => {
+          const q = defNfSearch.toLowerCase().trim();
+          if (!q) return null;
+          return new Set(miniSearchNF.search(q).map((r) => r.id));
+        }, [miniSearchNF, defNfSearch]);
+
         const list = nfDataList.filter((n) => {
           const tipoOk = nfTipo === "Todos" || (n.tipoEntrada || "Próprio") === nfTipo;
-          const txtOk = !term || String(n.nf || "").toLowerCase().includes(term) || String(n.fornecedor || "").toLowerCase().includes(term);
-          return tipoOk && txtOk;
+          if (searchResultsNf) return tipoOk && searchResultsNf.has(n.nf);
+          return tipoOk;
         });
-
-        const totalNfPages = Math.max(1, Math.ceil(list.length / NF_PER_PAGE));
-        const curPage = Math.min(nfPage, totalNfPages);
-        const pagedNf = list.slice((curPage - 1) * NF_PER_PAGE, curPage * NF_PER_PAGE);
 
         return (
           <>
             <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 12px" }}>{list.length} nota(s) encontrada(s)</p>
-            <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(420px, 1fr))", gap: 10 }}>
-              {pagedNf.map((n) => {
+            <VirtuosoGrid
+              useWindowScroll
+              totalCount={list.length}
+              components={{
+                List: React.forwardRef(({ style, children, ...props }, ref) => (
+                  <div ref={ref} {...props} style={{ ...style, display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(420px, 1fr))", gap: 10 }}>
+                    {children}
+                  </div>
+                )),
+                Item: ({ children, ...props }) => <div {...props}>{children}</div>,
+              }}
+              itemContent={(index) => {
+                const n = list[index];
                 const meta = origemMeta[n.tipoEntrada || "Próprio"] || origemMeta["Próprio"];
                 const inv = n.itens.filter((i) => foundSet.has(i.id)).length;
                 const pct = n.itens.length > 0 ? Math.round((inv / n.itens.length) * 100) : 0;
+                
+                const displayItens = n.itens.slice(0, 2);
 
                 return (
-                  <div key={n.nf} style={{ ...cd, border: "1.5px solid #e2e8f0" }}>
+                  <div
+                    key={n.nf}
+                    onClick={() => setExpandedNf(n)}
+                    style={{ ...cd, border: "1.5px solid #e2e8f0", cursor: "pointer", transition: "transform 0.1s" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.transform = "translateY(-2px)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.transform = "none")}
+                  >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", marginBottom: 10 }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -118,113 +151,135 @@ export function NotasFiscaisPage({
                     </div>
 
                     <div style={{ display: "grid", gap: 6 }}>
-                      {(() => {
-                        const isExpanded = expandedNf === n.nf;
-                        let displayItens = n.itens;
-                        if (isExpanded) {
-                          const q = defExpandedSearch.trim().toLowerCase();
-                          if (q) {
-                            displayItens = displayItens.filter((i) => {
-                              const fEntry = foundMap[i.id];
-                              const desc = getDisplayDesc(i, fEntry).toLowerCase();
-                              return String(i.id || "").toLowerCase().includes(q) || desc.includes(q);
-                            });
-                          }
-                        } else {
-                          displayItens = displayItens.slice(0, 4);
-                        }
-
+                      {displayItens.map((i) => {
+                        const fEntry = foundMap[i.id];
+                        const isPermutaNF = fEntry?.situacao === "Permuta";
                         return (
-                          <>
-                            {isExpanded && (
-                              <div style={{ marginBottom: 4 }}>
-                                <TInput
-                                  initial={expandedSearch}
-                                  onVal={setExpandedSearch}
-                                  placeholder="Buscar item nesta NF..."
-                                  style={{ ...inp, padding: "6px 10px", fontSize: 12 }}
-                                />
-                              </div>
-                            )}
-                            <div style={{ maxHeight: isExpanded ? 300 : "none", overflowY: isExpanded ? "auto" : "visible", display: "grid", gap: 6, paddingRight: isExpanded ? 4 : 0 }}>
-                              {displayItens.map((i) => {
-                                const fEntry = foundMap[i.id];
-                                const isPermutaNF = fEntry?.situacao === "Permuta";
-                                return (
-                                  <div
-                                    key={i.id}
-                                    onClick={() => {
-                                      const u = unidades.find((x) => x.id === i.unidadeId);
-                                      if (u) saveAtiva(u);
-                                      onOpenItem(i);
-                                    }}
-                                    style={{
-                                      display: "flex",
-                                      gap: 10,
-                                      alignItems: "center",
-                                      padding: "8px 10px",
-                                      borderRadius: 10,
-                                      cursor: "pointer",
-                                      border: `1px solid ${isPermutaNF ? "#fcd34d" : foundSet.has(i.id) ? "#bbf7d0" : "#e2e8f0"}`,
-                                      background: isPermutaNF ? "#fefce8" : foundSet.has(i.id) ? "#f0fdf4" : "#fff",
-                                    }}
-                                  >
-                                    <div style={{ minWidth: 0 }}>
-                                      <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                        {getDisplayDesc(i, fEntry)}
-                                      </p>
-                                      {isPermutaNF && fEntry?.permutaDesc && <p style={{ margin: "1px 0 0", fontSize: 10, color: "#92400e", fontWeight: 700 }}>Permuta real: {fEntry.permutaDesc}</p>}
-                                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {i.id} · {i.unidadeNome}</p>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                              {isExpanded && displayItens.length === 0 && (
-                                <p style={{ fontSize: 11, color: "#94a3b8", textAlign: "center", margin: "10px 0" }}>Nenhum item corresponde à busca.</p>
-                              )}
+                          <div
+                            key={i.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const u = unidades.find((x) => x.id === i.unidadeId);
+                              if (u) saveAtiva(u);
+                              onOpenItem(i);
+                            }}
+                            style={{
+                              display: "flex", gap: 10, alignItems: "center", padding: "8px 10px",
+                              borderRadius: 10, cursor: "pointer",
+                              border: `1px solid ${isPermutaNF ? "#fcd34d" : foundSet.has(i.id) ? "#bbf7d0" : "#e2e8f0"}`,
+                              background: isPermutaNF ? "#fefce8" : foundSet.has(i.id) ? "#f0fdf4" : "#fff",
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {getDisplayDesc(i, fEntry)}
+                              </p>
+                              {isPermutaNF && fEntry?.permutaDesc && <p style={{ margin: "1px 0 0", fontSize: 10, color: "#92400e", fontWeight: 700 }}>Permuta real: {fEntry.permutaDesc}</p>}
+                              <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {i.id} · {i.unidadeNome}</p>
                             </div>
-                            
-                            {n.itens.length > 4 && (
-                              <button
-                                onClick={() => {
-                                  if (isExpanded) {
-                                    setExpandedNf(null);
-                                  } else {
-                                    setExpandedNf(n.nf);
-                                    setExpandedSearch("");
-                                  }
-                                }}
-                                style={{ ...bs, width: "100%", marginTop: 4, padding: "6px 0", fontSize: 11, border: "none", background: "#f1f5f9", color: "#475569", fontWeight: 700 }}
-                              >
-                                {isExpanded ? "Fechar" : `Ver todos os ${n.itens.length} itens`}
-                              </button>
-                            )}
-                          </>
+                          </div>
                         );
-                      })()}
+                      })}
+                      {n.itens.length > 2 && (
+                        <p style={{ margin: "4px 0 0", fontSize: 11, color: "#1351B4", fontWeight: 700, textAlign: "center" }}>
+                          + {n.itens.length - 2} itens... (Clique na nota para ver mais)
+                        </p>
+                      )}
                     </div>
                   </div>
                 );
-              })}
-            </div>
+              }}
+            />
 
-            {totalNfPages > 1 && (
-              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginTop: 16, flexWrap: "wrap" }}>
-                <button onClick={() => setNfPage(1)} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                  «
-                </button>
-                <button onClick={() => setNfPage((p) => Math.max(1, p - 1))} disabled={curPage === 1} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                  ‹
-                </button>
-                <span style={{ fontSize: 12, color: "#64748b" }}>
-                  Pág {curPage}/{totalNfPages}
-                </span>
-                <button onClick={() => setNfPage((p) => Math.min(totalNfPages, p + 1))} disabled={curPage === totalNfPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                  ›
-                </button>
-                <button onClick={() => setNfPage(totalNfPages)} disabled={curPage === totalNfPages} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                  »
-                </button>
+            {expandedNf && (
+              <div
+                style={{
+                  position: "fixed", inset: 0, zIndex: 9999,
+                  background: "rgba(15, 23, 42, 0.7)", display: "flex",
+                  alignItems: "center", justifyContent: "center", padding: 16
+                }}
+                onClick={() => {
+                  setExpandedNf(null);
+                  setExpandedSearch("");
+                }}
+              >
+                <div
+                  style={{
+                    background: "#fff", borderRadius: 16, width: "100%", maxWidth: 600,
+                    maxHeight: "85vh", display: "flex", flexDirection: "column",
+                    boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)"
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div style={{ padding: "16px 20px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: "#0f172a" }}>NF {expandedNf.nf}</h3>
+                      <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>{expandedNf.fornecedor || "—"}</p>
+                    </div>
+                    <button
+                      onClick={() => { setExpandedNf(null); setExpandedSearch(""); }}
+                      style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#64748b", padding: 4 }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  
+                  <div style={{ padding: "12px 20px" }}>
+                    <TInput
+                      initial={expandedSearch}
+                      onVal={setExpandedSearch}
+                      placeholder="Buscar item nesta NF..."
+                      style={{ ...inp, padding: "8px 12px", fontSize: 13 }}
+                    />
+                  </div>
+
+                  <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 20px", display: "grid", gap: 8 }}>
+                    {(() => {
+                      const q = defExpandedSearch.trim().toLowerCase();
+                      let items = expandedNf.itens;
+                      if (q) {
+                        items = items.filter((i) => {
+                          const fEntry = foundMap[i.id];
+                          const desc = getDisplayDesc(i, fEntry).toLowerCase();
+                          return String(i.id || "").toLowerCase().includes(q) || desc.includes(q);
+                        });
+                      }
+
+                      if (items.length === 0) return <p style={{ textAlign: "center", color: "#94a3b8", fontSize: 13, marginTop: 20 }}>Nenhum item corresponde à busca.</p>;
+
+                      return items.map((i) => {
+                        const fEntry = foundMap[i.id];
+                        const isPermutaNF = fEntry?.situacao === "Permuta";
+                        return (
+                          <div
+                            key={i.id}
+                            onClick={() => {
+                              setExpandedNf(null);
+                              setExpandedSearch("");
+                              const u = unidades.find((x) => x.id === i.unidadeId);
+                              if (u) saveAtiva(u);
+                              onOpenItem(i);
+                            }}
+                            style={{
+                              display: "flex", gap: 10, alignItems: "center", padding: "10px 12px",
+                              borderRadius: 10, cursor: "pointer",
+                              border: `1px solid ${isPermutaNF ? "#fcd34d" : foundSet.has(i.id) ? "#bbf7d0" : "#e2e8f0"}`,
+                              background: isPermutaNF ? "#fefce8" : foundSet.has(i.id) ? "#f0fdf4" : "#fff",
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#0f172a" }}>
+                                {getDisplayDesc(i, fEntry)}
+                              </p>
+                              {isPermutaNF && fEntry?.permutaDesc && <p style={{ margin: "2px 0 0", fontSize: 11, color: "#92400e", fontWeight: 700 }}>Permuta real: {fEntry.permutaDesc}</p>}
+                              <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>Nº {i.id} · {i.unidadeNome}</p>
+                            </div>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
               </div>
             )}
           </>

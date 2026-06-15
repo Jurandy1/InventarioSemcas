@@ -23,37 +23,40 @@ export async function paginarItens(unidadeId, pageSize = 50, cursor = null) {
   }
 }
 
+import { get, set, del, keys as idbKeys } from "idb-keyval";
+
 const CACHE_PREFIX = "inv-cache-v2";
 const CACHE_TTL = 30 * 60 * 1000;
 const CACHE_BUSTER_KEY = `${CACHE_PREFIX}:__buster__`;
 
-function getCacheBuster() {
+async function getCacheBuster() {
   try {
-    const raw = localStorage.getItem(CACHE_BUSTER_KEY);
+    const raw = await get(CACHE_BUSTER_KEY);
     return raw ? Number(raw) || 0 : 0;
   } catch {
     return 0;
   }
 }
 
-export function bumpCacheBuster() {
+export async function bumpCacheBuster() {
   try {
-    localStorage.setItem(CACHE_BUSTER_KEY, String(Date.now()));
+    await set(CACHE_BUSTER_KEY, String(Date.now()));
   } catch {}
 }
 
 export async function getCachedData(key) {
   try {
-    const stored = localStorage.getItem(`${CACHE_PREFIX}:${key}`);
+    const stored = await get(`${CACHE_PREFIX}:${key}`);
     if (!stored) return null;
 
     const { data, ts, buster } = JSON.parse(stored);
-    if (typeof buster === "number" && buster !== getCacheBuster()) {
-      localStorage.removeItem(`${CACHE_PREFIX}:${key}`);
+    const currentBuster = await getCacheBuster();
+    if (typeof buster === "number" && buster !== currentBuster) {
+      await del(`${CACHE_PREFIX}:${key}`);
       return null;
     }
     if (Date.now() - ts > CACHE_TTL) {
-      localStorage.removeItem(`${CACHE_PREFIX}:${key}`);
+      await del(`${CACHE_PREFIX}:${key}`);
       return null;
     }
     return data;
@@ -72,12 +75,13 @@ export async function setCachedData(key, data) {
     if (prev) clearTimeout(prev);
     cacheWriteTimers.set(
       cacheKey,
-      setTimeout(() => {
+      setTimeout(async () => {
         cacheWriteTimers.delete(cacheKey);
         try {
-          localStorage.setItem(
+          const currentBuster = await getCacheBuster();
+          await set(
             cacheKey,
-            JSON.stringify({ data, ts: Date.now(), buster: getCacheBuster() })
+            JSON.stringify({ data, ts: Date.now(), buster: currentBuster })
           );
         } catch (e) {
           console.warn("Cache write failed:", e);
@@ -90,9 +94,10 @@ export async function setCachedData(key, data) {
 
 export async function clearCache(pattern = null) {
   try {
-    for (const key of Object.keys(localStorage)) {
-      if (key.startsWith(CACHE_PREFIX) && (!pattern || key.includes(pattern))) {
-        localStorage.removeItem(key);
+    const allKeys = await idbKeys();
+    for (const key of allKeys) {
+      if (typeof key === "string" && key.startsWith(CACHE_PREFIX) && (!pattern || key.includes(pattern))) {
+        await del(key);
       }
     }
   } catch (e) {

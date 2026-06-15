@@ -67,14 +67,23 @@ function toMediaUrl(src) {
   return s;
 }
 
-export async function getDisplayPhotoUrl(src) {
+/**
+ * Resolve uma URL de foto para exibição.
+ * - URLs data:/blob: → retorna diretamente
+ * - URLs com token= → retorna diretamente (já públicas)
+ * - URLs Firebase sem token → busca com auth e cria blob URL
+ * - forceRefresh=true → ignora cache e busca nova URL
+ */
+export async function getDisplayPhotoUrl(src, { forceRefresh = false } = {}) {
   const mediaUrl = toMediaUrl(src);
   if (!mediaUrl) return "";
   if (mediaUrl.startsWith("data:") || mediaUrl.startsWith("blob:")) return mediaUrl;
   if (mediaUrl.includes("token=")) return mediaUrl;
 
-  const cached = displayUrlCache.get(mediaUrl);
-  if (cached) return cached;
+  if (!forceRefresh) {
+    const cached = displayUrlCache.get(mediaUrl);
+    if (cached) return cached;
+  }
 
   const { token } = getFirebaseSession();
   if (!token) return mediaUrl;
@@ -84,9 +93,18 @@ export async function getDisplayPhotoUrl(src) {
     if (!r.ok) return mediaUrl;
     const blob = await r.blob();
     const objUrl = URL.createObjectURL(blob);
+
+    // Revogar blob URL antigo do cache antes de substituir (forceRefresh)
+    if (forceRefresh) {
+      const oldUrl = displayUrlCache.get(mediaUrl);
+      if (oldUrl && oldUrl.startsWith("blob:")) URL.revokeObjectURL(oldUrl);
+    }
+
     displayUrlCache.set(mediaUrl, objUrl);
-    displayUrlOrder.push(mediaUrl);
-    if (displayUrlOrder.length > 200) {
+    if (!displayUrlOrder.includes(mediaUrl)) displayUrlOrder.push(mediaUrl);
+
+    // Aumentado para 500 entradas para reduzir revogações prematuras de blob URLs em uso
+    if (displayUrlOrder.length > 500) {
       const oldest = displayUrlOrder.shift();
       const oldUrl = oldest ? displayUrlCache.get(oldest) : null;
       if (oldest) displayUrlCache.delete(oldest);
