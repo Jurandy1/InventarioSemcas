@@ -72,18 +72,21 @@ export function filterLocaisForSession(locais, sessionId, activeUnitIds = [], fo
 
   return (locais || []).filter((l) => {
     const lid = l.id || l._id;
+    const isReferenced = referencedLocalIds.has(lid);
+
+    if (includeReferenced && isReferenced) return true;
+    if (finalizedMode && isReferenced) return true;
+
     if (!localBelongsToUnits(l, activeUnitIds)) return false;
 
     const localSid = String(l.sessionId || "").trim();
     const isCurrentSession = sid && localSid === sid;
-    const isReferenced = referencedLocalIds.has(lid);
 
     if (finalizedMode) {
-      return isCurrentSession || isReferenced;
+      return isCurrentSession;
     }
 
     if (isCurrentSession) return true;
-    if (includeReferenced && isReferenced) return true;
     return false;
   });
 }
