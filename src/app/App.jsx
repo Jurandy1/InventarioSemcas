@@ -46,6 +46,8 @@ import { ManualModal } from "../components/modals/ManualModal.jsx";
 import { SemTomboModal } from "../components/modals/SemTomboModal.jsx";
 import { AddLocalModal } from "../components/modals/AddLocalModal.jsx";
 import { FinalizarModal } from "../components/modals/FinalizarModal.jsx";
+import { LocalDetailModal } from "../components/modals/LocalDetailModal.jsx";
+import { MultiItemModal } from "../components/modals/MultiItemModal.jsx";
 import { AjusteLinkModal } from "../components/modals/AjusteLinkModal.jsx";
 import { clearChunkReloadFlag, lazyWithRetry } from "../utils/lazyWithRetry.js";
 import { createVisibilityAwarePoller, getSyncIntervals } from "../utils/mobilePerf.js";
@@ -112,6 +114,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const [invConviteLink, setInvConviteLink] = useState("");
   const [invConviteExp, setInvConviteExp] = useState("");
   const [gerandoInvConvite, setGerandoInvConvite] = useState(false);
+  const [localDetalhe, setLocalDetalhe] = useState(null);
   const [cameraTarget, setCameraTarget] = useState(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -150,6 +153,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const manualPatrimonioRef = useRef(null);
   const resumeRestoredRef = useRef(false);
   const cameraTargetRef = useRef(null);
+  const multiRowsPhotosRef = useRef({});
+  const finalizandoRef = useRef(false);
 
   const bumpFt = () => setFt((t) => t + 1);
   const setField = (k, v) => {
@@ -160,6 +165,18 @@ function OrganizedApp({ firebaseOk, isProd }) {
     for (const s of arr || []) {
       const v = String(s || "");
       if (v.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(v);
+        } catch {}
+      }
+    }
+  };
+
+  const revokeRemovedBlobs = (oldArr, newArr) => {
+    const keep = new Set((newArr || []).map((s) => String(s || "")));
+    for (const s of oldArr || []) {
+      const v = String(s || "");
+      if (v.startsWith("blob:") && !keep.has(v)) {
         try {
           URL.revokeObjectURL(v);
         } catch {}
@@ -361,14 +378,12 @@ function OrganizedApp({ firebaseOk, isProd }) {
     found.loadFoundAndTombos(ids, {
       keepItemIds,
       itemUnits,
-      patrimonioIds: keepItemIds,
     });
     locais.loadLocais(ids, { localIds });
   }, [
-    auth.logado,
+    auth.logado?.uid,
     finalizadoEdit?.fin?.id,
     inventario.unidadesAtivas.map((u) => u.id).join(","),
-    inventario.unidadesAtivas.length,
     unidades.length,
     found.loadFoundAndTombos,
     locais.loadLocais,
@@ -491,7 +506,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
           setTeamOnline(others);
         } catch {}
       },
-      { activeMs: 20000, hiddenMs: 60000, runImmediately: true }
+      { activeMs: 45000, hiddenMs: 180000, runImmediately: true }
     );
 
     return () => {
@@ -499,45 +514,64 @@ function OrganizedApp({ firebaseOk, isProd }) {
       stopTeam();
       clearInventoryPresence(auth.logado.uid).catch(() => {});
     };
-  }, [auth.logado?.uid, auth.logado?.nome, auth.logado?.email, activeUnitIds.join(","), inventario.invSubTab, inventario.unidadesAtivas.length]);
+  }, [auth.logado?.uid, auth.logado?.nome, auth.logado?.email, activeUnitIds.join(","), inventario.invSubTab]);
+
+  // Refs para que o poller leia sempre o estado mais recente sem reiniciar
+  // toda vez que items/unidades mudam (do contrário cada item adicionado
+  // restartaria o sync, gerando uma cascata de network requests).
+  const syncContextRef = useRef({
+    unidadesAtivas: inventario.unidadesAtivas,
+    allItens: inventario.allItens,
+    unidades,
+    updateQueueStatus,
+  });
+  useEffect(() => {
+    syncContextRef.current = {
+      unidadesAtivas: inventario.unidadesAtivas,
+      allItens: inventario.allItens,
+      unidades,
+      updateQueueStatus,
+    };
+  });
 
   useEffect(() => {
-    if (!auth.logado) return;
+    if (!auth.logado?.uid) return;
     const paused = inventario.invSubTab === "inventariar" && inventario.unidadesAtivas.length > 0;
-    if (!paused) updateQueueStatus();
+    if (!paused) syncContextRef.current.updateQueueStatus?.();
 
     const onInventarioChange = async (docs) => {
-          const incoming = docs.map((d) => normalizeFoundRecord({ ...d, patrimonioId: d.patrimonioId || d._id }));
-          const prev = found.foundRef.current || [];
-          const scopeItems =
-            inventario.unidadesAtivas.length > 0
-              ? inventario.allItens
-              : unidades.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeId: u.id, unidadeNome: u.nome })));
-          const nextFound = mergeFoundRecords(prev, incoming, {
-            keepItemIds: scopeItems.map((i) => i.id),
-            itemUnits: new Map(scopeItems.map((i) => [i.id, { unidadeId: i.unidadeId, unidadeNome: i.unidadeNome }])),
-          });
-          let same = prev.length === nextFound.length;
-          if (same) {
-            const prevMap = new Map(prev.map((p) => [p.patrimonioId || p._id, `${p.ultimaAtualizacao || ""}|${(p.fotoUrls || []).length}`]));
-            same = prevMap.size === nextFound.length;
-            if (same) {
-              for (const n of nextFound) {
-                const id = n.patrimonioId || n._id;
-                const sig = `${n.ultimaAtualizacao || ""}|${(n.fotoUrls || []).length}`;
-                if (prevMap.get(id) !== sig) {
-                  same = false;
-                  break;
-                }
-              }
+      const ctx = syncContextRef.current;
+      const incoming = docs.map((d) => normalizeFoundRecord({ ...d, patrimonioId: d.patrimonioId || d._id }));
+      const prev = found.foundRef.current || [];
+      const scopeItems =
+        ctx.unidadesAtivas.length > 0
+          ? ctx.allItens
+          : ctx.unidades.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeId: u.id, unidadeNome: u.nome })));
+      const nextFound = mergeFoundRecords(prev, incoming, {
+        keepItemIds: scopeItems.map((i) => i.id),
+        itemUnits: new Map(scopeItems.map((i) => [i.id, { unidadeId: i.unidadeId, unidadeNome: i.unidadeNome }])),
+      });
+      let same = prev.length === nextFound.length;
+      if (same) {
+        const prevMap = new Map(prev.map((p) => [p.patrimonioId || p._id, `${p.ultimaAtualizacao || ""}|${(p.fotoUrls || []).length}`]));
+        same = prevMap.size === nextFound.length;
+        if (same) {
+          for (const n of nextFound) {
+            const id = n.patrimonioId || n._id;
+            const sig = `${n.ultimaAtualizacao || ""}|${(n.fotoUrls || []).length}`;
+            if (prevMap.get(id) !== sig) {
+              same = false;
+              break;
             }
           }
-          if (!same) {
-            found.foundRef.current = nextFound;
-            found.setFound(nextFound);
-            await setCachedData("inventario", nextFound);
-          }
-        };
+        }
+      }
+      if (!same) {
+        found.foundRef.current = nextFound;
+        found.setFound(nextFound);
+        await setCachedData("inventario", nextFound);
+      }
+    };
 
     const onLocaisChange = paused
       ? null
@@ -575,15 +609,11 @@ function OrganizedApp({ firebaseOk, isProd }) {
       unsub?.();
     };
   }, [
-    auth.logado,
+    auth.logado?.uid,
     activeUnitIds.join(","),
     unidadeAtiva?.id,
     inventario.invSubTab,
-    inventario.unidadesAtivas.length,
-    inventario.allItens.length,
-    unidades.length,
     isMob,
-    updateQueueStatus,
     found.setFound,
     found.foundRef,
     locais.setLocais,
@@ -647,12 +677,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
 
   const sugestoes = React.useMemo(() => {
     if (!needsSugestoes) return EMPTY_SUGESTOES;
-    const base =
-      inventario.unidadesAtivas.length > 0
-        ? inventario.unidadesAtivas.flatMap((u) => u.itens.map((i) => ({ ...i, unidadeNome: u.nome, unidadeId: u.id })))
-        : todosItens.slice(0, 400);
-    return gerarTodasSugestoes(base);
-  }, [needsSugestoes, inventario.unidadesAtivas, todosItens]);
+    return gerarTodasSugestoes(todosItens);
+  }, [needsSugestoes, todosItens]);
 
   const tombosDup = React.useMemo(() => {
     if (tab !== "tombos") return [];
@@ -954,13 +980,27 @@ function OrganizedApp({ firebaseOk, isProd }) {
     const resume = loadUiResume();
     const target = cameraTargetRef.current || resume?.cameraTarget || "detalhe";
     ensureDetFormFromResume(resume);
+    const incoming = Array.isArray(photoArray) ? photoArray : [];
+
+    if (target.startsWith("multi-row-")) {
+      const idx = target.slice("multi-row-".length);
+      const prev = multiRowsPhotosRef.current[idx] || [];
+      revokeRemovedBlobs(prev, incoming);
+      multiRowsPhotosRef.current[idx] = incoming;
+      cameraTargetRef.current = null;
+      setCameraTarget(null);
+      setOverlayBackdropSuppressMs(1200);
+      setModal("multi");
+      bumpFt();
+      return;
+    }
 
     if (target === "manual") {
-      revokeBlobUrls(formRef.current.manPhotos || []);
-      formRef.current.manPhotos = photoArray || [];
+      revokeRemovedBlobs(formRef.current.manPhotos, incoming);
+      formRef.current.manPhotos = incoming;
     } else if (target === "semTombo") {
-      revokeBlobUrls(formRef.current.stPhotos || []);
-      formRef.current.stPhotos = photoArray || [];
+      revokeRemovedBlobs(formRef.current.stPhotos, incoming);
+      formRef.current.stPhotos = incoming;
       cameraTargetRef.current = null;
       setCameraTarget(null);
       setOverlayBackdropSuppressMs(1200);
@@ -968,8 +1008,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
       bumpFt();
       return;
     } else {
-      revokeBlobUrls(formRef.current.detNewBase64 || []);
-      formRef.current.detNewBase64 = photoArray || [];
+      revokeRemovedBlobs(formRef.current.detNewBase64, incoming);
+      formRef.current.detNewBase64 = incoming;
     }
 
     cameraTargetRef.current = null;
@@ -1063,7 +1103,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       bumpFt();
       return true;
     },
-    [unidades, found.foundMap, inventario]
+    [unidades, found.foundMap, inventario.setInvSubTab]
   );
 
   const tryRestoreUi = React.useCallback(() => {
@@ -1103,9 +1143,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
   }, [modal, saveSessionResume]);
 
   useEffect(() => {
-    if (!auth.logado || resumeRestoredRef.current) return;
+    if (!auth.logado?.uid || resumeRestoredRef.current) return;
     tryRestoreUi();
-  }, [auth.logado, unidades, found.foundMap, tryRestoreUi]);
+  }, [auth.logado?.uid, unidades, found.foundMap, tryRestoreUi]);
 
   const addManual = async () => {
     if (!assertPodeEditar()) return;
@@ -1440,6 +1480,100 @@ function OrganizedApp({ firebaseOk, isProd }) {
     revokeBlobUrls(formRef.current.stPhotos || []);
     setModal(null);
     showT("Salvo!");
+  };
+
+  const addMultiItems = async ({ shared, rows }) => {
+    if (!assertPodeEditar()) return;
+    const unidadeAtiva = inventario.unidadesAtivas[0]; // Simplificação para pegar a primeira
+    if (!unidadeAtiva) {
+      showT("Selecione uma unidade");
+      return;
+    }
+    const desc = String(shared.descricao || "").trim();
+    if (!desc) {
+      showT("Descrição compartilhada obrigatória");
+      return;
+    }
+
+    const baseNow = Date.now();
+    const existingIds = new Set((unidadeAtiva?.itens || []).map((i) => i.id));
+    let saved = 0;
+
+    for (let idx = 0; idx < rows.length; idx++) {
+      const row = rows[idx];
+      const rowPhotos = multiRowsPhotosRef.current[String(idx)] || [];
+      const tombamento = String(row.tombamento || "").trim();
+      if (!tombamento && rowPhotos.length === 0) continue;
+
+      let itemId;
+      let patrimonioLabel;
+      if (tombamento) {
+        itemId = `MAN_${baseNow}_${Math.random().toString(36).slice(2, 6)}_${idx}`;
+        patrimonioLabel = tombamento;
+      } else {
+        itemId = `ST_${baseNow}_${Math.random().toString(36).slice(2, 6)}_${idx}`;
+        patrimonioLabel = "S/T";
+      }
+      while (existingIds.has(itemId)) {
+        itemId = `${itemId}_${Math.random().toString(36).slice(2, 4)}`;
+      }
+      existingIds.add(itemId);
+
+      const item = {
+        id: itemId,
+        patrimonioLabel,
+        ...(tombamento ? { tomboRef: tombamento } : {}),
+        data: new Date().toLocaleDateString("pt-BR"),
+        especie: String(shared.especie || desc.split(" ")[0] || "").toUpperCase(),
+        descricao: desc,
+        marca: shared.marca || "",
+        fornecedor: shared.fornecedor || "",
+        empenho: "",
+        nf: "",
+        dataNF: "",
+        valor: parseFloat(shared.valor) || 0,
+        valorAtual: 0,
+        isManual: true,
+        ...(patrimonioLabel === "S/T" ? { semTombo: true, identificadoPorFoto: rowPhotos.length > 0 } : {}),
+      };
+
+      let fotoUrls = [];
+      if (rowPhotos.length > 0 && isStorageOk() && navigator.onLine) {
+        try {
+          const compressed = await compressPhotoArray(rowPhotos);
+          fotoUrls = await uploadPhotos(compressed, itemId);
+        } catch (e) {
+          console.warn("Falha upload fotos linha", idx, e);
+        }
+      }
+
+      try {
+        await fsSet("manuais", itemId, { ...item, unidadeId: unidadeAtiva.id });
+        await found.markFound({
+          itemId,
+          estado: row.estado || "Bom",
+          situacao: "Em uso",
+          localId: shared.localId,
+          obs: String(row.obs || "").trim(),
+          marca: shared.marca || "",
+          origem: shared.origem || "Próprio",
+          fotoUrls,
+          extras: patrimonioLabel === "S/T"
+            ? { semTombo: true, identificadoPorFoto: rowPhotos.length > 0, descricaoEdit: desc }
+            : { descricaoEdit: desc },
+          unidadeAtiva,
+          logado: auth.logado,
+          isManual: true,
+        });
+        saved++;
+      } catch (e) {
+        console.error("Erro salvando linha", idx, e);
+      }
+    }
+
+    multiRowsPhotosRef.current = {};
+    setModal(null);
+    showT(`${saved} item(s) cadastrado(s)`);
   };
 
   const addSemTomboPendentes = async () => {
@@ -1814,11 +1948,17 @@ function OrganizedApp({ firebaseOk, isProd }) {
       await fsSet("tombosNE", item.id, ne);
     }
     found.setTombosNE((prev) => [...prev, ...pendentes.map((i) => ({ ...i, unidade: i.unidadeNome, dataFin: new Date().toLocaleDateString("pt-BR") }))]);
+    // Clear active inventory and paused sessions when finalizing!
+    inventario.clearAtivas();
     setModal(null);
     showT(`Finalizado! ${pendentes.length} não encontrado(s)`);
   };
 
   const finalizarComCoordenadora = async () => {
+    if (finalizandoRef.current || busy) {
+      showT("Finalização em andamento — aguarde");
+      return;
+    }
     const nome = String(getField("coordNome") || "").trim();
     const matricula = String(getField("coordMatricula") || "").trim();
     if (!nome || !matricula) {
@@ -1830,64 +1970,77 @@ function OrganizedApp({ firebaseOk, isProd }) {
       return;
     }
 
-    const token = `conv_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
-    const agora = new Date();
-    const dataExpiracao = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
-    const unidadeIds = inventario.unidadesAtivas.map((u) => u.id);
-    const unidadeNomes = inventario.unidadesAtivas.map((u) => u.nome);
+    finalizandoRef.current = true;
+    setBusy(true);
 
-    const convite = {
-      token,
-      unidadeId: unidadeAtiva?.id || unidadeIds[0],
-      unidadeNome: unidadeAtiva?.nome || unidadeNomes[0],
-      unidadeIds,
-      unidadeNomes,
-      matricula,
-      nomeSugerido: nome,
-      status: "ativo",
-      dataCriacao: agora.toISOString(),
-      dataExpiracao: dataExpiracao.toISOString(),
-      dataUso: null,
-    };
-    await fsSet("convites", token, convite);
-
-    const base = import.meta.env.BASE_URL || "/";
-    const prefix = base.endsWith("/") ? base : `${base}/`;
-    const link = `${window.location.origin}${prefix}#/coordregistro/${token}`;
-    setCoordRegistroLink(link);
-    const qrUrl = await generateQRCode(link);
-    setQrCodeUrl(qrUrl);
-
-    const pendentes = inventario.allItens.filter((i) => !isItemInventariado(i.id, found.foundSet));
-    const dataFin = new Date().toLocaleDateString("pt-BR");
-    for (const item of pendentes) {
-      const ne = { patrimonioId: item.id, descricao: item.descricao, especie: item.especie, unidade: item.unidadeNome, dataFin, coordenadora: nome, matricula };
-      await fsSet("tombosNE", item.id, ne);
-    }
-    found.setTombosNE((prev) => [...prev, ...pendentes.map((i) => ({ ...i, unidade: i.unidadeNome, dataFin, coordenadora: nome, matricula }))]);
-
-    const stats = buildFinalizacaoStats(inventario.unidadesAtivas, found.foundSet);
     try {
-      await criarFinalizacao({
+      const token = `conv_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+      const agora = new Date();
+      const dataExpiracao = new Date(agora.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const unidadeIds = inventario.unidadesAtivas.map((u) => u.id);
+      const unidadeNomes = inventario.unidadesAtivas.map((u) => u.nome);
+
+      const convite = {
+        token,
+        unidadeId: unidadeAtiva?.id || unidadeIds[0],
+        unidadeNome: unidadeAtiva?.nome || unidadeNomes[0],
         unidadeIds,
         unidadeNomes,
-        sessionId: inventario.sessionId || "",
-        coordenadora: { nome, matricula },
-        conviteToken: token,
-        stats,
-        finalizedBy: {
-          uid: auth.logado?.uid || "",
-          nome: auth.logado?.nome || "",
-          email: auth.logado?.email || "",
-        },
-      });
-      finalizacoesState.refresh?.();
-    } catch {
-      showT("Finalizado, mas falha ao registrar na lista de Finalizados");
-    }
+        matricula,
+        nomeSugerido: nome,
+        status: "ativo",
+        dataCriacao: agora.toISOString(),
+        dataExpiracao: dataExpiracao.toISOString(),
+        dataUso: null,
+      };
+      await fsSet("convites", token, convite);
 
-    setModal("qrcode-resultado");
-    showT("Convite criado! A coordenadora se cadastra pelo QR Code e você aprova em Coordenadores.");
+      const base = import.meta.env.BASE_URL || "/";
+      const prefix = base.endsWith("/") ? base : `${base}/`;
+      const link = `${window.location.origin}${prefix}#/coordregistro/${token}`;
+      setCoordRegistroLink(link);
+      const qrUrl = await generateQRCode(link);
+      setQrCodeUrl(qrUrl);
+
+      const pendentes = inventario.allItens.filter((i) => !isItemInventariado(i.id, found.foundSet));
+      const dataFin = new Date().toLocaleDateString("pt-BR");
+      for (const item of pendentes) {
+        const ne = { patrimonioId: item.id, descricao: item.descricao, especie: item.especie, unidade: item.unidadeNome, dataFin, coordenadora: nome, matricula };
+        await fsSet("tombosNE", item.id, ne);
+      }
+      found.setTombosNE((prev) => [...prev, ...pendentes.map((i) => ({ ...i, unidade: i.unidadeNome, dataFin, coordenadora: nome, matricula }))]);
+
+      const stats = buildFinalizacaoStats(inventario.unidadesAtivas, found.foundSet);
+      try {
+        await criarFinalizacao({
+          unidadeIds,
+          unidadeNomes,
+          sessionId: inventario.sessionId || "",
+          coordenadora: { nome, matricula },
+          conviteToken: token,
+          stats,
+          finalizedBy: {
+            uid: auth.logado?.uid || "",
+            nome: auth.logado?.nome || "",
+            email: auth.logado?.email || "",
+          },
+        });
+        finalizacoesState.refresh?.();
+      } catch {
+        showT("Finalizado, mas falha ao registrar na lista de Finalizados");
+      }
+
+      // Clear active inventory and paused sessions when finalizing!
+      inventario.clearAtivas();
+      setModal("qrcode-resultado");
+      showT("Convite criado! A coordenadora se cadastra pelo QR Code e você aprova em Coordenadores.");
+    } catch (err) {
+      console.error("Erro ao finalizar:", err);
+      showT("Erro ao finalizar — tente novamente");
+    } finally {
+      setBusy(false);
+      finalizandoRef.current = false;
+    }
   };
 
   if (auth.loading)
@@ -1966,12 +2119,17 @@ function OrganizedApp({ firebaseOk, isProd }) {
             progresso={sessionProgresso}
             hideIncorporados={hideIncorporados}
             setHideIncorporados={persistHideIncorporados}
-            filtered={filtered}
+            filtered={sortedFiltered}
             search={search}
             setSearch={setSearch}
             hideFound={hideFound}
             setHideFound={setHideFound}
             openDetModal={openDetModal}
+            onOpenLocalDetail={(local) => setLocalDetalhe(local)}
+            onOpenMulti={() => {
+              multiRowsPhotosRef.current = {};
+              setModal("multi");
+            }}
             onOpenManual={(localId) => {
               formRef.current = {
                 manEstado: defaultEstadoForItem({ data: new Date().toLocaleDateString("pt-BR") }),
@@ -2077,6 +2235,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
             bp={bp}
             bs={bs}
             openDetModal={openDetModal}
+            onOpenLocalDetail={(local) => setLocalDetalhe(local)}
             onOpenSemTombo={(localId) => {
               formRef.current = {
                 stMode: "novo",
@@ -2380,6 +2539,72 @@ function OrganizedApp({ firebaseOk, isProd }) {
         />
       )}
 
+      {localDetalhe && (
+        <LocalDetailModal
+          local={localDetalhe}
+          isMob={isMob}
+          unidadesAtivas={inventario.unidadesAtivas}
+          foundMap={found.foundMap}
+          onClose={() => setLocalDetalhe(null)}
+          onOpenItem={(item) => openDetModal(item)}
+          onAddManual={(localId) => {
+            setLocalDetalhe(null);
+            formRef.current = {
+              manEstado: defaultEstadoForItem({ data: new Date().toLocaleDateString("pt-BR") }),
+              manPatrimonio: "",
+              manLocal: String(localId || ""),
+              manQtd: 1,
+              manSharePhotos: true,
+              manOrigem: "Próprio",
+            };
+            bumpFt();
+            setModal("manual");
+          }}
+          onAddSemTombo={(localId) => {
+            setLocalDetalhe(null);
+            formRef.current = {
+              stMode: "novo",
+              stDesc: "",
+              stLocal: String(localId || sessionLocais[0]?.id || ""),
+              stUnidadeId: unidadeAtiva?.id || inventario.unidadesAtivas[0]?.id || "",
+              stEstado: "Bom",
+              stObs: "",
+              stTomboRef: "",
+              stMarca: "",
+              stOrigem: "Próprio",
+              stPhotos: [],
+              stSelectedIds: [],
+              stPendSearch: "",
+            };
+            bumpFt();
+            setModal("semTombo");
+          }}
+          onViewImage={onViewImage}
+          bp={bp}
+          bs={bs}
+        />
+      )}
+
+      {modal === "multi" && (
+        <MultiItemModal
+          isMob={isMob}
+          unidadeAtiva={inventario.unidadesAtivas[0]}
+          sessionLocais={sessionLocais}
+          sugestoes={sugestoes}
+          rowsPhotosRef={multiRowsPhotosRef}
+          onClose={() => {
+            Object.values(multiRowsPhotosRef.current || {}).forEach((arr) => revokeBlobUrls(arr));
+            multiRowsPhotosRef.current = {};
+            setModal(null);
+          }}
+          onOpenCamera={(target) => openCamera(target)}
+          onSubmit={addMultiItems}
+          bp={bp}
+          bs={bs}
+          inp={inp}
+        />
+      )}
+
       {modal === "addLocal" && (
         <AddLocalModal
           isMob={isMob}
@@ -2457,6 +2682,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
           getField={getField}
           setField={setField}
           finalizarComCoordenadora={finalizarComCoordenadora}
+          busy={busy}
           bs={bs}
           bp={bp}
           inp={inp}

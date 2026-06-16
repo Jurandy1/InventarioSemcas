@@ -122,7 +122,7 @@ export async function uploadPhoto(base64, path) {
   const { token } = getFirebaseSession();
   if (!token) throw new Error("Usuário não autenticado");
 
-  // Converter data URL ou blob URL para Blob
+  // Converter base64 URL ou blob URL para Blob
   let blob;
   try {
     if (String(base64 || "").startsWith("blob:")) {
@@ -134,10 +134,10 @@ export async function uploadPhoto(base64, path) {
     }
   } catch (e) {
     console.error("Erro ao converter base64:", e);
-    throw new Error("Erro ao processar imagem");
+    throw new Error("Erro no processamento da imagem");
   }
 
-  const fullPath = `semcas/inventario/${path}`;
+  const fullPath = `semcas/inventario/${String(path || "")}`;
   const encodedPath = encodeURIComponent(fullPath);
 
   const uploadRes = await fetch(`${BASE}?uploadType=media&name=${encodedPath}`, {

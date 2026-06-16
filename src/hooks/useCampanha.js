@@ -18,14 +18,15 @@ export function useCampanha({ logado } = {}) {
     }
   }, []);
 
+  const uid = logado?.uid || "";
   useEffect(() => {
-    if (!logado) {
+    if (!uid) {
       setCampanha(null);
       setLoading(false);
       return;
     }
     refresh();
-  }, [logado, refresh]);
+  }, [uid, refresh]);
 
   const fechada = isCampanhaFechada(campanha);
 

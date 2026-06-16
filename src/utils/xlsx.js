@@ -4,6 +4,17 @@ const XLSX_PATH = `${import.meta.env.BASE_URL}patrimonio_por_unidade.xlsx`;
 const CACHE_KEY = "unidades_v5";
 const TTL = 24 * 60 * 60 * 1000;
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export async function loadUnidades(forceRefresh = false) {
   if (!forceRefresh) {
     try {
@@ -19,17 +30,28 @@ export async function loadUnidades(forceRefresh = false) {
     } catch {}
   }
 
-  const res = await fetch(XLSX_PATH);
-  if (!res.ok) throw new Error("Não foi possível carregar o arquivo de patrimônio");
-  const buf = await res.arrayBuffer();
-  const XLSX = await import("xlsx/xlsx.mjs");
-  const wb = XLSX.read(buf);
-  const data = parseXLSX(wb, XLSX);
-  if (!Array.isArray(data) || data.length === 0) {
-    throw new Error("O arquivo de patrimônio foi lido, mas não gerou unidades.");
+  try {
+    const res = await fetchWithTimeout(XLSX_PATH);
+    if (!res.ok) throw new Error("Não foi possível carregar o arquivo de patrimônio");
+    const buf = await res.arrayBuffer();
+    const XLSX = await import("xlsx/xlsx.mjs");
+    const wb = XLSX.read(buf);
+    const data = parseXLSX(wb, XLSX);
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error("O arquivo de patrimônio foi lido, mas não gerou unidades.");
+    }
+    await idbSet(CACHE_KEY, { data, ts: Date.now() });
+    return data;
+  } catch (e) {
+    // If we can't load the XLSX, return empty array or cached data if available
+    try {
+      const cached = await idbGet(CACHE_KEY);
+      if (cached && Array.isArray(cached.data)) {
+        return cached.data;
+      }
+    } catch {}
+    return [];
   }
-  await idbSet(CACHE_KEY, { data, ts: Date.now() });
-  return data;
 }
 
 function parseVal(s) {

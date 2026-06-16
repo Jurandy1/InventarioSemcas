@@ -25,15 +25,15 @@ export function isPageHidden() {
 /** Intervalos de sync mais longos em celular lento ou aba em segundo plano. */
 export function getSyncIntervals({ paused = false, isMobile = false } = {}) {
   const slow = isLikelySlowDevice();
-  const base = slow || isMobile ? 1.6 : 1;
+  const base = slow || isMobile ? 2 : 1;
   if (paused) {
-    return { inventarioMs: Math.round(90000 * base), locaisMs: 999999999 };
+    return { inventarioMs: Math.round(300000 * base), locaisMs: 999999999 }; // 5 minutes when paused
   }
   return {
-    inventarioMs: Math.round(15000 * base),
-    locaisMs: Math.round(30000 * base),
-    hiddenInventarioMs: Math.round(120000 * base),
-    hiddenLocaisMs: Math.round(180000 * base),
+    inventarioMs: Math.round(60000 * base), // 1 minute when active (was 15s)
+    locaisMs: Math.round(120000 * base), // 2 minutes (was 30s)
+    hiddenInventarioMs: Math.round(300000 * base), // 5 minutes (was 2m)
+    hiddenLocaisMs: Math.round(600000 * base), // 10 minutes (was 3m)
   };
 }
 

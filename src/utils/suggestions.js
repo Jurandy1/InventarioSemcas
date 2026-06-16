@@ -66,8 +66,8 @@ export function gerarSugestoesFornecedor(todosItens) {
 export function gerarTodasSugestoes(todosItens) {
   return {
     descricoes: gerarSugestoesDescricao(todosItens),
-    especies: gerarSugestoesEspecie(todosItens),
-    marcas: gerarSugestoesMarca(todosItens),
-    fornecedores: gerarSugestoesFornecedor(todosItens),
+    especies: [],
+    marcas: [],
+    fornecedores: [],
   };
 }

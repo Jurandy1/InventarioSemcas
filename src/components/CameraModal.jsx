@@ -3,19 +3,27 @@ import React, { useEffect, useRef, useState } from "react";
 function canvasToJpegObjectUrl(canvas, quality = 0.8) {
   return new Promise((resolve) => {
     try {
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            resolve(canvas.toDataURL("image/jpeg", quality));
-            return;
-          }
-          resolve(URL.createObjectURL(blob));
-        },
-        "image/jpeg",
-        quality
-      );
+      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+      resolve(dataUrl);
     } catch {
-      resolve(canvas.toDataURL("image/jpeg", quality));
+      try {
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              resolve("");
+              return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ""));
+            reader.onerror = () => resolve("");
+            reader.readAsDataURL(blob);
+          },
+          "image/jpeg",
+          quality
+        );
+      } catch {
+        resolve("");
+      }
     }
   });
 }
@@ -102,6 +110,7 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
   const [facingMode, setFacingMode] = useState("environment");
   const [flashOn, setFlashOn] = useState(false);
   const [preview, setPreview] = useState(null);
+  const [viewing, setViewing] = useState(null);
   const [captured, setCaptured] = useState([...existingPhotos]);
   const capturedRef = useRef([...existingPhotos]);
   const fileInputRef = useRef(null);
@@ -109,6 +118,14 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
   const [camError, setCamError] = useState("");
   const [useNativeCapture, setUseNativeCapture] = useState(() => !canUseLiveCamera());
   const MAX_FILE_BYTES = 8 * 1024 * 1024;
+
+  const handleVideoRef = React.useCallback((node) => {
+    videoRef.current = node;
+    if (node && streamRef.current && node.srcObject !== streamRef.current) {
+      node.srcObject = streamRef.current;
+      node.play().catch(() => {});
+    }
+  }, []);
 
   const stopStream = () => {
     const s = streamRef.current;
@@ -177,10 +194,12 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
       setUseNativeCapture(false);
       setCamError("");
       if (videoRef.current) {
-        videoRef.current.srcObject = s;
-        try {
-          await videoRef.current.play();
-        } catch {}
+        if (videoRef.current.srcObject !== s) {
+          videoRef.current.srcObject = s;
+          try {
+            await videoRef.current.play();
+          } catch {}
+        }
       }
       const track = s.getVideoTracks()[0];
       if (track?.getCapabilities) {
@@ -317,7 +336,7 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
 
   const handleFileSelect = async (e, source = "gallery") => {
     const f = e.target.files?.[0];
-    e.target.value = "";
+    e.target.value = null;
     if (!f) return;
     if (f.size > MAX_FILE_BYTES) {
       setCamError(`Arquivo muito grande (${Math.round(f.size / (1024 * 1024))}MB). Selecione até 8MB.`);
@@ -326,13 +345,7 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
     try {
       setCamError("");
       const d = await compressPhoto(f);
-      const next = [...capturedRef.current, d];
-      capturedRef.current = next;
-      setCaptured(next);
-      await Promise.resolve(onPhotosChange?.(next));
-      if (source === "camera") {
-        finishCapture(next);
-      }
+      setPreview(d);
     } catch (err) {
       setCamError(err?.message || "Erro ao processar a foto. Tente outra imagem.");
     }
@@ -373,7 +386,9 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
       </div>
 
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
-        {preview ? (
+        {viewing ? (
+          <img src={viewing} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+        ) : preview ? (
           <img src={preview} alt="" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
         ) : useNativeCapture || !stream ? (
           <div style={{ textAlign: "center", padding: 24, color: "#fff", maxWidth: 320 }}>
@@ -388,7 +403,14 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
             )}
           </div>
         ) : (
-          <video ref={videoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <video
+            ref={handleVideoRef}
+            autoPlay
+            playsInline
+            muted
+            webkit-playsinline="true"
+            style={{ width: "100%", height: "100%", objectFit: "cover", background: "#000" }}
+          />
         )}
         {!preview && !useNativeCapture && stream && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
@@ -401,7 +423,14 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
         <div style={{ display: "flex", gap: 6, padding: "8px 16px", background: "rgba(0,0,0,.8)", overflowX: "auto" }}>
           {captured.map((ph, i) => (
             <div key={i} style={{ position: "relative", flexShrink: 0 }}>
-              <img src={ph} alt="" style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "2px solid #fff" }} loading="lazy" decoding="async" />
+              <img 
+                src={ph} 
+                alt="" 
+                style={{ width: 48, height: 48, borderRadius: 6, objectFit: "cover", border: "2px solid #fff", cursor: "pointer" }} 
+                loading="lazy" 
+                decoding="async" 
+                onClick={() => setViewing(ph)}
+              />
               <button
                 onClick={() => {
                   const old = captured[i];
@@ -426,7 +455,11 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
       )}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-around", padding: "16px", background: "rgba(0,0,0,.9)" }}>
-        {preview ? (
+        {viewing ? (
+          <button onClick={() => setViewing(null)} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 12, padding: "12px 24px", fontSize: 14, cursor: "pointer", fontWeight: 700 }}>
+            Voltar
+          </button>
+        ) : preview ? (
           <>
             <button onClick={retakePhoto} style={{ background: "rgba(255,255,255,.2)", border: "none", color: "#fff", borderRadius: 12, padding: "12px 24px", fontSize: 14, cursor: "pointer", fontWeight: 600 }}>Refazer</button>
             <button
@@ -483,7 +516,7 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
         </div>
       )}
 
-      {captured.length > 0 && !preview && (
+      {captured.length > 0 && !preview && !viewing && (
         <button onClick={done} style={{ margin: "0 16px 16px", background: "#1351B4", color: "#fff", border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
           Concluir ({captured.length} foto{captured.length > 1 ? "s" : ""})
         </button>

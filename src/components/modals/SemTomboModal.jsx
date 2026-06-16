@@ -103,7 +103,7 @@ export function SemTomboModal({
             </>
           )}
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Marca / fornecedor da mobília</label>
-          <TInput key={"stMarca_" + ft} initial={getField("stMarca")} onVal={(v) => setField("stMarca", v)} placeholder="Ex: RM MOVEIS" suggestions={sugestoes.marcas} style={inp} />
+          <TInput key={"stMarca_" + ft} initial={getField("stMarca")} onVal={(v) => setField("stMarca", v)} placeholder="Ex: RM MOVEIS" style={inp} />
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Origem</label>
           <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
             {["Próprio", "Doação"].map((o) => (

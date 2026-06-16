@@ -14,10 +14,11 @@ export function SmartImg({ src, alt = "", style, ...rest }) {
   const [resolved, setResolved] = useState("");
   const [visible, setVisible] = useState(false);
   const fetchingRef = useRef(false);
+  const safeSrc = String(src || "");
 
   useEffect(() => {
     const el = ref.current;
-    if (!el || !src) return;
+    if (!el || !safeSrc) return;
     if (typeof IntersectionObserver === "undefined") {
       setVisible(true);
       return;
@@ -33,35 +34,35 @@ export function SmartImg({ src, alt = "", style, ...rest }) {
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [src]);
+  }, [safeSrc]);
 
   useEffect(() => {
-    if (!visible || !src) return;
+    if (!visible || !safeSrc) return;
     let alive = true;
     fetchingRef.current = true;
-    // Usar src imediatamente para evitar estado cinza inicial
-    setResolved(src);
+    // Usar safeSrc imediatamente para evitar estado cinza inicial
+    setResolved(safeSrc);
     (async () => {
       try {
-        const next = await getDisplayPhotoUrl(src);
+        const next = await getDisplayPhotoUrl(safeSrc);
         if (!alive) return;
         // Só atualiza se a URL resolvida for diferente (ex: blob URL autenticada)
-        if (next && next !== src) setResolved(next);
+        if (next && next !== safeSrc) setResolved(next);
       } finally {
         if (alive) fetchingRef.current = false;
       }
     })();
     return () => { alive = false; };
-  }, [src, visible]);
+  }, [safeSrc, visible]);
 
   // Quando o <img> falha (URL expirada, blob revogado, sem auth), tenta re-fetch
   const handleError = useCallback(() => {
-    if (!src || fetchingRef.current) return;
+    if (!safeSrc || fetchingRef.current) return;
     fetchingRef.current = true;
     (async () => {
       try {
         // Forçar nova URL ignorando cache (blob URL pode ter sido revogado)
-        const next = await getDisplayPhotoUrl(src, { forceRefresh: true });
+        const next = await getDisplayPhotoUrl(safeSrc, { forceRefresh: true });
         if (next) setResolved(next);
       } catch {
         // silencioso — mantém resolved atual
@@ -69,12 +70,12 @@ export function SmartImg({ src, alt = "", style, ...rest }) {
         fetchingRef.current = false;
       }
     })();
-  }, [src]);
+  }, [safeSrc]);
 
   return (
     <img
       ref={ref}
-      src={visible ? (resolved || src || undefined) : undefined}
+      src={visible ? (resolved || safeSrc || undefined) : undefined}
       alt={alt}
       style={style}
       loading="lazy"

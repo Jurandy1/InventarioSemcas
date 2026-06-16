@@ -58,10 +58,6 @@ export function ManualModal({
         initial={getField("manDesc")}
         onVal={(v) => {
           setField("manDesc", v);
-          if (!String(getField("manEspecie") || "").trim()) {
-            setField("manEspecie", inferEspecieFromDesc(v, sugestoes.especies));
-            bumpFt();
-          }
         }}
         placeholder="Descreva o item..."
         suggestions={sugestoes.descricoes}
@@ -115,11 +111,11 @@ export function ManualModal({
         <span style={{ fontSize: 11, color: "#64748b", alignSelf: "center" }}>Se deixar em branco, o sistema gera um código automático.</span>
       </div>
       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Espécie</label>
-      <TInput key={"manEsp_" + ft} initial={getField("manEspecie")} onVal={(v) => setField("manEspecie", v)} placeholder="Ex: CADEIRA, MESA..." suggestions={sugestoes.especies} style={inp} />
+      <TInput key={"manEsp_" + ft} initial={getField("manEspecie")} onVal={(v) => setField("manEspecie", v)} placeholder="Ex: CADEIRA, MESA..." style={inp} />
       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Marca</label>
-      <TInput key="manMarca" initial={getField("manMarca")} onVal={(v) => setField("manMarca", v)} placeholder="Marca..." suggestions={sugestoes.marcas} style={inp} />
+      <TInput key="manMarca" initial={getField("manMarca")} onVal={(v) => setField("manMarca", v)} placeholder="Marca..." style={inp} />
       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Fornecedor</label>
-      <TInput key="manForn" initial={getField("manFornecedor")} onVal={(v) => setField("manFornecedor", v)} placeholder="Fornecedor..." suggestions={sugestoes.fornecedores} style={inp} />
+      <TInput key="manForn" initial={getField("manFornecedor")} onVal={(v) => setField("manFornecedor", v)} placeholder="Fornecedor..." style={inp} />
       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Valor</label>
       <TInput key="manVal" initial={getField("manValor")} onVal={(v) => setField("manValor", v)} type="number" placeholder="0.00" style={inp} />
       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Origem</label>

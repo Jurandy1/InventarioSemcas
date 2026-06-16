@@ -61,16 +61,19 @@ export function useFound({ showT, applyDescOverride } = {}) {
 
       const ids = Array.isArray(unitIds) ? unitIds.filter(Boolean) : [];
       let foundDocs = [];
+      let neDocs = [];
       if (!options.cacheOnly) {
         foundDocs = await fetchInventarioForUnits(ids, {
-          patrimonioIds: options.patrimonioIds || keepItemIds,
+          patrimonioIds: options.patrimonioIds || [],
         });
+        neDocs = await fsGetAll("tombosNE", { pageSize: 200 });
+      } else {
+        neDocs = Array.isArray(cachedTombos) ? cachedTombos : [];
       }
 
-      const neDocs = await fsGetAll("tombosNE", { pageSize: 200 });
       const incoming = foundDocs.map((d) => normalizeFoundRecord({ ...d, patrimonioId: d.patrimonioId || d._id }));
       const nextFound = mergeFoundRecords(basePrev, incoming, { keepItemIds, itemUnits });
-      const nextTombos = neDocs.map((d) => ({ ...d, id: d._id }));
+      const nextTombos = neDocs.map((d) => ({ ...d, id: d._id || d.id }));
 
       syncFoundRef(nextFound);
       setTombosNE(nextTombos);

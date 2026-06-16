@@ -58,6 +58,8 @@ export function InventarioPage({
   hideIncorporados,
   setHideIncorporados,
   openDetModal,
+  onOpenLocalDetail,
+  onOpenMulti,
   onOpenManual,
   onOpenSemTombo,
   onOpenFotoVarios,
@@ -442,6 +444,11 @@ export function InventarioPage({
                     Manual
                   </button>
                 )}
+                {!campanhaFechada && onOpenMulti && (
+                  <button onClick={() => onOpenMulti(null)} style={{ ...bs, fontSize: 11, padding: "6px 12px", borderColor: "#0f766e", color: "#0f766e" }}>
+                    + Vários iguais
+                  </button>
+                )}
                 {onOpenConvidarColega && (
                   <button onClick={onOpenConvidarColega} style={{ ...bs, fontSize: 11, padding: "6px 12px", borderColor: "#7c3aed", color: "#7c3aed" }}>
                     Convidar colega
@@ -556,8 +563,12 @@ export function InventarioPage({
                     <button
                       key={l.id}
                       onClick={() => {
-                        setLocalSelecionadoId(l.id);
-                        setInvSubTab("locais");
+                        if (onOpenLocalDetail) {
+                          onOpenLocalDetail(l);
+                        } else {
+                          setLocalSelecionadoId(l.id);
+                          setInvSubTab("locais");
+                        }
                       }}
                       style={{ background: "#f1f5f9", color: "#334155", borderRadius: 99, padding: "4px 10px", fontSize: 11, fontWeight: 700, border: "1px solid #e2e8f0", cursor: "pointer" }}
                       title="Abrir local"

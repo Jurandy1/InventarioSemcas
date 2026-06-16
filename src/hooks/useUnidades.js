@@ -51,13 +51,15 @@ export function useUnidades({ showT } = {}) {
         setUnidades(unids);
         return unids;
       } catch (e) {
+        console.error("Error loading XLSX:", e);
         showT?.("Erro ao carregar patrimônios: " + (e?.message || "Erro"));
-        return [];
+        // Return whatever we have, or empty array
+        return unidades;
       } finally {
         setLoadingXlsx(false);
       }
     },
-    [showT]
+    [showT, unidades]
   );
 
   return { unidades, setUnidades, loadingXlsx, loadXlsx };

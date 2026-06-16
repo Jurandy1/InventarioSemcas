@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   clearFirebaseSession,
   fbLogin,
@@ -70,6 +70,23 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
     } catch {}
   }, []);
 
+  const loadAfterAuthRef = useRef(loadAfterAuth);
+  const showTRef = useRef(showT);
+  useEffect(() => {
+    loadAfterAuthRef.current = loadAfterAuth;
+  }, [loadAfterAuth]);
+  useEffect(() => {
+    showTRef.current = showT;
+  }, [showT]);
+
+  // Rede de segurança: nunca deixar o usuário preso em "Carregando inventário..."
+  // por mais que algum await silencioso dentro do boot trave. Após 8s, força
+  // loading=false; se boot termina antes (caso comum), esse timeout vira no-op.
+  useEffect(() => {
+    const safety = setTimeout(() => setLoading(false), 8000);
+    return () => clearTimeout(safety);
+  }, []);
+
   useEffect(() => {
     async function boot() {
       if (!firebaseOk) {
@@ -77,7 +94,7 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
         return;
       }
 
-      const hard = setTimeout(() => setLoading(false), 15000);
+      const hard = setTimeout(() => setLoading(false), 8000);
       try {
         let saved = null;
         try {
@@ -88,7 +105,11 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
             saved = localStorage.getItem("inv-session");
           } catch {}
         }
-        if (!saved) return;
+        if (!saved) {
+          clearTimeout(hard);
+          setLoading(false);
+          return;
+        }
         const s = JSON.parse(saved);
         if (s.refreshToken) {
           try {
@@ -99,8 +120,10 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
             try {
               await resolveLoginRole(next);
             } catch (roleErr) {
+              clearTimeout(hard);
               if (isCoordRedirectError(roleErr)) {
                 redirectToCoordLogin(roleErr.user || next);
+                setLoading(false);
                 return;
               }
               clearFirebaseSession();
@@ -139,8 +162,10 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
             await resolveLoginRole(s);
             setLogado(s);
           } catch (roleErr) {
+            clearTimeout(hard);
             if (isCoordRedirectError(roleErr)) {
               redirectToCoordLogin(roleErr.user || s);
+              setLoading(false);
               return;
             }
             clearFirebaseSession();
@@ -155,10 +180,15 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
           }
         }
 
-        await loadAfterAuth?.();
+        try {
+          await loadAfterAuthRef.current?.();
+        } finally {
+          clearTimeout(hard);
+          setLoading(false);
+        }
       } catch (e) {
         try {
-          showT?.(e?.message || "Erro ao iniciar");
+          showTRef.current?.(e?.message || "Erro ao iniciar");
         } catch {}
       } finally {
         clearTimeout(hard);
@@ -166,7 +196,44 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
       }
     }
     boot();
-  }, [firebaseOk, loadAfterAuth, showT]);
+  }, [firebaseOk]);
+
+  // Renova o token a cada 45min enquanto a aba está visível. Tokens do
+  // Firebase Identity Toolkit expiram em 1h — sem isso, depois de uma hora
+  // de uso as queries começam a retornar 401 silenciosamente.
+  useEffect(() => {
+    if (!logado?.uid) return;
+    const REFRESH_MS = 45 * 60 * 1000;
+    let timer = null;
+    const tick = async () => {
+      try {
+        let saved = null;
+        try {
+          saved = sessionStorage.getItem("inv-session");
+        } catch {}
+        if (!saved) return;
+        const s = JSON.parse(saved);
+        if (!s?.refreshToken) return;
+        const r = await refreshAuthToken(s.refreshToken);
+        const next = { ...s, token: r.token, uid: r.uid, refreshToken: r.refreshToken || s.refreshToken };
+        setFirebaseSession({ token: next.token, uid: next.uid });
+        try {
+          sessionStorage.setItem("inv-session", JSON.stringify(next));
+        } catch {}
+      } catch (e) {
+        console.warn("Falha ao renovar token:", e?.message || e);
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    timer = setInterval(tick, REFRESH_MS);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      if (timer) clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [logado?.uid]);
 
   const login = useCallback(
     async (email, senha) => {
@@ -212,8 +279,11 @@ export function useAuth({ firebaseOk, loadAfterAuth, showT } = {}) {
         } catch {}
 
         setLoading(true);
-        await loadAfterAuth?.();
-        setLoading(false);
+        try {
+          await loadAfterAuth?.();
+        } finally {
+          setLoading(false);
+        }
 
         showT?.(`Bem-vindo, ${user.nome}!`);
         return user;

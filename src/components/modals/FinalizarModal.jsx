@@ -9,6 +9,7 @@ export function FinalizarModal({
   getField,
   setField,
   finalizarComCoordenadora,
+  busy,
   bs,
   bp,
   inp,
@@ -49,8 +50,12 @@ export function FinalizarModal({
           <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>
             Cancelar
           </button>
-          <button onClick={finalizarComCoordenadora} style={{ ...bp, flex: 1 }}>
-            Gerar link e QR Code
+          <button 
+            onClick={finalizarComCoordenadora} 
+            disabled={busy}
+            style={{ ...bp, flex: 1, opacity: busy ? 0.6 : 1, cursor: busy ? "wait" : "pointer" }}
+          >
+            {busy ? "Finalizando..." : "Gerar link e QR Code"}
           </button>
         </div>
       </div>

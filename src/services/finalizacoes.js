@@ -23,6 +23,27 @@ export async function criarFinalizacao({
   finalizedBy = {},
   campanhaId = "ativa",
 }) {
+  if (sessionId || unidadeIds.length > 0) {
+    try {
+      const existentes = await fsGetAll("finalizacoes");
+      // Check both by sessionId AND by unitIds to prevent duplicates
+      const hit = existentes?.find((d) => {
+        if (d.sessionId && d.sessionId === sessionId) return true;
+        const dUnitIds = (d.unidadeIds || []).sort().join(',');
+        const newUnitIds = unidadeIds.sort().join(',');
+        if (dUnitIds && dUnitIds === newUnitIds) return true;
+        return false;
+      });
+      
+      if (hit) {
+        console.log(`[criarFinalizacao] Finalização já existe para essas unidades ou sessão. Ignorando duplicação.`, hit.id);
+        return { id: hit.id || hit._id, ...hit };
+      }
+    } catch (e) {
+      console.warn("Erro ao checar duplicatas de finalização:", e);
+    }
+  }
+
   const id = `fin_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const doc = {
     campanhaId,
@@ -55,7 +76,8 @@ export async function listFinalizacoes() {
     return (docs || [])
       .map((d) => ({ ...d, id: d.id || d._id }))
       .sort((a, b) => String(b.finalizedAt || "").localeCompare(String(a.finalizedAt || "")));
-  } catch {
+  } catch (e) {
+    console.warn("listFinalizacoes falhou:", e?.message || e);
     return [];
   }
 }

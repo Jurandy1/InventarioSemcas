@@ -55,24 +55,55 @@ export function TInput({ initial, onVal, suggestions = [], onSuggestionSelect, .
     setV(initial || "");
   }, [initial]);
 
-  const filtered = useMemo(() => {
-    const q = stripDiacritics(String(v)).toLowerCase().trim();
-    if (!q) return [];
-    const uniq = new Set();
+  // Pré-normaliza a lista UMA VEZ quando ela muda (não a cada tecla).
+  // Cada item vira { raw, norm, words } pra evitar refazer stripDiacritics no filtro.
+  const normalizedSuggestions = useMemo(() => {
+    const seen = new Set();
     const out = [];
     for (const s of suggestions || []) {
       if (!s) continue;
       const raw = String(s).trim();
       if (!raw) continue;
-      const key = stripDiacritics(raw).toLowerCase();
-      if (!key.includes(q)) continue;
-      if (uniq.has(key)) continue;
-      uniq.add(key);
-      out.push(raw);
+      const norm = stripDiacritics(raw).toLowerCase();
+      if (seen.has(norm)) continue;
+      seen.add(norm);
+      out.push({ raw, norm, words: norm.split(/\s+/).filter(Boolean) });
     }
-    out.sort(safeLocaleCompare);
-    return out.slice(0, 8);
-  }, [suggestions, v]);
+    return out;
+  }, [suggestions]);
+
+  // Filtro + ranking por relevância (não alfabético).
+  // Score:
+  //   100 = match exato (digitou a sugestão inteira)
+  //    80 = sugestão começa com o que foi digitado
+  //    60 = alguma palavra da sugestão começa com o que foi digitado
+  //    40 = digitado aparece como substring em algum lugar
+  // Empate: a sugestão MAIS CURTA vence (provavelmente o termo "puro" — "CADEIRA"
+  // ganha de "CADEIRA EXECUTIVA GIRATÓRIA COM BRAÇO HOSPITALAR").
+  const filtered = useMemo(() => {
+    const q = stripDiacritics(String(v)).toLowerCase().trim();
+    if (!q) return [];
+
+    const scored = [];
+    for (const { raw, norm, words } of normalizedSuggestions) {
+      let score = 0;
+      if (norm === q) score = 100;
+      else if (norm.startsWith(q)) score = 80;
+      else if (words.some((w) => w.startsWith(q))) score = 60;
+      else if (norm.includes(q)) score = 40;
+
+      if (score === 0) continue;
+      scored.push({ raw, norm, score });
+    }
+
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.norm.length !== b.norm.length) return a.norm.length - b.norm.length;
+      return safeLocaleCompare(a.raw, b.raw);
+    });
+
+    return scored.slice(0, 8).map((x) => x.raw);
+  }, [normalizedSuggestions, v]);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -102,17 +133,6 @@ export function TInput({ initial, onVal, suggestions = [], onSuggestionSelect, .
     const hit = String(suggestion).slice(start, end);
     const after = String(suggestion).slice(end);
 
-    const rx = new RegExp(escapeRegExp(inputRaw), "i");
-    if (!rx.test(hit) && inputRaw.trim()) {
-      return (
-        <span>
-          {before}
-          <strong style={{ color: "#1d4ed8", fontWeight: 700 }}>{hit}</strong>
-          {after}
-        </span>
-      );
-    }
-
     return (
       <span>
         {before}
@@ -138,10 +158,14 @@ export function TInput({ initial, onVal, suggestions = [], onSuggestionSelect, .
           const next = e.target.value;
           setV(next);
           onVal(next);
-          setShowSuggestions(true);
+          // Só mostra dropdown se há lista de sugestões ATIVA.
+          // Sem isso, o componente abria um dropdown vazio em campos sem suggestions.
+          if (normalizedSuggestions.length > 0) setShowSuggestions(true);
         }}
         onFocus={() => {
-          if (String(v).trim().length > 0) setShowSuggestions(true);
+          if (normalizedSuggestions.length > 0 && String(v).trim().length > 0) {
+            setShowSuggestions(true);
+          }
         }}
       />
 

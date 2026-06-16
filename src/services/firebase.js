@@ -191,9 +191,10 @@ function fromFsDoc(doc) {
 export async function fsGetDocPublic(collection, docId) {
   assertFirebaseConfigured();
   const id = String(docId || "").trim();
-  if (!id) return null;
+  const col = String(collection || "").trim();
+  if (!id || !col) return null;
   const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
-  const r = await fetchWithTimeout(`${FS_URL}/${collection}/${encodeURIComponent(id)}?key=${FB.apiKey}`, {}, 12000);
+  const r = await fetchWithTimeout(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB.apiKey}`, {}, 12000);
   if (r.status === 404) return null;
   const d = await r.json().catch(() => ({}));
   if (!r.ok) {
@@ -212,10 +213,11 @@ export async function fsGetDoc(collection, docId) {
   assertFirebaseConfigured();
   if (!authToken) return null;
   const id = String(docId || "").trim();
-  if (!id) return null;
+  const col = String(collection || "").trim();
+  if (!id || !col) return null;
   const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
   const r = await fetchWithTimeout(
-    `${FS_URL}/${collection}/${encodeURIComponent(id)}?key=${FB.apiKey}`,
+    `${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB.apiKey}`,
     { headers: { Authorization: `Bearer ${authToken}` } },
     12000
   );
@@ -275,6 +277,8 @@ function safeParseJson(val) {
 export async function fsQueryPage(collection, opts = {}) {
   assertFirebaseConfigured();
   if (!authToken) return { docs: [], nextCursor: null, hasMore: false };
+  const col = String(collection || "").trim();
+  if (!col) return { docs: [], nextCursor: null, hasMore: false };
 
   const pageSize = Math.max(1, Math.min(1000, Number(opts.pageSize || 200) || 200));
   const limit = Math.max(1, Math.min(1001, pageSize + 1));
@@ -283,7 +287,7 @@ export async function fsQueryPage(collection, opts = {}) {
   const cursor = safeParseJson(opts.cursor);
 
   const structuredQuery = {
-    from: [{ collectionId: collection }],
+    from: [{ collectionId: col }],
     limit,
     orderBy: orderByInput.map((o) => ({
       field: { fieldPath: o.field },
@@ -316,7 +320,7 @@ export async function fsQueryPage(collection, opts = {}) {
 
   if (!r.ok) {
     const errBody = await r.json().catch(() => ({}));
-    console.warn(`Firestore query failed (${collection}):`, errBody?.error?.message || r.status);
+    console.warn(`Firestore query failed (${col}):`, errBody?.error?.message || r.status);
     return { docs: [], nextCursor: null, hasMore: false };
   }
   const rows = await r.json().catch(() => []);
@@ -344,10 +348,13 @@ export async function fsQueryPage(collection, opts = {}) {
 export async function fsSet(collection, docId, data) {
   assertFirebaseConfigured();
   if (!authToken) return;
+  const col = String(collection || "").trim();
+  const id = String(docId || "").trim();
+  if (!col || !id) return;
   const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
   const fields = {};
   for (const k in data) fields[k] = toFsValue(data[k]);
-  await fetch(`${FS_URL}/${collection}/${docId}?key=${FB.apiKey}`, {
+  await fetch(`${FS_URL}/${col}/${id}?key=${FB.apiKey}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
     body: JSON.stringify({ fields }),
@@ -357,24 +364,27 @@ export async function fsSet(collection, docId, data) {
 export async function fsSetStrict(collection, docId, data) {
   assertFirebaseConfigured();
   if (!authToken) throw new Error("Usuário não autenticado");
+  const col = String(collection || "").trim();
+  const id = String(docId || "").trim();
+  if (!col || !id) throw new Error("Collection or docId missing");
   const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
   const fields = {};
   for (const k in data) fields[k] = toFsValue(data[k]);
-  const r = await fetch(`${FS_URL}/${collection}/${docId}?key=${FB.apiKey}`, {
+  const r = await fetch(`${FS_URL}/${col}/${id}?key=${FB.apiKey}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
     body: JSON.stringify({ fields }),
   });
   if (r.ok) return true;
   const d = await r.json().catch(() => ({}));
-  const raw = d?.error?.message || `Falha ao salvar em ${collection}/${docId}`;
+  const raw = d?.error?.message || `Falha ao salvar em ${col}/${id}`;
   if (r.status === 403 || String(raw).includes("PERMISSION_DENIED")) {
-    if (collection === "convites_inventariantes") {
+    if (col === "convites_inventariantes") {
       throw new Error(
         "Sem permissão para criar convite. Publique as regras atualizadas do firestore.rules no Firebase Console (Firestore → Regras → Publicar)."
       );
     }
-    throw new Error(`Sem permissão no Firestore (${collection}). Verifique se as regras foram publicadas.`);
+    throw new Error(`Sem permissão no Firestore (${col}). Verifique se as regras foram publicadas.`);
   }
   throw new Error(raw);
 }
@@ -382,6 +392,8 @@ export async function fsSetStrict(collection, docId, data) {
 export async function fsGetAll(collection) {
   assertFirebaseConfigured();
   if (!authToken) return [];
+  const col = String(collection || "").trim();
+  if (!col) return [];
   const opts = arguments.length > 1 && typeof arguments[1] === "object" ? arguments[1] : {};
   const pageSize = Math.max(1, Math.min(1000, Number(opts.pageSize || 250) || 250));
 
@@ -390,7 +402,7 @@ export async function fsGetAll(collection) {
     let cursor = opts.cursor || null;
     const max = typeof opts.limit === "number" ? Math.max(0, opts.limit) : Infinity;
     while (all.length < max) {
-      const res = await fsQueryPage(collection, { ...opts, pageSize, cursor });
+      const res = await fsQueryPage(col, { ...opts, pageSize, cursor });
       all.push(...res.docs);
       if (!res.hasMore || res.docs.length === 0) break;
       cursor = res.nextCursor;
@@ -404,7 +416,7 @@ export async function fsGetAll(collection) {
   const max = typeof opts.limit === "number" ? Math.max(0, opts.limit) : Infinity;
 
   while (out.length < max) {
-    const url = `${FS_URL}/${collection}?key=${FB.apiKey}&pageSize=${pageSize}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`;
+    const url = `${FS_URL}/${col}?key=${FB.apiKey}&pageSize=${pageSize}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`;
     const r = await fetchWithTimeout(
       url,
       {
@@ -426,8 +438,11 @@ export async function fsGetAll(collection) {
 export async function fsDel(collection, docId) {
   assertFirebaseConfigured();
   if (!authToken) return;
+  const col = String(collection || "").trim();
+  const id = String(docId || "").trim();
+  if (!col || !id) return;
   const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
-  await fetch(`${FS_URL}/${collection}/${docId}?key=${FB.apiKey}`, {
+  await fetch(`${FS_URL}/${col}/${id}?key=${FB.apiKey}`, {
     method: "DELETE",
     headers: { Authorization: `Bearer ${authToken}` },
   });
