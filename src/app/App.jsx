@@ -893,7 +893,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       detItem: item,
       detEstado: estadoDefault,
       detSituacao: f?.situacao || "Em uso",
-      detLocal: typeof forceLocalId === "string" ? forceLocalId : f?.localId || "",
+      detLocal: typeof forceLocalId === "string" ? forceLocalId : f?.localId || inventario.activeLocalId || "",
       detObs: f?.obs || "",
       detMarca: f?.marca || item.marca || "",
       detOrigem: f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
@@ -956,7 +956,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       detItem: snap,
       detEstado: fs.detEstado || f?.estado || defaultEstadoForItem(snap),
       detSituacao: fs.detSituacao || f?.situacao || "Em uso",
-      detLocal: fs.detLocal || f?.localId || "",
+      detLocal: fs.detLocal || f?.localId || inventario.activeLocalId || "",
       detObs: fs.detObs || f?.obs || "",
       detMarca: fs.detMarca || f?.marca || snap.marca || "",
       detOrigem: fs.detOrigem || f?.origem || (snap.isManual ? "Próprio" : snap.tipoEntrada || "Próprio"),
@@ -1069,7 +1069,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         detItem: item,
         detEstado: fs.detEstado || f?.estado || defaultEstadoForItem(item),
         detSituacao: fs.detSituacao || f?.situacao || "Em uso",
-        detLocal: fs.detLocal || f?.localId || "",
+        detLocal: fs.detLocal || f?.localId || inventario.activeLocalId || "",
         detObs: fs.detObs || f?.obs || "",
         detMarca: fs.detMarca || f?.marca || item.marca || "",
         detOrigem: fs.detOrigem || f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
@@ -2109,6 +2109,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
             pausedUnitIds={inventario.pausedUnitIds}
             foundSet={found.foundSet}
             foundMap={found.foundMap}
+            activeLocalId={inventario.activeLocalId}
+            setActiveLocalId={inventario.setActiveLocalId}
             isMob={isMob}
             cd={cd}
             inp={inp}
@@ -2439,10 +2441,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
             onOpenCamera={openCamera}
             onViewImage={onViewImage}
             onClose={closeDetModal}
-            onSave={() => {
+            onSave={async () => {
               if (!assertPodeEditar()) return;
               formRef.current.detForceWrite = false;
-              found.saveDetail({
+              await found.saveDetail({
                 formRef,
                 getField,
                 unidadeAtiva: resolveItemUnit(formRef.current.detItem),
@@ -2459,6 +2461,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
                   });
                 },
               });
+              if (getField("detLocal")) {
+                inventario.setActiveLocalId(getField("detLocal"));
+              }
             }}
             onDelete={async () => {
               await found.deleteFound(formRef.current.detItem.id);
@@ -2489,10 +2494,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
                 Recarregar
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   formRef.current.detForceWrite = true;
                   setSaveConflict(null);
-                  found.saveDetail({
+                  await found.saveDetail({
                     formRef,
                     getField,
                     unidadeAtiva: resolveItemUnit(formRef.current.detItem),
@@ -2501,6 +2506,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
                     updateQueueStatus,
                     closeModal: closeDetModal,
                   });
+                  if (getField("detLocal")) {
+                    inventario.setActiveLocalId(getField("detLocal"));
+                  }
                 }}
                 style={{ ...bs, flex: 1, color: "#b45309", borderColor: "#fcd34d" }}
               >

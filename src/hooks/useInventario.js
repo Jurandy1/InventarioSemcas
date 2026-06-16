@@ -15,6 +15,7 @@ export function useInventario({ unidades, foundSet }) {
   const [invSubTab, setInvSubTab] = useState("inventariar");
   const [sessionId, setSessionIdState] = useState(() => getSessionId());
   const [sessoesPausadas, setSessoesPausadas] = useState(() => loadSessoesPausadas());
+  const [activeLocalId, setActiveLocalId] = useState("");
 
   useEffect(() => {
     try {
@@ -194,6 +195,8 @@ export function useInventario({ unidades, foundSet }) {
     retomarSessaoPausada,
     sessoesPausadas,
     pausedUnitIds,
+    activeLocalId,
+    setActiveLocalId,
     allItens,
     totalBens,
     totalFound,

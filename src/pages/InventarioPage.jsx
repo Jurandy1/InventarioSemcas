@@ -57,6 +57,8 @@ export function InventarioPage({
   setHideFound,
   hideIncorporados,
   setHideIncorporados,
+  activeLocalId,
+  setActiveLocalId,
   openDetModal,
   onOpenLocalDetail,
   onOpenMulti,
@@ -263,6 +265,24 @@ export function InventarioPage({
             )}
           </button>
         )}
+        <button
+          onClick={() => setInvSubTab("resumo")}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "8px 16px",
+            borderRadius: 9,
+            border: "none",
+            background: invSubTab === "resumo" ? "#1351B4" : "#f1f5f9",
+            color: invSubTab === "resumo" ? "#fff" : "#374151",
+            fontWeight: 700,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Resumo
+        </button>
       </div>
 
       {invSubTab === "inventariar" && (
@@ -372,6 +392,22 @@ export function InventarioPage({
               </div>
             </div>
           )}
+
+          <div style={{ ...cd, marginBottom: 12, padding: "12px 16px" }}>
+            <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" }}>Local Atual (Auto-preenchimento)</p>
+            <select
+              value={activeLocalId || ""}
+              onChange={(e) => setActiveLocalId?.(e.target.value)}
+              style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", outline: "none", background: "#f8fafc" }}
+            >
+              <option value="">— Nenhum local fixado —</option>
+              {locais.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.nome}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <TInput initial={unidadeSearch} onVal={(v) => setUnidadeSearch(v)} placeholder="Buscar unidade..." style={{ ...inp, marginBottom: 12 }} />
 
@@ -1067,6 +1103,71 @@ export function InventarioPage({
                   })}
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {invSubTab === "resumo" && (
+        <div style={{ display: "grid", gap: 16 }}>
+          <p style={{ margin: 0, fontSize: 14, color: "#475569" }}>
+            Resumo dos itens encontrados, agrupados por local. Mostrando apenas os itens já escaneados nesta sessão.
+          </p>
+          {locais.map((local) => {
+            const itensDoLocal = [];
+            unidadesAtivas.forEach((u) => {
+              u.itens.forEach((i) => {
+                const f = foundMap[i.id];
+                if (f && f.localId === local.id) {
+                  itensDoLocal.push({ item: i, found: f });
+                }
+              });
+            });
+            if (itensDoLocal.length === 0) return null;
+            return (
+              <div key={local.id} style={{ ...cd, padding: "16px", border: "1.5px solid #e2e8f0" }}>
+                <h3 style={{ margin: "0 0 12px", fontSize: 16, fontWeight: 800, color: "#0f172a" }}>
+                  {local.nome} <span style={{ color: "#64748b", fontSize: 13, fontWeight: 600 }}>({itensDoLocal.length})</span>
+                </h3>
+                <div style={{ display: "grid", gap: 10 }}>
+                  {itensDoLocal.map(({ item, found }) => (
+                    <div key={item.id} style={{ display: "flex", gap: 12, borderBottom: "1px solid #f1f5f9", paddingBottom: 10 }}>
+                      <div style={{ flexShrink: 0 }}>
+                        <SmartImg
+                          src={found.fotoUrls?.[0]}
+                          size={60}
+                          imgStyle={{ width: 60, height: 60, borderRadius: 8, objectFit: "cover" }}
+                        />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#0f172a" }}>
+                          {getDisplayDesc(item, found)}
+                        </p>
+                        <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>
+                          NF: {item.nf || "—"} · Fornecedor: {item.fornecedor || "—"}
+                        </p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8", fontWeight: 600 }}>
+                          Coletado: {found.data || "—"} {found.hora || ""}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          {!locais.some((local) => {
+            let hasItem = false;
+            unidadesAtivas.forEach((u) => {
+              u.itens.forEach((i) => {
+                const f = foundMap[i.id];
+                if (f && f.localId === local.id) hasItem = true;
+              });
+            });
+            return hasItem;
+          }) && (
+            <div style={{ ...cd, textAlign: "center", padding: 40, color: "#64748b" }}>
+              Nenhum item inventariado encontrado nos locais atuais.
             </div>
           )}
         </div>

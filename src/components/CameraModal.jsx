@@ -335,9 +335,37 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
   };
 
   const handleFileSelect = async (e, source = "gallery") => {
-    const f = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = null;
-    if (!f) return;
+    if (files.length === 0) return;
+
+    if (source === "gallery" && files.length > 0) {
+      try {
+        setCamError("");
+        const newPhotos = [];
+        for (const f of files) {
+          if (f.size > MAX_FILE_BYTES) {
+            setCamError(`Um ou mais arquivos são muito grandes. Selecione arquivos de até 8MB.`);
+            continue;
+          }
+          const d = await compressPhoto(f);
+          newPhotos.push(d);
+        }
+        if (newPhotos.length > 0) {
+          setCaptured((arr) => {
+            const next = [...arr, ...newPhotos];
+            persistPhotos(next);
+            return next;
+          });
+        }
+      } catch (err) {
+        setCamError(err?.message || "Erro ao processar as fotos. Tente outras imagens.");
+      }
+      return;
+    }
+
+    // fallback for camera (single file)
+    const f = files[0];
     if (f.size > MAX_FILE_BYTES) {
       setCamError(`Arquivo muito grande (${Math.round(f.size / (1024 * 1024))}MB). Selecione até 8MB.`);
       return;
@@ -522,7 +550,7 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
         </button>
       )}
 
-      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => handleFileSelect(e, "gallery")} />
+      <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => handleFileSelect(e, "gallery")} />
       <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => handleFileSelect(e, "camera")} />
     </div>
   );
