@@ -21,37 +21,37 @@ export function MultiItemModal({
   onClose,
   onOpenCamera,         // (target: 'multi-row-<idx>') => void
   rowsPhotosRef,        // { current: { '0': [base64], '1': [...] } } — atualizado quando câmera retorna
+  sharedRef,
+  rowsRef,
   onSubmit,             // ({ shared, rows }) => Promise<void>
   bp,
   bs,
   inp,
 }) {
-  const [shared, setShared] = useState({
-    descricao: "",
-    especie: "",
-    marca: "",
-    fornecedor: "",
-    valor: "",
-    localId: sessionLocais[0]?.id || "",
-    origem: "Próprio",
-  });
-  const [rows, setRows] = useState([
-    { tombamento: "", estado: "Bom", obs: "" },
-    { tombamento: "", estado: "Bom", obs: "" },
-  ]);
   const [submitting, setSubmitting] = useState(false);
   const [forceRender, setForceRender] = useState(0);
   const bump = () => setForceRender((n) => n + 1);
 
-  const updateShared = (k, v) => setShared((s) => ({ ...s, [k]: v }));
-  const updateRow = (idx, k, v) =>
-    setRows((r) => r.map((row, i) => (i === idx ? { ...row, [k]: v } : row)));
+  const shared = sharedRef.current;
+  const rows = rowsRef.current;
 
-  const addRow = () =>
-    setRows((r) => [...r, { tombamento: "", estado: "Bom", obs: "" }]);
+  const updateShared = (k, v) => {
+    sharedRef.current = { ...sharedRef.current, [k]: v };
+    bump();
+  };
+
+  const updateRow = (idx, k, v) => {
+    rowsRef.current = rowsRef.current.map((row, i) => (i === idx ? { ...row, [k]: v } : row));
+    bump();
+  };
+
+  const addRow = () => {
+    rowsRef.current = [...rowsRef.current, { tombamento: "", estado: "Bom", obs: "" }];
+    bump();
+  };
 
   const removeRow = (idx) => {
-    setRows((r) => r.filter((_, i) => i !== idx));
+    rowsRef.current = rowsRef.current.filter((_, i) => i !== idx);
     if (rowsPhotosRef?.current) {
       delete rowsPhotosRef.current[String(idx)];
     }

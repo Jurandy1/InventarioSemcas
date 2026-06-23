@@ -154,6 +154,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const resumeRestoredRef = useRef(false);
   const cameraTargetRef = useRef(null);
   const multiRowsPhotosRef = useRef({});
+  const multiSharedRef = useRef(null);
+  const multiRowsRef = useRef(null);
   const finalizandoRef = useRef(false);
 
   const bumpFt = () => setFt((t) => t + 1);
@@ -2129,6 +2131,23 @@ function OrganizedApp({ firebaseOk, isProd }) {
             openDetModal={openDetModal}
             onOpenLocalDetail={(local) => setLocalDetalhe(local)}
             onOpenMulti={() => {
+              if (!multiSharedRef.current) {
+                multiSharedRef.current = {
+                  descricao: "",
+                  especie: "",
+                  marca: "",
+                  fornecedor: "",
+                  valor: "",
+                  localId: sessionLocais[0]?.id || "",
+                  origem: "Próprio",
+                };
+              }
+              if (!multiRowsRef.current) {
+                multiRowsRef.current = [
+                  { tombamento: "", estado: "Bom", obs: "" },
+                  { tombamento: "", estado: "Bom", obs: "" },
+                ];
+              }
               multiRowsPhotosRef.current = {};
               setModal("multi");
             }}
@@ -2600,9 +2619,13 @@ function OrganizedApp({ firebaseOk, isProd }) {
           sessionLocais={sessionLocais}
           sugestoes={sugestoes}
           rowsPhotosRef={multiRowsPhotosRef}
+          sharedRef={multiSharedRef}
+          rowsRef={multiRowsRef}
           onClose={() => {
             Object.values(multiRowsPhotosRef.current || {}).forEach((arr) => revokeBlobUrls(arr));
             multiRowsPhotosRef.current = {};
+            multiSharedRef.current = null;
+            multiRowsRef.current = null;
             setModal(null);
           }}
           onOpenCamera={(target) => openCamera(target)}
