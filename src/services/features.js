@@ -392,7 +392,7 @@ export async function gerarRelatorioExcelCoord(itens, foundMap, unidadeNome = ""
         item.especie || "",
         f ? "Localizado" : "Pendente",
         f?.estado || "-",
-        f?.situacao || "-",
+        f?.situacao === "Permuta" ? "Em uso" : f?.situacao || "-",
         f?.localId || "",
         f?.obs || "",
         ev?.usuario || f?.usuario || "",

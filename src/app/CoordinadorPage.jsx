@@ -311,8 +311,8 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
 
   const foundSet = useMemo(() => new Set(unitFound.map((f) => f.patrimonioId)), [unitFound]);
 
-  const pendentes = useMemo(() => itens.filter((i) => !foundSet.has(i.id)), [itens, foundSet]);
-  const inventariados = useMemo(() => itens.filter((i) => foundSet.has(i.id)), [itens, foundSet]);
+  const pendentes = useMemo(() => [], []);
+  const inventariados = useMemo(() => itens.filter((i) => foundSet.has(i.id) && i.tipoEntrada !== "Incorporado"), [itens, foundSet]);
 
   const { inp, bp, bs, cd } = getAppStyles(isMob);
 
@@ -441,31 +441,13 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
         Array.isArray(coordData?.unidadeNomes) && coordData.unidadeNomes.length
           ? coordData.unidadeNomes.join(", ")
           : coordData?.unidadeNome || "";
-      const { workbook, XLSX } = await gerarRelatorioExcelCoord(itens, foundMap, nome);
+      const { workbook, XLSX } = await gerarRelatorioExcelCoord(inventariados, foundMap, nome);
       XLSX.writeFile(workbook, `inventario_coord_${Date.now()}.xlsx`);
       showT("Excel exportado");
     } catch (e) {
       showT(e.message || "Erro ao exportar");
     }
   };
-
-  const filteredPendentes = useMemo(() => {
-    const q = String(search || "").trim().toLowerCase();
-    if (!q) return pendentes;
-    return pendentes.filter(
-      (i) =>
-        String(i.id || "").includes(q) ||
-        String(i.descricao || "").toLowerCase().includes(q) ||
-        String(i.especie || "").toLowerCase().includes(q),
-    );
-  }, [pendentes, search]);
-
-  const pendTotalPages = Math.max(1, Math.ceil(filteredPendentes.length / COORD_PER_PAGE));
-  const pagedPendentes = filteredPendentes.slice((pendPage - 1) * COORD_PER_PAGE, pendPage * COORD_PER_PAGE);
-
-  useEffect(() => {
-    setPendPage(1);
-  }, [search]);
 
   const campanhaFechada = isCampanhaFechada(campanha);
 
@@ -523,7 +505,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
         {/* Tab nav */}
         <div style={{ display: "flex", gap: 8, marginBottom: 20, overflowX: "auto", paddingBottom: 8 }}>
           {[
-            { id: "itens", label: "Meu Inventário", count: itens.length },
+            { id: "itens", label: "Meu Inventário", count: inventariados.length },
             { id: "relatorio", label: "Relatório" },
           ].map((t) => (
             <button
@@ -557,53 +539,20 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
         {/* Itens tab */}
         {tab === "itens" && (
           <div>
-            <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>Itens pendentes</h2>
-
-            {pendentes.length === 0 ? (
+            <h2 style={{ margin: "0 0 12px", fontSize: 18, fontWeight: 700 }}>Itens localizados</h2>
+            {inventariados.length === 0 ? (
               <div style={{ ...cd, textAlign: "center", padding: 40 }}>
-                <p style={{ color: "#94a3b8" }}>Todos os itens foram localizados!</p>
+                <p style={{ color: "#94a3b8" }}>Nenhum item localizado até o momento.</p>
               </div>
             ) : (
               <>
                 <TInput initial={search} onVal={setSearch} placeholder="Buscar item..." style={{ ...inp, marginBottom: 12 }} />
-                <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(300px,1fr))", gap: 10 }}>
-                  {pagedPendentes.map((item) => (
-                    <div
-                      key={item.id}
-                      onClick={() => openItem(item)}
-                      style={{ ...cd, cursor: "pointer", border: "1.5px solid #e2e8f0", display: "flex", flexDirection: "column" }}
-                    >
-                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{item.descricao || item.especie || "—"}</p>
-                      <p style={{ margin: "4px 0 0", fontSize: 11, color: "#64748b" }}>Nº {item.id}</p>
-                      {item.tipoEntrada && item.tipoEntrada !== "Permuta" && (
-                        <p style={{ margin: "2px 0 0", fontSize: 10, color: "#94a3b8" }}>{maskTipoEntrada(item.tipoEntrada)}</p>
-                      )}
-                      <p style={{ margin: "10px 0 0", fontSize: 11, fontWeight: 700, color: "#dc2626" }}>Pendente</p>
-                    </div>
-                  ))}
-                </div>
-                {pendTotalPages > 1 && (
-                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-                    <button disabled={pendPage <= 1} onClick={() => setPendPage((p) => Math.max(1, p - 1))} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                      ‹
-                    </button>
-                    <span style={{ fontSize: 12, color: "#64748b" }}>
-                      Pág {pendPage}/{pendTotalPages} · {filteredPendentes.length} pendentes
-                    </span>
-                    <button disabled={pendPage >= pendTotalPages} onClick={() => setPendPage((p) => Math.min(pendTotalPages, p + 1))} style={{ ...bs, padding: "6px 10px", fontSize: 12 }}>
-                      ›
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Also show already-found items */}
-            {inventariados.length > 0 && (
-              <div style={{ marginTop: 20 }}>
-                <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "#16a34a" }}>Já localizados ({inventariados.length})</h3>
                 <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(300px,1fr))", gap: 8 }}>
-                  {inventariados.map((item) => {
+                  {inventariados.filter(i => {
+                    const q = String(search || "").trim().toLowerCase();
+                    if (!q) return true;
+                    return String(i.id || "").includes(q) || String(i.descricao || "").toLowerCase().includes(q) || String(i.especie || "").toLowerCase().includes(q);
+                  }).map((item) => {
                     const f = foundMap[item.id];
                     return (
                       <div
@@ -617,7 +566,6 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
                           {f && (
                             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
                               <Badge label={f.estado} c={EC[f.estado]} />
-                              {/* Only show masked situacao — never show "Permuta" */}
                               <Badge label={maskSituacao(f.situacao)} c={SC[maskSituacao(f.situacao)] || SC["Em uso"]} />
                             </div>
                           )}
@@ -626,7 +574,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
                     );
                   })}
                 </div>
-              </div>
+              </>
             )}
           </div>
         )}
@@ -653,12 +601,9 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
                 </button>
               )}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(2, 1fr)", gap: 10, marginBottom: 20 }}>
               {[
-                { label: "Total",       valor: itens.length,         cor: COLORS.primary },
                 { label: "Localizados", valor: inventariados.length,  cor: "#16a34a" },
-                { label: "Pendentes",   valor: pendentes.length,      cor: "#dc2626" },
-                { label: "Progresso",   valor: `${itens.length > 0 ? Math.round((inventariados.length / itens.length) * 100) : 0}%`, cor: "#7c3aed" },
               ].map((stat) => (
                 <div key={stat.label} style={cd}>
                   <p style={{ margin: 0, fontSize: isMob ? 20 : 28, fontWeight: 700, color: stat.cor }}>{stat.valor}</p>
