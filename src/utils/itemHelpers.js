@@ -25,21 +25,98 @@ export function defaultEstadoForItem(item) {
   return "Bom";
 }
 
+/**
+ * Dicionário espécie → palavras-chave para reconhecimento automático a partir
+ * da descrição digitada. Ordem importa: termos mais específicos primeiro
+ * (ex: "mesa de som" antes de "mesa"). Comparação sem acentos, minúscula.
+ */
+const ESPECIE_KEYWORDS = [
+  ["TABLET", ["tablet", "ipad"]],
+  ["CELULAR", ["celular", "smartphone", "iphone", "telefone movel"]],
+  ["NOTEBOOK", ["notebook", "laptop", "macbook", "ultrabook"]],
+  ["MONITOR", ["monitor"]],
+  ["COMPUTADOR", ["computador", "desktop", "cpu", "all in one", "microcomputador"]],
+  ["IMPRESSORA", ["impressora", "multifuncional"]],
+  ["PROJETOR", ["projetor", "datashow", "data show"]],
+  ["NOBREAK", ["nobreak", "no-break", "no break"]],
+  ["ESTABILIZADOR", ["estabilizador"]],
+  ["ROTEADOR", ["roteador", "modem", "access point", "switch de rede"]],
+  ["SCANNER", ["scanner"]],
+  ["CAIXA DE SOM", ["caixa de som", "caixa amplificada", "caixa acustica"]],
+  ["MESA DE SOM", ["mesa de som", "mesa audio"]],
+  ["MICROFONE", ["microfone"]],
+  ["CÂMERA", ["camera", "filmadora", "webcam"]],
+  ["TELEVISOR", ["televisor", "televisao", "smart tv", "tv "]],
+  ["TELEFONE", ["telefone", "aparelho telefonico", "interfone"]],
+  ["AR CONDICIONADO", ["ar condicionado", "ar-condicionado", "split", "climatizador"]],
+  ["VENTILADOR", ["ventilador"]],
+  ["GELADEIRA", ["geladeira", "refrigerador", "frigobar"]],
+  ["FREEZER", ["freezer"]],
+  ["FOGÃO", ["fogao"]],
+  ["MICRO-ONDAS", ["micro-ondas", "microondas", "micro ondas", "forno eletrico"]],
+  ["BEBEDOURO", ["bebedouro", "purificador de agua", "purificador"]],
+  ["LIQUIDIFICADOR", ["liquidificador"]],
+  ["BATEDEIRA", ["batedeira"]],
+  ["MÁQUINA DE LAVAR", ["maquina de lavar", "lavadora de roupas", "lava e seca"]],
+  ["CADEIRA", ["cadeira"]],
+  ["LONGARINA", ["longarina"]],
+  ["POLTRONA", ["poltrona"]],
+  ["SOFÁ", ["sofa"]],
+  ["BANQUETA", ["banqueta", "banquinho"]],
+  ["MESA", ["mesa", "escrivaninha", "biro", "birô"]],
+  ["ARMÁRIO", ["armario", "guarda-louca"]],
+  ["ROUPEIRO", ["roupeiro", "guarda-roupa", "guarda roupa"]],
+  ["ESTANTE", ["estante", "prateleira"]],
+  ["ARQUIVO", ["arquivo de aco", "arquivo aco", "arquivo deslizante", "gaveteiro"]],
+  ["BALCÃO", ["balcao"]],
+  ["BELICHE", ["beliche"]],
+  ["CAMA", ["cama"]],
+  ["BERÇO", ["berco"]],
+  ["COLCHÃO", ["colchao", "colchonete"]],
+  ["QUADRO", ["quadro branco", "quadro de aviso", "quadro magnetico", "lousa", "flip chart", "flipchart"]],
+  ["BALANÇA", ["balanca"]],
+  ["EXTINTOR", ["extintor"]],
+  ["ESCADA", ["escada"]],
+  ["CARRINHO", ["carrinho"]],
+  ["MACA", ["maca "]],
+];
+
 export function inferEspecieFromDesc(desc, especies = []) {
   const raw = String(desc || "").trim();
   if (!raw) return "";
   const words = raw.split(/\s+/).filter(Boolean);
-  const q = stripDiacritics(raw).toLowerCase();
+  const q = ` ${stripDiacritics(raw).toLowerCase()} `;
 
+  // 1) Espécie já usada na planilha aparecendo como palavra inteira na
+  //    descrição (mantém a grafia oficial da base). Prefere a mais longa.
+  let bestPlanilha = "";
   for (const sp of especies || []) {
     const s = stripDiacritics(String(sp)).toLowerCase().trim();
-    if (!s) continue;
-    if (q.includes(s) || s.includes(stripDiacritics(words[0] || "").toLowerCase())) {
-      return String(sp).trim();
+    if (!s || s.length < 3) continue;
+    if (q.includes(` ${s} `) && s.length > stripDiacritics(bestPlanilha).length) {
+      bestPlanilha = String(sp).trim();
+    }
+  }
+  if (bestPlanilha) return bestPlanilha;
+
+  // 2) Dicionário de palavras-chave (reconhece "Tablet Samsung A9" → TABLET,
+  //    "Cadeira giratória preta" → CADEIRA etc).
+  for (const [especie, keywords] of ESPECIE_KEYWORDS) {
+    for (const kw of keywords) {
+      const k = kw.endsWith(" ") ? ` ${kw}` : ` ${kw}`;
+      if (q.includes(k)) return especie;
     }
   }
 
+  // 3) Fallback: primeira palavra da descrição.
   return String(words[0] || "").toUpperCase().slice(0, 40);
+}
+
+/** Itens que possuem IMEI ou nº de série relevante (tablets, celulares etc). */
+export function supportsImei(text) {
+  const q = ` ${stripDiacritics(String(text || "")).toLowerCase()} `;
+  const terms = ["tablet", "ipad", "celular", "smartphone", "iphone", "notebook", "laptop", "macbook", "chip", "modem", "roteador"];
+  return terms.some((t) => q.includes(` ${t}`));
 }
 
 export function maskTipoEntrada(tipo) {

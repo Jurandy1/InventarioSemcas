@@ -25,6 +25,14 @@ function NavIcon({ id, active, size = 18 }) {
           <path d="M6 14h2" />
         </svg>
       );
+    case "finalizados":
+      return (
+        <svg {...common}>
+          <path d="M9 3h6a1 1 0 0 1 1 1v2H8V4a1 1 0 0 1 1-1z" />
+          <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+          <path d="M9 13l2 2 4-4" />
+        </svg>
+      );
     case "busca":
       return (
         <svg {...common}>

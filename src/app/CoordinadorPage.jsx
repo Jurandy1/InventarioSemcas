@@ -102,6 +102,7 @@ function mergeManuais(unids, manuais) {
       tipoEntrada: m.tipoEntrada || "Próprio",
       valor: Number(m.valor || 0) || 0,
       valorAtual: Number(m.valorAtual || 0) || 0,
+      ...(m.imei ? { imei: m.imei } : {}),
       isManual: true,
     });
   }
@@ -144,6 +145,12 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
   const [imgViewSrc, setImgViewSrc] = useState(null);
   const [pendPage, setPendPage] = useState(1);
   const [campanha, setCampanha] = useState(null);
+  const [filtroLocal, setFiltroLocal] = useState("");
+  const [filtroEstado, setFiltroEstado] = useState("");
+  const [filtroSituacao, setFiltroSituacao] = useState("");
+  const [filtroFoto, setFiltroFoto] = useState("");
+  const [agruparLocal, setAgruparLocal] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(COORD_PER_PAGE);
   const { queueStatus, updateQueueStatus } = useOfflineQueue();
   const revokeBlobUrls = (arr) => {
     for (const s of arr || []) {
@@ -545,36 +552,231 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
                 <p style={{ color: "#94a3b8" }}>Nenhum item localizado até o momento.</p>
               </div>
             ) : (
-              <>
-                <TInput initial={search} onVal={setSearch} placeholder="Buscar item..." style={{ ...inp, marginBottom: 12 }} />
-                <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(300px,1fr))", gap: 8 }}>
-                  {inventariados.filter(i => {
-                    const q = String(search || "").trim().toLowerCase();
-                    if (!q) return true;
-                    return String(i.id || "").includes(q) || String(i.descricao || "").toLowerCase().includes(q) || String(i.especie || "").toLowerCase().includes(q);
-                  }).map((item) => {
-                    const f = foundMap[item.id];
-                    return (
-                      <div
-                        key={item.id}
-                        onClick={() => openItem(item)}
-                        style={{ ...cd, cursor: "pointer", border: "1.5px solid #bbf7d0", background: "#f0fdf4", display: "flex", gap: 10, alignItems: "center" }}
-                      >
-                        <div style={{ minWidth: 0 }}>
-                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700 }}>{item.descricao || item.especie || "—"}</p>
-                          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>Nº {item.id}</p>
-                          {f && (
-                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
-                              <Badge label={f.estado} c={EC[f.estado]} />
-                              <Badge label={maskSituacao(f.situacao)} c={SC[maskSituacao(f.situacao)] || SC["Em uso"]} />
-                            </div>
-                          )}
+              (() => {
+                const getLocalNome = (localId) => locais.find((l) => l.id === localId)?.nome || "Sem local";
+
+                const q = String(search || "").trim().toLowerCase();
+                const filtrados = inventariados.filter((i) => {
+                  const f = foundMap[i.id];
+                  if (filtroLocal && (f?.localId || "") !== filtroLocal) return false;
+                  if (filtroEstado && (f?.estado || "") !== filtroEstado) return false;
+                  if (filtroSituacao && maskSituacao(f?.situacao || "") !== filtroSituacao) return false;
+                  if (filtroFoto === "com" && !(f?.fotoUrls?.length > 0)) return false;
+                  if (filtroFoto === "sem" && f?.fotoUrls?.length > 0) return false;
+                  if (!q) return true;
+                  return (
+                    String(i.id || "").toLowerCase().includes(q) ||
+                    String(i.patrimonioLabel || "").toLowerCase().includes(q) ||
+                    String(i.descricao || "").toLowerCase().includes(q) ||
+                    String(i.especie || "").toLowerCase().includes(q) ||
+                    String(i.marca || f?.marca || "").toLowerCase().includes(q) ||
+                    String(f?.descricaoEdit || "").toLowerCase().includes(q) ||
+                    getLocalNome(f?.localId).toLowerCase().includes(q)
+                  );
+                });
+
+                const estadoCounts = {};
+                let comFoto = 0;
+                for (const i of inventariados) {
+                  const f = foundMap[i.id];
+                  const e = f?.estado || "—";
+                  estadoCounts[e] = (estadoCounts[e] || 0) + 1;
+                  if (f?.fotoUrls?.length > 0) comFoto++;
+                }
+
+                const selStyle = { ...inp, minHeight: 44, fontSize: isMob ? 14 : 13 };
+                const filtroAtivo = filtroLocal || filtroEstado || filtroSituacao || filtroFoto || q;
+
+                const renderCard = (item) => {
+                  const f = foundMap[item.id];
+                  const foto = f?.fotoUrls?.[0];
+                  const descricao = f?.descricaoEdit || item.descricao || item.especie || "—";
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => openItem(item)}
+                      style={{ ...cd, cursor: "pointer", border: "1px solid #d1e7d8", display: "flex", gap: 12, alignItems: "flex-start", padding: 12 }}
+                    >
+                      {foto ? (
+                        <InvPhoto src={foto} onView={setImgViewSrc} />
+                      ) : (
+                        <div style={{ width: 72, height: 72, borderRadius: 8, background: "#f1f5f9", border: "1px dashed #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#94a3b8", fontWeight: 700, flexShrink: 0, textAlign: "center", lineHeight: 1.3 }}>
+                          Sem<br />foto
                         </div>
+                      )}
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, lineHeight: 1.35 }}>{descricao}</p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>
+                          Nº {item.patrimonioLabel || item.id}
+                          {(f?.marca || item.marca) ? ` · ${f?.marca || item.marca}` : ""}
+                          {f?.imei ? ` · IMEI ${f.imei}` : ""}
+                        </p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#475569", fontWeight: 600 }}>
+                          Local: {getLocalNome(f?.localId)}
+                        </p>
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                          {f?.estado && <Badge label={f.estado} c={EC[f.estado]} />}
+                          {f?.situacao && <Badge label={maskSituacao(f.situacao)} c={SC[maskSituacao(f.situacao)] || SC["Em uso"]} />}
+                          {f?.fotoUrls?.length > 1 && <Badge label={`${f.fotoUrls.length} fotos`} c={{ bg: "#eff6ff", tx: "#1d4ed8" }} />}
+                          {f?.plaquetaAusente && <Badge label="Sem plaqueta" c={{ bg: "#ffedd5", tx: "#9a3412" }} />}
+                          {isRegistroInventariante(f) && <Badge label="Verificar" c={{ bg: COLORS.primaryLight, tx: COLORS.primary }} />}
+                        </div>
+                        {f?.data && (
+                          <p style={{ margin: "6px 0 0", fontSize: 10, color: "#94a3b8" }}>
+                            Registrado em {f.data}{f.hora ? ` às ${f.hora}` : ""}
+                          </p>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
-              </>
+                    </div>
+                  );
+                };
+
+                return (
+                  <>
+                    {/* Resumo rápido */}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                      <div style={{ ...cd, padding: "10px 14px", flex: "1 1 120px" }}>
+                        <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#16a34a" }}>{inventariados.length}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: "#64748b" }}>Localizados</p>
+                      </div>
+                      <div style={{ ...cd, padding: "10px 14px", flex: "1 1 120px" }}>
+                        <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#1d4ed8" }}>{comFoto}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: "#64748b" }}>Com foto</p>
+                      </div>
+                      <div style={{ ...cd, padding: "10px 14px", flex: "1 1 120px" }}>
+                        <p style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#7c3aed" }}>{locais.length}</p>
+                        <p style={{ margin: 0, fontSize: 11, color: "#64748b" }}>Locais</p>
+                      </div>
+                    </div>
+
+                    {/* Chips por estado (clique para filtrar) */}
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                      {ESTADOS.filter((e) => estadoCounts[e]).map((e) => (
+                        <button
+                          key={e}
+                          onClick={() => setFiltroEstado(filtroEstado === e ? "" : e)}
+                          style={{
+                            background: filtroEstado === e ? EC[e].tx : EC[e].bg,
+                            color: filtroEstado === e ? "#fff" : EC[e].tx,
+                            border: `1px solid ${EC[e].border || EC[e].tx}`,
+                            borderRadius: 99,
+                            padding: isMob ? "8px 14px" : "5px 12px",
+                            minHeight: isMob ? 40 : undefined,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            touchAction: "manipulation",
+                          }}
+                        >
+                          {e}: {estadoCounts[e]}
+                        </button>
+                      ))}
+                    </div>
+
+                    <TInput
+                      initial={search}
+                      onVal={(v) => { setSearch(v); setVisibleCount(COORD_PER_PAGE); }}
+                      placeholder="Buscar por nº, descrição, marca, local..."
+                      style={{ ...inp, marginBottom: 10 }}
+                    />
+
+                    {/* Filtros */}
+                    <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, minmax(140px, 1fr))", gap: 8, marginBottom: 10 }}>
+                      <select value={filtroLocal} onChange={(e) => { setFiltroLocal(e.target.value); setVisibleCount(COORD_PER_PAGE); }} style={selStyle}>
+                        <option value="">Local: todos</option>
+                        {locais.map((l) => (
+                          <option key={l.id} value={l.id}>{l.nome}</option>
+                        ))}
+                      </select>
+                      <select value={filtroSituacao} onChange={(e) => { setFiltroSituacao(e.target.value); setVisibleCount(COORD_PER_PAGE); }} style={selStyle}>
+                        <option value="">Situação: todas</option>
+                        {SITUACOES_COORD.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                      <select value={filtroFoto} onChange={(e) => { setFiltroFoto(e.target.value); setVisibleCount(COORD_PER_PAGE); }} style={selStyle}>
+                        <option value="">Fotos: todas</option>
+                        <option value="com">Com foto</option>
+                        <option value="sem">Sem foto</option>
+                      </select>
+                      <button
+                        onClick={() => setAgruparLocal((v) => !v)}
+                        style={{
+                          ...bs,
+                          minHeight: 44,
+                          fontSize: isMob ? 13 : 12,
+                          background: agruparLocal ? COLORS.primary : "#fff",
+                          color: agruparLocal ? "#fff" : COLORS.text,
+                          borderColor: agruparLocal ? COLORS.primaryDark : COLORS.border,
+                        }}
+                      >
+                        {agruparLocal ? "Agrupado por local" : "Agrupar por local"}
+                      </button>
+                    </div>
+
+                    {filtroAtivo ? (
+                      <p style={{ margin: "0 0 10px", fontSize: 12, color: "#64748b" }}>
+                        {filtrados.length} de {inventariados.length} itens
+                        {(filtroLocal || filtroEstado || filtroSituacao || filtroFoto) && (
+                          <button
+                            onClick={() => { setFiltroLocal(""); setFiltroEstado(""); setFiltroSituacao(""); setFiltroFoto(""); setVisibleCount(COORD_PER_PAGE); }}
+                            style={{ background: "none", border: "none", color: COLORS.primary, fontWeight: 700, fontSize: 12, cursor: "pointer", marginLeft: 8, padding: "4px 6px" }}
+                          >
+                            Limpar filtros
+                          </button>
+                        )}
+                      </p>
+                    ) : null}
+
+                    {filtrados.length === 0 ? (
+                      <div style={{ ...cd, textAlign: "center", padding: 32 }}>
+                        <p style={{ color: "#94a3b8", margin: 0, fontSize: 13 }}>Nenhum item corresponde aos filtros.</p>
+                      </div>
+                    ) : agruparLocal ? (
+                      (() => {
+                        const grupos = new Map();
+                        for (const item of filtrados) {
+                          const nome = getLocalNome(foundMap[item.id]?.localId);
+                          if (!grupos.has(nome)) grupos.set(nome, []);
+                          grupos.get(nome).push(item);
+                        }
+                        const nomes = [...grupos.keys()].sort((a, b) => (a === "Sem local" ? 1 : b === "Sem local" ? -1 : a.localeCompare(b)));
+                        return (
+                          <div style={{ display: "grid", gap: 14 }}>
+                            {nomes.map((nome) => (
+                              <div key={nome}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 8px" }}>
+                                  <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800, color: "#0f172a" }}>{nome}</h3>
+                                  <span style={{ background: "#e2e8f0", color: "#475569", borderRadius: 99, fontSize: 11, fontWeight: 800, padding: "2px 8px" }}>
+                                    {grupos.get(nome).length}
+                                  </span>
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(320px,1fr))", gap: 8 }}>
+                                  {grupos.get(nome).map(renderCard)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <>
+                        <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(320px,1fr))", gap: 8 }}>
+                          {filtrados.slice(0, visibleCount).map(renderCard)}
+                        </div>
+                        {filtrados.length > visibleCount && (
+                          <button
+                            onClick={() => setVisibleCount((n) => n + COORD_PER_PAGE)}
+                            style={{ ...bs, width: "100%", marginTop: 12, minHeight: 44 }}
+                          >
+                            Carregar mais ({filtrados.length - visibleCount} restantes)
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </>
+                );
+              })()
             )}
           </div>
         )}
@@ -601,16 +803,47 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
                 </button>
               )}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(2, 1fr)", gap: 10, marginBottom: 20 }}>
-              {[
-                { label: "Localizados", valor: inventariados.length,  cor: "#16a34a" },
-              ].map((stat) => (
-                <div key={stat.label} style={cd}>
-                  <p style={{ margin: 0, fontSize: isMob ? 20 : 28, fontWeight: 700, color: stat.cor }}>{stat.valor}</p>
-                  <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>{stat.label}</p>
-                </div>
-              ))}
-            </div>
+            {(() => {
+              const comFoto = inventariados.filter((i) => foundMap[i.id]?.fotoUrls?.length > 0).length;
+              const aVerificar = inventariados.filter((i) => isRegistroInventariante(foundMap[i.id])).length;
+              const stats = [
+                { label: "Localizados", valor: inventariados.length, cor: "#16a34a" },
+                { label: "Com foto", valor: comFoto, cor: "#1d4ed8" },
+                { label: "Aguardando verificação", valor: aVerificar, cor: "#b45309" },
+                { label: "Locais", valor: locais.length, cor: "#7c3aed" },
+              ];
+              const porEstado = ESTADOS
+                .map((e) => ({ e, n: inventariados.filter((i) => foundMap[i.id]?.estado === e).length }))
+                .filter(({ n }) => n > 0);
+              return (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10, marginBottom: 14 }}>
+                    {stats.map((stat) => (
+                      <div key={stat.label} style={cd}>
+                        <p style={{ margin: 0, fontSize: isMob ? 20 : 28, fontWeight: 700, color: stat.cor }}>{stat.valor}</p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#94a3b8" }}>{stat.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {porEstado.length > 0 && (
+                    <div style={{ ...cd, marginBottom: 20 }}>
+                      <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Por estado de conservação</p>
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {porEstado.map(({ e, n }) => (
+                          <div key={e} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: EC[e]?.tx || "#334155", width: 90, flexShrink: 0 }}>{e}</span>
+                            <div style={{ flex: 1, height: 10, borderRadius: 5, background: "#f1f5f9", overflow: "hidden" }}>
+                              <div style={{ height: "100%", width: `${Math.round((n / inventariados.length) * 100)}%`, background: EC[e]?.tx || "#94a3b8", borderRadius: 5 }} />
+                            </div>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: "#475569", width: 34, textAlign: "right", flexShrink: 0 }}>{n}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
       </div>

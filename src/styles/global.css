@@ -258,12 +258,20 @@ p {
   z-index: 200;
   padding-bottom: env(safe-area-inset-bottom, 0px);
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.gov-bottom-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .gov-bottom-nav-item {
-  flex: 1;
+  flex: 1 0 auto;
+  min-width: 64px;
   min-height: 56px;
-  padding: 8px 2px;
+  padding: 8px 6px;
   border: none;
   background: none;
   cursor: pointer;
@@ -272,6 +280,8 @@ p {
   align-items: center;
   gap: 2px;
   position: relative;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .gov-bottom-nav-item span {

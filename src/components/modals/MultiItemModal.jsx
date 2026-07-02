@@ -3,6 +3,7 @@ import { Overlay } from "../Overlay.jsx";
 import { TInput, TArea } from "../FormFields.jsx";
 import { Badge } from "../Badge.jsx";
 import { ESTADOS } from "../../constants/inventory.js";
+import { DoacaoOrigemFields } from "../DoacaoOrigemFields.jsx";
 
 /**
  * Modal pra cadastrar N itens manuais que compartilham a MESMA descrição
@@ -171,6 +172,42 @@ export function MultiItemModal({
                 ))}
               </select>
             </div>
+
+            <p style={{ margin: "12px 0 6px", fontSize: 12, fontWeight: 700, color: "#1d4ed8" }}>Origem</p>
+            <div style={{ display: "flex", gap: 8 }}>
+              {["Próprio", "Doação", "Permuta"].map((o) => (
+                <button
+                  key={o}
+                  type="button"
+                  onClick={() => updateShared("origem", o)}
+                  style={{
+                    flex: 1,
+                    padding: "10px",
+                    minHeight: isMob ? 44 : undefined,
+                    borderRadius: 9,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    touchAction: "manipulation",
+                    border: `2px solid ${(shared.origem || "Próprio") === o ? "#1351B4" : "#e2e8f0"}`,
+                    background: (shared.origem || "Próprio") === o ? "#dbeafe" : "#fff",
+                    color: (shared.origem || "Próprio") === o ? "#1351B4" : "#6b7280",
+                  }}
+                >
+                  {o}
+                </button>
+              ))}
+            </div>
+            {(shared.origem || "Próprio") === "Doação" && (
+              <DoacaoOrigemFields
+                prefix="multi"
+                getField={(k) => sharedRef.current[k] || ""}
+                setField={(k, v) => updateShared(k, v)}
+                bumpFt={bump}
+                inp={inp}
+                ft={forceRender}
+              />
+            )}
           </section>
 
           {/* Linhas — cada item individual */}

@@ -185,9 +185,20 @@ export function FinalizadosPage({
                 {totalFound}/{totalBens} itens · {progresso}% · {Math.max(0, totalBens - totalFound)} não encontrados
               </p>
             </div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {onOpenSemTombo && !campanhaFechada && (
-                <button onClick={() => onOpenSemTombo()} style={{ ...bp, fontSize: 11, padding: "6px 12px" }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", width: isMob ? "100%" : undefined }}>
+              {onOpenManual && canEdit && (
+                <button
+                  onClick={() => onOpenManual()}
+                  style={{ ...bp, fontSize: isMob ? 13 : 11, padding: isMob ? "10px 14px" : "6px 12px", minHeight: isMob ? 44 : undefined, flex: isMob ? 1 : undefined }}
+                >
+                  + Adicionar item
+                </button>
+              )}
+              {onOpenSemTombo && canEdit && (
+                <button
+                  onClick={() => onOpenSemTombo()}
+                  style={{ ...bs, fontSize: isMob ? 13 : 11, padding: isMob ? "10px 14px" : "6px 12px", minHeight: isMob ? 44 : undefined, flex: isMob ? 1 : undefined, borderColor: "#86efac", color: "#15803d" }}
+                >
                   + Foto sem tombo
                 </button>
               )}
@@ -200,7 +211,7 @@ export function FinalizadosPage({
           )}
           {!campanhaFechada && (
             <p style={{ margin: "10px 0 0", fontSize: 11, color: "#166534", lineHeight: 1.45 }}>
-              Finalizar não bloqueia correções. Ajuste itens, locais e vínculos de mobiliário aqui com as mesmas ferramentas do inventário ativo.
+              Finalizar não bloqueia correções. Adicione itens esquecidos, ajuste locais e vínculos de mobiliário aqui com as mesmas ferramentas do inventário ativo.
             </p>
           )}
           <div style={{ height: 5, borderRadius: 3, background: "#bbf7d0", marginTop: 10 }}>
@@ -322,6 +333,7 @@ export function FinalizadosPage({
                               ) : (
                                 <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
                               )}
+                              {f?.plaquetaAusente && <Badge label="Sem plaqueta" c={{ bg: "#ffedd5", tx: "#9a3412" }} />}
                               {(item?.isManual || f?.isManual || String(item?.id || "").startsWith("MAN_")) && <Badge label="Inserido Manualmente" c={{ bg: "#fef08a", tx: "#854d0e" }} />}
                               {item?.unidadeId && f?.unidadeId && item.unidadeId !== f.unidadeId && <Badge label="De Outra Unidade" c={{ bg: "#fecaca", tx: "#991b1b" }} />}
                             </div>

@@ -34,6 +34,7 @@ export function useUnidades({ showT } = {}) {
                 tipoEntrada: m.tipoEntrada || "Próprio",
                 valor: Number(m.valor || 0) || 0,
                 valorAtual: Number(m.valorAtual || 0) || 0,
+                ...(m.imei ? { imei: m.imei } : {}),
                 isManual: true,
               });
             }

@@ -3,6 +3,7 @@ import { Overlay } from "../Overlay.jsx";
 import { TInput } from "../FormFields.jsx";
 import { DoacaoOrigemFields } from "../DoacaoOrigemFields.jsx";
 import { SmartImg } from "../SmartImg.jsx";
+import { supportsImei } from "../../utils/itemHelpers.js";
 
 export function ManualModal({
   isMob,
@@ -28,7 +29,39 @@ export function ManualModal({
   onViewImage,
   addManual,
   ft,
+  lookupTombo,
+  onOpenExistingItem,
 }) {
+  // Re-render local (sem bumpFt) para não remontar o input da descrição
+  // enquanto o usuário digita — bumpFt troca as keys e rouba o foco.
+  const [, localTick] = React.useReducer((n) => n + 1, 0);
+  const [tomboHit, setTomboHit] = React.useState(null);
+
+  const handleDescChange = (v) => {
+    setField("manDesc", v);
+    // Auto-preenche a espécie enquanto o usuário não editou o campo manualmente.
+    if (!formRef.current.manEspecieTouched) {
+      const inferred = inferEspecieFromDesc(v, sugestoes?.especies || []);
+      if (inferred !== getField("manEspecie")) {
+        setField("manEspecie", inferred);
+        formRef.current.manEspecieAuto = true;
+        localTick();
+      }
+    }
+  };
+
+  const handlePatrimonioChange = (v) => {
+    setField("manPatrimonio", v);
+    if (typeof lookupTombo !== "function") return;
+    const raw = String(v || "").trim();
+    if (raw.length < 4 || /^s\/?t$/i.test(raw)) {
+      if (tomboHit) setTomboHit(null);
+      return;
+    }
+    setTomboHit(lookupTombo(raw) || null);
+  };
+
+  const showImei = supportsImei(`${getField("manDesc")} ${getField("manEspecie")}`);
   return (
     <Overlay
       isMobile={isMob}
@@ -56,9 +89,7 @@ export function ManualModal({
       <TInput
         key={"manDesc_" + ft}
         initial={getField("manDesc")}
-        onVal={(v) => {
-          setField("manDesc", v);
-        }}
+        onVal={handleDescChange}
         placeholder="Descreva o item..."
         suggestions={sugestoes.descricoes}
         style={inp}
@@ -68,7 +99,7 @@ export function ManualModal({
         ref={manualPatrimonioRef}
         key={"manPat_" + ft}
         defaultValue={getField("manPatrimonio")}
-        onChange={(e) => setField("manPatrimonio", e.target.value)}
+        onChange={(e) => handlePatrimonioChange(e.target.value)}
         placeholder="Digite o patrimônio ou S/T"
         autoComplete="off"
         autoCorrect="off"
@@ -76,6 +107,34 @@ export function ManualModal({
         spellCheck={false}
         style={inp}
       />
+      {tomboHit && (
+        <div style={{ marginTop: 8, background: tomboHit.inventariado ? "#fef2f2" : "#fffbeb", border: `1.5px solid ${tomboHit.inventariado ? "#fca5a5" : "#fcd34d"}`, borderRadius: 10, padding: "10px 12px" }}>
+          <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: tomboHit.inventariado ? "#991b1b" : "#92400e" }}>
+            {tomboHit.inventariado ? "Tombo já inventariado" : "Tombo encontrado na planilha"}
+          </p>
+          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#374151", fontWeight: 700 }}>
+            {tomboHit.item.descricao || tomboHit.item.especie || "—"}
+          </p>
+          <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>
+            Nº {tomboHit.item.patrimonioLabel || tomboHit.item.id} · {(tomboHit.item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "")}
+            {tomboHit.outraUnidade ? " (outra unidade)" : ""}
+          </p>
+          <p style={{ margin: "6px 0 0", fontSize: 11, color: tomboHit.inventariado ? "#b91c1c" : "#92400e", lineHeight: 1.4 }}>
+            {tomboHit.inventariado
+              ? `Já registrado${tomboHit.foundBy ? ` por ${tomboHit.foundBy}` : ""}. Evite criar um item manual duplicado.`
+              : "Este tombo já existe no patrimônio. Abra o item da planilha em vez de criar um manual — o registro fica vinculado ao tombo certo."}
+          </p>
+          {onOpenExistingItem && (
+            <button
+              type="button"
+              onClick={() => onOpenExistingItem(tomboHit.item)}
+              style={{ ...bp, marginTop: 8, fontSize: 12, padding: "9px 14px", width: isMob ? "100%" : undefined }}
+            >
+              Abrir item da planilha
+            </button>
+          )}
+        </div>
+      )}
       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Quantidade</label>
       <input
         key={"manQtd_" + ft}
@@ -110,8 +169,41 @@ export function ManualModal({
         </button>
         <span style={{ fontSize: 11, color: "#64748b", alignSelf: "center" }}>Se deixar em branco, o sistema gera um código automático.</span>
       </div>
-      <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Espécie</label>
-      <TInput key={"manEsp_" + ft} initial={getField("manEspecie")} onVal={(v) => setField("manEspecie", v)} placeholder="Ex: CADEIRA, MESA..." style={inp} />
+      <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>
+        Espécie
+        {formRef.current.manEspecieAuto && !formRef.current.manEspecieTouched && (
+          <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "#0f766e", background: "#f0fdfa", border: "1px solid #99f6e4", borderRadius: 99, padding: "2px 8px" }}>
+            identificada automaticamente
+          </span>
+        )}
+      </label>
+      <TInput
+        key={"manEsp_" + ft}
+        initial={getField("manEspecie")}
+        onVal={(v) => {
+          setField("manEspecie", v);
+          formRef.current.manEspecieTouched = true;
+        }}
+        placeholder="Ex: CADEIRA, MESA..."
+        suggestions={sugestoes.especies}
+        style={inp}
+      />
+      {showImei && (
+        <>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>IMEI / Nº de série</label>
+          <TInput
+            key={"manImei_" + ft}
+            initial={getField("manImei")}
+            onVal={(v) => setField("manImei", v)}
+            placeholder="Ex: 356938035643809"
+            inputMode="numeric"
+            style={inp}
+          />
+          <p style={{ margin: "6px 0 0", fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>
+            Em tablets/celulares: Configurações → Sobre o dispositivo, ou etiqueta na parte de trás. Fica registrado no inventário.
+          </p>
+        </>
+      )}
       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Marca</label>
       <TInput key="manMarca" initial={getField("manMarca")} onVal={(v) => setField("manMarca", v)} placeholder="Marca..." style={inp} />
       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Fornecedor</label>

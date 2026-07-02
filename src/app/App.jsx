@@ -21,7 +21,7 @@ import { canDeleteLocal, filterLocaisForSession, mergeFoundRecords, resolveUnitF
 import { normalizeFoundRecord } from "../services/inventarioLoad.js";
 import { clearInventoryPresence, getTeamMemberEditingItem, loadActiveInventors, pingInventoryPresence } from "../utils/inventoryPresence.js";
 import { isSemTomboItem } from "../utils/semTombo.js";
-import { getFoundEntry, isItemInventariado } from "../utils/patrimonioId.js";
+import { getFoundEntry, isItemInventariado, normalizePatrimonioId } from "../utils/patrimonioId.js";
 import { rankTombosForAjuste } from "../utils/ajusteMatch.js";
 import { mergeLocaisRecords } from "../services/locaisLoad.js";
 import { getAppStyles, COLORS } from "../constants/theme.js";
@@ -908,6 +908,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
       detPermutaMarca: f?.permutaMarca || "",
       detPermutaEstado: f?.permutaEstado || "Bom",
       detTomboRef: f?.tomboReferencia || "",
+      detImei: f?.imei || item.imei || "",
+      detPlaquetaAusente: !!f?.plaquetaAusente,
       detServerTs: f?.ultimaAtualizacao || null,
       detServerEmail: f?.email || "",
       detForceWrite: false,
@@ -971,6 +973,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
       detPermutaMarca: fs.detPermutaMarca || f?.permutaMarca || "",
       detPermutaEstado: fs.detPermutaEstado || f?.permutaEstado || "Bom",
       detTomboRef: fs.detTomboRef || f?.tomboReferencia || "",
+      detImei: fs.detImei || f?.imei || "",
+      detPlaquetaAusente: fs.detPlaquetaAusente ?? !!f?.plaquetaAusente,
       detServerTs: f?.ultimaAtualizacao || null,
       detServerEmail: f?.email || "",
       detForceWrite: false,
@@ -1084,6 +1088,8 @@ function OrganizedApp({ firebaseOk, isProd }) {
         detPermutaMarca: fs.detPermutaMarca || f?.permutaMarca || "",
         detPermutaEstado: fs.detPermutaEstado || f?.permutaEstado || "Bom",
         detTomboRef: fs.detTomboRef || f?.tomboReferencia || "",
+        detImei: fs.detImei || f?.imei || "",
+        detPlaquetaAusente: fs.detPlaquetaAusente ?? !!f?.plaquetaAusente,
         detServerTs: f?.ultimaAtualizacao || null,
         detServerEmail: f?.email || "",
         detForceWrite: false,
@@ -1149,6 +1155,50 @@ function OrganizedApp({ firebaseOk, isProd }) {
     tryRestoreUi();
   }, [auth.logado?.uid, unidades, found.foundMap, tryRestoreUi]);
 
+  // Busca um tombo digitado em TODAS as unidades da base (id ou etiqueta),
+  // para avisar quando o item manual que está sendo criado já existe na planilha.
+  const lookupTombo = React.useCallback(
+    (raw) => {
+      const alvo = normalizePatrimonioId(raw);
+      if (!alvo || /^(ST_|MAN_)/i.test(alvo)) return null;
+      for (const u of unidades) {
+        for (const i of u.itens) {
+          if (
+            normalizePatrimonioId(i.id) === alvo ||
+            (i.patrimonioLabel && normalizePatrimonioId(i.patrimonioLabel) === alvo)
+          ) {
+            const f = getFoundEntry(i.id, found.foundMap);
+            return {
+              item: { ...i, unidadeId: u.id, unidadeNome: u.nome },
+              inventariado: !!f,
+              foundBy: f?.usuario || f?.user || "",
+              outraUnidade: unidadeAtiva ? u.id !== unidadeAtiva.id : false,
+            };
+          }
+        }
+      }
+      return null;
+    },
+    [unidades, found.foundMap, unidadeAtiva]
+  );
+
+  // Quando um finalizado está aberto para edição, itens novos precisam entrar
+  // no snapshot finalizadoEdit.units (senão só aparecem ao reabrir) e as
+  // estatísticas do registro de finalização precisam ser recalculadas.
+  const appendItemsToFinalizadoScope = (unitId, items) => {
+    if (!finalizadoEdit?.fin || !items?.length) return;
+    const units = finalizadoEdit.units.map((u) =>
+      u.id === unitId ? { ...u, itens: [...u.itens, ...items] } : u
+    );
+    setFinalizadoEdit({ ...finalizadoEdit, units });
+    if (finalizadoEdit.fin.id && !finalizadoEdit.fin.legacy) {
+      const nextFoundSet = new Set([...found.foundSet, ...items.map((i) => i.id)]);
+      atualizarStatsFinalizacao(finalizadoEdit.fin.id, buildFinalizacaoStats(units, nextFoundSet))
+        .then(() => finalizacoesState.refresh?.())
+        .catch(() => {});
+    }
+  };
+
   const addManual = async () => {
     if (!assertPodeEditar()) return;
     const desc = getField("manDesc");
@@ -1174,6 +1224,24 @@ function OrganizedApp({ firebaseOk, isProd }) {
     if (qty > 1 && manualPatrimonioRaw && manualPatrimonio.patrimonioLabel !== "S/T") {
       showT("Para patrimônio informado, use quantidade 1");
       return;
+    }
+
+    const manImei = String(getField("manImei") || "").trim();
+    if (manImei && qty > 1) {
+      showT("IMEI é único por aparelho — cadastre um item por vez");
+      return;
+    }
+
+    // Tombo digitado já existe em alguma unidade da base? Avisa antes de duplicar.
+    if (manualPatrimonioRaw && manualPatrimonio.patrimonioLabel !== "S/T") {
+      const hit = lookupTombo(manualPatrimonioRaw);
+      if (hit) {
+        const unidadeHit = String(hit.item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "");
+        const msg = hit.inventariado
+          ? `O tombo ${manualPatrimonioRaw} JÁ FOI INVENTARIADO (${unidadeHit}${hit.foundBy ? `, por ${hit.foundBy}` : ""}).\n\nCriar um item manual duplicado mesmo assim?`
+          : `O tombo ${manualPatrimonioRaw} já existe na planilha da unidade "${unidadeHit}".\n\nO recomendado é abrir o item da planilha (botão no aviso amarelo). Criar um item manual mesmo assim?`;
+        if (!window.confirm(msg)) return;
+      }
     }
 
     const baseNow = Date.now();
@@ -1207,7 +1275,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       patrimonioLabel: manualPatrimonio.patrimonioLabel,
       ...(manualPatrimonio.tomboRef ? { tomboRef: manualPatrimonio.tomboRef } : {}),
       data: new Date().toLocaleDateString("pt-BR"),
-      especie: getField("manEspecie") || desc.split(" ")[0].toUpperCase(),
+      especie: getField("manEspecie") || inferEspecieFromDesc(desc, sugestoes?.especies),
       descricao: desc.trim(),
       marca: getField("manMarca"),
       fornecedor: getField("manFornecedor"),
@@ -1217,6 +1285,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       valor: parseFloat(getField("manValor")) || 0,
       valorAtual: 0,
       isManual: true,
+      ...(manImei ? { imei: manImei } : {}),
     };
 
     const newItems = ids.map((id) => ({ ...baseItem, id }));
@@ -1226,7 +1295,10 @@ function OrganizedApp({ firebaseOk, isProd }) {
     const manOrigem = getField("manOrigem") || "Próprio";
     const manMarca = getField("manMarca") || "";
 
-    const doacaoExtras = buildDoacaoOrigemExtras(getField, "man");
+    const doacaoExtras = {
+      ...buildDoacaoOrigemExtras(getField, "man"),
+      ...(manImei ? { imei: manImei } : {}),
+    };
 
     const buildManualInvEntry = (it, urls = []) => {
       const now = new Date();
@@ -1267,6 +1339,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       const novaAtiva = { ...unidadeAtiva, itens: [...unidadeAtiva.itens, ...newItems] };
       inventario.setUnidadesAtivas((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
       setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+      appendItemsToFinalizadoScope(novaAtiva.id, newItems);
       for (const it of newItems) {
         await found.markFound({
           itemId: it.id,
@@ -1309,6 +1382,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     const novaAtiva = { ...unidadeAtiva, itens: [...unidadeAtiva.itens, ...newItems] };
     inventario.setUnidadesAtivas((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
     setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+    appendItemsToFinalizadoScope(novaAtiva.id, newItems);
 
     for (const it of newItems) {
       const createdResult = await found.markFound({
@@ -1319,7 +1393,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         obs: desc.trim(),
         marca: getField("manMarca"),
         origem: getField("manOrigem") || "Próprio",
-        extras: buildDoacaoOrigemExtras(getField, "man"),
+        extras: doacaoExtras,
         fotoUrls,
         unidadeAtiva,
         logado: auth.logado,
@@ -1361,7 +1435,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       id,
       patrimonioLabel: "S/T",
       data: new Date().toLocaleDateString("pt-BR"),
-      especie: desc.split(" ")[0].toUpperCase().slice(0, 40),
+      especie: inferEspecieFromDesc(desc, sugestoes?.especies),
       descricao: desc,
       marca: "",
       fornecedor: "",
@@ -1376,12 +1450,14 @@ function OrganizedApp({ firebaseOk, isProd }) {
     };
 
     const stOrigem = getField("stOrigem") || "Próprio";
+    const stImei = String(getField("stImei") || "").trim();
     const stExtras = {
       semTombo: true,
       identificadoPorFoto: true,
       descricaoEdit: desc,
       tomboReferencia: String(getField("stTomboRef") || "").trim(),
       marca: String(getField("stMarca") || "").trim(),
+      ...(stImei ? { imei: stImei } : {}),
       ...buildDoacaoOrigemExtras(getField, "st"),
     };
     const stEstado = getField("stEstado") || "Bom";
@@ -1423,6 +1499,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
       const novaAtiva = { ...unit, itens: [...unit.itens, item] };
       inventario.setUnidadesAtivas((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
       setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+      appendItemsToFinalizadoScope(novaAtiva.id, [item]);
       await found.markFound({
         itemId: id,
         estado: stEstado,
@@ -1463,6 +1540,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
     const novaAtiva = { ...unit, itens: [...unit.itens, item] };
     inventario.setUnidadesAtivas((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
     setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+    appendItemsToFinalizadoScope(novaAtiva.id, [item]);
 
     await found.markFound({
       itemId: id,
@@ -1501,6 +1579,17 @@ function OrganizedApp({ firebaseOk, isProd }) {
     const existingIds = new Set((unidadeAtiva?.itens || []).map((i) => i.id));
     let saved = 0;
 
+    const multiOrigem = shared.origem || "Próprio";
+    const multiDoacaoExtras = (() => {
+      if (multiOrigem !== "Doação") return {};
+      if ((shared.multiDoacaoModo || "uf") === "texto") {
+        const texto = String(shared.multiDoacaoTexto || "").trim();
+        return texto ? { doacaoOrigem: texto, doacaoOrigemTipo: "texto" } : {};
+      }
+      const uf = String(shared.multiDoacaoUf || "MA").trim().toUpperCase();
+      return uf ? { doacaoOrigem: uf, doacaoOrigemTipo: "uf" } : {};
+    })();
+
     for (let idx = 0; idx < rows.length; idx++) {
       const row = rows[idx];
       const rowPhotos = multiRowsPhotosRef.current[String(idx)] || [];
@@ -1526,7 +1615,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         patrimonioLabel,
         ...(tombamento ? { tomboRef: tombamento } : {}),
         data: new Date().toLocaleDateString("pt-BR"),
-        especie: String(shared.especie || desc.split(" ")[0] || "").toUpperCase(),
+        especie: String(shared.especie || inferEspecieFromDesc(desc, sugestoes?.especies) || "").toUpperCase(),
         descricao: desc,
         marca: shared.marca || "",
         fornecedor: shared.fornecedor || "",
@@ -1536,6 +1625,7 @@ function OrganizedApp({ firebaseOk, isProd }) {
         valor: parseFloat(shared.valor) || 0,
         valorAtual: 0,
         isManual: true,
+        tipoEntrada: multiOrigem,
         ...(patrimonioLabel === "S/T" ? { semTombo: true, identificadoPorFoto: rowPhotos.length > 0 } : {}),
       };
 
@@ -1558,11 +1648,14 @@ function OrganizedApp({ firebaseOk, isProd }) {
           localId: shared.localId,
           obs: String(row.obs || "").trim(),
           marca: shared.marca || "",
-          origem: shared.origem || "Próprio",
+          origem: multiOrigem,
           fotoUrls,
-          extras: patrimonioLabel === "S/T"
-            ? { semTombo: true, identificadoPorFoto: rowPhotos.length > 0, descricaoEdit: desc }
-            : { descricaoEdit: desc },
+          extras: {
+            ...(patrimonioLabel === "S/T"
+              ? { semTombo: true, identificadoPorFoto: rowPhotos.length > 0, descricaoEdit: desc }
+              : { descricaoEdit: desc }),
+            ...multiDoacaoExtras,
+          },
           unidadeAtiva,
           logado: auth.logado,
           isManual: true,
@@ -2140,6 +2233,9 @@ function OrganizedApp({ firebaseOk, isProd }) {
                   valor: "",
                   localId: sessionLocais[0]?.id || "",
                   origem: "Próprio",
+                  multiDoacaoModo: "uf",
+                  multiDoacaoUf: "MA",
+                  multiDoacaoTexto: "",
                 };
               }
               if (!multiRowsRef.current) {
@@ -2563,6 +2659,12 @@ function OrganizedApp({ firebaseOk, isProd }) {
           onViewImage={onViewImage}
           addManual={addManual}
           ft={ft}
+          lookupTombo={lookupTombo}
+          onOpenExistingItem={(item) => {
+            revokeBlobUrls(formRef.current.manPhotos || []);
+            formRef.current.manPhotos = [];
+            openDetModal(item);
+          }}
         />
       )}
 

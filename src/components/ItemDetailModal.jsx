@@ -4,7 +4,7 @@ import { EC, ESTADOS, SITUACOES } from "../constants/inventory.js";
 import { deletePhoto, getDisplayPhotoUrl } from "../services/storage.js";
 import { isSemTomboItem, showFotoManualBadge } from "../utils/semTombo.js";
 import { ItemHistory } from "./ItemHistory.jsx";
-import { inferEspecieFromDesc } from "../utils/itemHelpers.js";
+import { inferEspecieFromDesc, supportsImei } from "../utils/itemHelpers.js";
 import { PhotoThumb } from "./PhotoThumb.jsx";
 import { SmartImg } from "./SmartImg.jsx";
 
@@ -27,8 +27,13 @@ export function ItemDetailModal({
   onSave,
   onDelete,
 }) {
+  // Re-render local sem trocar as keys (bumpFt remontaria o input em edição).
+  const [, refreshLocal] = React.useReducer((n) => n + 1, 0);
   if (!item) return null;
   const semTombo = isSemTomboItem(item, foundEntry);
+  const showImei = supportsImei(
+    `${formRef.current.detDescricao || ""} ${formRef.current.detEspecie || ""} ${item.descricao || ""} ${item.especie || ""}`
+  );
   const Lbl = ({ children }) => <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>{children}</label>;
 
   const EGrid = ({ fk }) => (
@@ -41,11 +46,13 @@ export function ItemDetailModal({
             bumpFt();
           }}
           style={{
-            padding: "8px 4px",
+            padding: isMobile ? "12px 4px" : "8px 4px",
+            minHeight: isMobile ? 44 : undefined,
             borderRadius: 8,
-            fontSize: 11,
+            fontSize: isMobile ? 13 : 11,
             fontWeight: 700,
             cursor: "pointer",
+            touchAction: "manipulation",
             border: `2px solid ${(formRef.current[fk] || "Bom") === e ? EC[e].tx : "#e2e8f0"}`,
             background: (formRef.current[fk] || "Bom") === e ? EC[e].bg : "#fff",
             color: (formRef.current[fk] || "Bom") === e ? EC[e].tx : "#6b7280",
@@ -63,7 +70,7 @@ export function ItemDetailModal({
     <>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
         <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, flex: 1, minWidth: 0 }}>{item.descricao || item.especie || "—"}</h2>
-        <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 12, color: "#64748b", cursor: "pointer", padding: "8px 10px", fontWeight: 700 }}>
+        <button onClick={onClose} style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#334155", cursor: "pointer", padding: isMobile ? "10px 16px" : "8px 12px", minHeight: isMobile ? 44 : undefined, fontWeight: 700, touchAction: "manipulation", flexShrink: 0 }}>
           Fechar
         </button>
       </div>
@@ -103,20 +110,39 @@ export function ItemDetailModal({
           initial={formRef.current.detDescricao}
           onVal={(v) => {
             setField("detDescricao", v);
-            if (!String(formRef.current.detEspecie || "").trim()) {
-              setField("detEspecie", inferEspecieFromDesc(v, sugestoes?.especies));
-              bumpFt();
+            // Auto-identifica a espécie enquanto o campo não foi editado à mão
+            // e estava vazio ao abrir (não sobrescreve espécie da planilha).
+            const podeAuto =
+              !formRef.current.detEspecieTouched &&
+              (!String(formRef.current.detEspecie || "").trim() || formRef.current.detEspecieAuto);
+            if (podeAuto) {
+              const inferred = inferEspecieFromDesc(v, sugestoes?.especies);
+              if (inferred !== formRef.current.detEspecie) {
+                setField("detEspecie", inferred);
+                formRef.current.detEspecieAuto = true;
+              }
             }
+            refreshLocal();
           }}
           placeholder="Descrição do item..."
           suggestions={sugestoes?.descricoes}
           style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none", marginBottom: 10 }}
         />
-        <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>Espécie / Tipo</p>
+        <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>
+          Espécie / Tipo
+          {formRef.current.detEspecieAuto && !formRef.current.detEspecieTouched && (
+            <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "#0f766e", background: "#f0fdfa", border: "1px solid #99f6e4", borderRadius: 99, padding: "2px 8px" }}>
+              identificada automaticamente
+            </span>
+          )}
+        </p>
         <TInput
           key={`detEsp_${ft}`}
           initial={formRef.current.detEspecie}
-          onVal={(v) => setField("detEspecie", v)}
+          onVal={(v) => {
+            setField("detEspecie", v);
+            formRef.current.detEspecieTouched = true;
+          }}
           placeholder="Ex: CADEIRA, MESA, TELEVISOR..."
           suggestions={sugestoes?.especies}
           style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" }}
@@ -186,13 +212,14 @@ export function ItemDetailModal({
                           color: "#fff",
                           border: "none",
                           borderRadius: "50%",
-                          width: 22,
-                          height: 22,
-                          fontSize: 12,
+                          width: isMobile ? 32 : 22,
+                          height: isMobile ? 32 : 22,
+                          fontSize: isMobile ? 16 : 12,
                           cursor: "pointer",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
+                          touchAction: "manipulation",
                         }}
                       >
                         ×
@@ -281,10 +308,12 @@ export function ItemDetailModal({
               style={{
                 flex: 1,
                 padding: "10px",
+                minHeight: isMobile ? 44 : undefined,
                 borderRadius: 9,
-                fontSize: 12,
+                fontSize: isMobile ? 13 : 12,
                 fontWeight: 700,
                 cursor: "pointer",
+                touchAction: "manipulation",
                 border: `2px solid ${(formRef.current.detOrigem || "Próprio") === o ? "#1351B4" : "#e2e8f0"}`,
                 background: (formRef.current.detOrigem || "Próprio") === o ? "#dbeafe" : "#fff",
                 color: (formRef.current.detOrigem || "Próprio") === o ? "#1351B4" : "#6b7280",
@@ -303,6 +332,57 @@ export function ItemDetailModal({
         placeholder="Ex: Tramontina..."
         style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" }}
       />
+
+      {showImei && (
+        <>
+          <Lbl>IMEI / Nº de série</Lbl>
+          <TInput
+            key={`detImei_${ft}`}
+            initial={formRef.current.detImei}
+            onVal={(v) => setField("detImei", v)}
+            inputMode="numeric"
+            placeholder="Ex: 356938035643809"
+            style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" }}
+          />
+          <p style={{ margin: "6px 0 0", fontSize: 11, color: "#64748b" }}>
+            Em tablets/celulares: Configurações → Sobre o dispositivo, ou etiqueta atrás do aparelho.
+          </p>
+        </>
+      )}
+
+      {!semTombo && (
+        <label
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            marginTop: 14,
+            padding: "12px 14px",
+            borderRadius: 10,
+            border: `1.5px solid ${formRef.current.detPlaquetaAusente ? "#fdba74" : "#e2e8f0"}`,
+            background: formRef.current.detPlaquetaAusente ? "#fff7ed" : "#f8fafc",
+            cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={!!formRef.current.detPlaquetaAusente}
+            onChange={(e) => {
+              formRef.current.detPlaquetaAusente = e.target.checked;
+              refreshLocal();
+            }}
+            style={{ marginTop: 2, width: 18, height: 18, minHeight: 0 }}
+          />
+          <span>
+            <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#9a3412" }}>
+              Item sem plaqueta de tombamento
+            </span>
+            <span style={{ display: "block", fontSize: 11, color: "#78350f", marginTop: 2, lineHeight: 1.4 }}>
+              Encontrei o item, mas a etiqueta/plaqueta física está ausente ou ilegível — precisa fixar nova plaqueta.
+            </span>
+          </span>
+        </label>
+      )}
 
       <Lbl>Estado de Conservação</Lbl>
       <EGrid fk="detEstado" />

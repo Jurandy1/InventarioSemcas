@@ -2,6 +2,7 @@ import React from "react";
 import { Overlay } from "../Overlay.jsx";
 import { TInput, TArea } from "../FormFields.jsx";
 import { DoacaoOrigemFields } from "../DoacaoOrigemFields.jsx";
+import { supportsImei } from "../../utils/itemHelpers.js";
 
 export function SemTomboModal({
   isMob,
@@ -25,6 +26,11 @@ export function SemTomboModal({
   inp,
   ft,
 }) {
+  // Re-render local para exibir o campo IMEI assim que a descrição indicar
+  // tablet/celular, sem remontar o textarea (bumpFt troca as keys).
+  const [, localTick] = React.useReducer((n) => n + 1, 0);
+  const showImei = supportsImei(getField("stDesc"));
+
   return (
     <Overlay isMobile={isMob} onClose={() => { revokeBlobUrls(formRef.current.stPhotos || []); setModal(null); }}>
       <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>
@@ -89,7 +95,25 @@ export function SemTomboModal({
             <p style={{ margin: 0, fontSize: 12, color: "#92400e", fontWeight: 600 }}>Será marcado como item sem tombo (identificado por foto).</p>
           </div>
           <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6 }}>Nome / descrição do item *</label>
-          <TArea key={"stDesc_" + ft} initial={getField("stDesc")} onVal={(v) => setField("stDesc", v)} rows={2} placeholder="Ex: Cadeira giratória preta..." style={{ ...inp, resize: "none" }} />
+          <TArea
+            key={"stDesc_" + ft}
+            initial={getField("stDesc")}
+            onVal={(v) => {
+              const antes = supportsImei(getField("stDesc"));
+              setField("stDesc", v);
+              if (supportsImei(v) !== antes) localTick();
+            }}
+            rows={2}
+            placeholder="Ex: Cadeira giratória preta..."
+            style={{ ...inp, resize: "none" }}
+          />
+          {showImei && (
+            <>
+              <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>IMEI / Nº de série</label>
+              <TInput key={"stImei_" + ft} initial={getField("stImei")} onVal={(v) => setField("stImei", v)} inputMode="numeric" placeholder="Ex: 356938035643809" style={inp} />
+              <p style={{ margin: "6px 0 0", fontSize: 11, color: "#64748b" }}>Configurações → Sobre o dispositivo, ou etiqueta atrás do aparelho.</p>
+            </>
+          )}
           {inventario.unidadesAtivas.length > 1 && (
             <>
               <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 12 }}>Unidade</label>

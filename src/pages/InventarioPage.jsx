@@ -28,6 +28,29 @@ function buildMetaLine(item) {
   return `Nº ${code} · ${data} · R$ ${valor}`;
 }
 
+/** Timestamp de quando o registro foi coletado (para ordenar decrescente). */
+function parseColetaMs(f) {
+  const iso = f?.ultimaAtualizacao;
+  if (iso) {
+    const t = new Date(iso).getTime();
+    if (!Number.isNaN(t)) return t;
+  }
+  const [d, m, y] = String(f?.data || "").split("/");
+  if (!y) return 0;
+  const [hh = 0, mm = 0, ss = 0] = String(f?.hora || "").split(":");
+  const t = new Date(+y, +m - 1, +d, +hh, +mm, +ss).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function formatHoraColeta(f) {
+  const hora = String(f?.hora || "").slice(0, 5);
+  const data = String(f?.data || "");
+  const hoje = new Date().toLocaleDateString("pt-BR");
+  if (!hora && !data) return "—";
+  if (data === hoje) return hora ? `hoje às ${hora}` : "hoje";
+  return `${data}${hora ? ` às ${hora}` : ""}`;
+}
+
 export function InventarioPage({
   invSubTab,
   setInvSubTab,
@@ -81,6 +104,7 @@ export function InventarioPage({
   onViewImage,
 }) {
   const [viewMode, setViewMode] = useState("padrao");
+  const [coletadosLimit, setColetadosLimit] = useState(20);
   const [localPage, setLocalPage] = useState(1);
   const [perPage, setPerPage] = useState(24);
   const [expandedCats, setExpandedCats] = useState({});
@@ -154,6 +178,22 @@ export function InventarioPage({
     return out.slice(0, 40);
   }, [pendentes, localAddSearch]);
 
+  // Itens já coletados nesta sessão, do mais recente para o mais antigo —
+  // "onde eu parei" durante o inventário.
+  const coletadosRecentes = useMemo(() => {
+    if (viewMode !== "coletados") return [];
+    const out = [];
+    for (const u of unidadesAtivas) {
+      for (const i of u.itens) {
+        const f = foundMap[i.id];
+        if (!f) continue;
+        out.push({ item: { ...i, unidadeId: u.id, unidadeNome: u.nome }, f, ms: parseColetaMs(f) });
+      }
+    }
+    out.sort((a, b) => b.ms - a.ms);
+    return out;
+  }, [viewMode, unidadesAtivas, foundMap]);
+
   const groupedCategories = useMemo(() => {
     if (viewMode !== "categorias") return [];
     const groups = {};
@@ -178,111 +218,58 @@ export function InventarioPage({
     return n;
   }, [unidadesAtivas, foundMap]);
 
+  const subTabs = [
+    { id: "inventariar", l: "Inventariar" },
+    ...(unidadesAtivas.length > 0 ? [{ id: "andamento", l: "Em Andamento", n: unidadesAtivas.length }] : []),
+    { id: "locais", l: "Locais" },
+    ...(unidadesAtivas.length > 0 ? [{ id: "ajuste", l: "Ajuste", n: ajusteCount || null }] : []),
+    { id: "resumo", l: "Resumo" },
+  ];
+
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-        <button
-          onClick={() => setInvSubTab("inventariar")}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "8px 16px",
-            borderRadius: 9,
-            border: "none",
-            background: invSubTab === "inventariar" ? "#1351B4" : "#f1f5f9",
-            color: invSubTab === "inventariar" ? "#fff" : "#374151",
-            fontWeight: 700,
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
-          Inventariar
-        </button>
-        {unidadesAtivas.length > 0 && (
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          marginBottom: 14,
+          ...(isMob
+            ? { overflowX: "auto", flexWrap: "nowrap", WebkitOverflowScrolling: "touch", paddingBottom: 4, margin: "0 -12px 14px", padding: "0 12px 4px" }
+            : { flexWrap: "wrap" }),
+        }}
+      >
+        {subTabs.map((t) => (
           <button
-            onClick={() => setInvSubTab("andamento")}
+            key={t.id}
+            onClick={() => setInvSubTab(t.id)}
             style={{
               display: "flex",
               alignItems: "center",
+              justifyContent: "center",
               gap: 6,
-              padding: "8px 16px",
+              padding: isMob ? "10px 16px" : "8px 16px",
+              minHeight: isMob ? 44 : undefined,
               borderRadius: 9,
               border: "none",
-              background: invSubTab === "andamento" ? "#1351B4" : "#f1f5f9",
-              color: invSubTab === "andamento" ? "#fff" : "#374151",
+              background: invSubTab === t.id ? "#1351B4" : "#f1f5f9",
+              color: invSubTab === t.id ? "#fff" : "#374151",
               fontWeight: 700,
               fontSize: 13,
               cursor: "pointer",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+              touchAction: "manipulation",
+              WebkitTapHighlightColor: "transparent",
             }}
           >
-            Em Andamento
-            <span style={{ background: invSubTab === "andamento" ? "rgba(255,255,255,.25)" : "#e2e8f0", color: invSubTab === "andamento" ? "#fff" : "#64748b", borderRadius: 99, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
-              {unidadesAtivas.length}
-            </span>
-          </button>
-        )}
-        <button
-          onClick={() => setInvSubTab("locais")}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "8px 16px",
-            borderRadius: 9,
-            border: "none",
-            background: invSubTab === "locais" ? "#1351B4" : "#f1f5f9",
-            color: invSubTab === "locais" ? "#fff" : "#374151",
-            fontWeight: 700,
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
-          Locais
-        </button>
-        {unidadesAtivas.length > 0 && (
-          <button
-            onClick={() => setInvSubTab("ajuste")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "8px 16px",
-              borderRadius: 9,
-              border: "none",
-              background: invSubTab === "ajuste" ? "#1351B4" : "#f1f5f9",
-              color: invSubTab === "ajuste" ? "#fff" : "#374151",
-              fontWeight: 700,
-              fontSize: 13,
-              cursor: "pointer",
-            }}
-          >
-            Ajuste
-            {ajusteCount > 0 && (
-              <span style={{ background: invSubTab === "ajuste" ? "rgba(255,255,255,.25)" : "#e2e8f0", color: invSubTab === "ajuste" ? "#fff" : "#64748b", borderRadius: 99, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
-                {ajusteCount}
+            {t.l}
+            {t.n != null && (
+              <span style={{ background: invSubTab === t.id ? "rgba(255,255,255,.25)" : "#e2e8f0", color: invSubTab === t.id ? "#fff" : "#64748b", borderRadius: 99, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>
+                {t.n}
               </span>
             )}
           </button>
-        )}
-        <button
-          onClick={() => setInvSubTab("resumo")}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "8px 16px",
-            borderRadius: 9,
-            border: "none",
-            background: invSubTab === "resumo" ? "#1351B4" : "#f1f5f9",
-            color: invSubTab === "resumo" ? "#fff" : "#374151",
-            fontWeight: 700,
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-        >
-          Resumo
-        </button>
+        ))}
       </div>
 
       {invSubTab === "inventariar" && (
@@ -332,7 +319,7 @@ export function InventarioPage({
                       onClick={() => {
                         const selected = unidades.filter((u) => pendingUnids.has(u.id));
                         confirmarAtivas(selected, { merge: true });
-                        setPage(1);
+                        setLocalPage(1);
                       }}
                       style={{ background: "#fff", color: "#1351B4", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 800 }}
                     >
@@ -342,7 +329,7 @@ export function InventarioPage({
                       onClick={() => {
                         const selected = unidades.filter((u) => pendingUnids.has(u.id));
                         confirmarAtivas(selected, { novaSessao: true });
-                        setPage(1);
+                        setLocalPage(1);
                       }}
                       style={{ background: "rgba(255,255,255,.2)", color: "#fff", border: "1px solid rgba(255,255,255,.4)", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 700 }}
                     >
@@ -354,7 +341,7 @@ export function InventarioPage({
                     onClick={() => {
                       const selected = unidades.filter((u) => pendingUnids.has(u.id));
                       confirmarAtivas(selected);
-                      setPage(1);
+                      setLocalPage(1);
                     }}
                     style={{ background: "#fff", color: "#1351B4", border: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, cursor: "pointer", fontWeight: 800 }}
                   >
@@ -469,45 +456,55 @@ export function InventarioPage({
                   {totalFound}/{totalBens} itens · {progresso}%
                 </p>
               </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {!campanhaFechada && onOpenNextPending && (
-                  <button onClick={onOpenNextPending} style={{ ...bp, fontSize: 11, padding: "6px 12px", background: "#0f766e" }}>
-                    Próximo pendente
-                  </button>
-                )}
-                {!campanhaFechada && (
-                  <button onClick={onOpenManual} style={{ ...bs, fontSize: 11, padding: "6px 12px" }}>
-                    Manual
-                  </button>
-                )}
-                {!campanhaFechada && onOpenMulti && (
-                  <button onClick={() => onOpenMulti(null)} style={{ ...bs, fontSize: 11, padding: "6px 12px", borderColor: "#0f766e", color: "#0f766e" }}>
-                    + Vários iguais
-                  </button>
-                )}
-                {onOpenConvidarColega && (
-                  <button onClick={onOpenConvidarColega} style={{ ...bs, fontSize: 11, padding: "6px 12px", borderColor: "#7c3aed", color: "#7c3aed" }}>
-                    Convidar colega
-                  </button>
-                )}
-                {totalFound > 0 && (
-                  <button onClick={onOpenFinalizar} style={{ ...bp, fontSize: 11, padding: "6px 12px" }}>
-                    Finalizar
-                  </button>
-                )}
-                <button
-                  onClick={() => {
-                    setInvSubTab("inventariar");
-                    showT?.("Inventário pausado");
-                  }}
-                  style={{ ...bs, fontSize: 11, padding: "6px 12px" }}
-                >
-                  Pausar
-                </button>
-                <button onClick={onOpenCancelar} style={{ ...bs, fontSize: 11, padding: "6px 12px", color: "#dc2626", borderColor: "#fca5a5" }}>
-                  Cancelar
-                </button>
-              </div>
+              {(() => {
+                const act = {
+                  fontSize: isMob ? 13 : 11,
+                  padding: isMob ? "10px 12px" : "6px 12px",
+                  minHeight: isMob ? 44 : undefined,
+                  flex: isMob ? "1 1 calc(50% - 6px)" : undefined,
+                };
+                return (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", width: isMob ? "100%" : undefined }}>
+                    {!campanhaFechada && onOpenNextPending && (
+                      <button onClick={onOpenNextPending} style={{ ...bp, ...act, background: "#0f766e" }}>
+                        Próximo pendente
+                      </button>
+                    )}
+                    {!campanhaFechada && (
+                      <button onClick={onOpenManual} style={{ ...bs, ...act }}>
+                        Manual
+                      </button>
+                    )}
+                    {!campanhaFechada && onOpenMulti && (
+                      <button onClick={() => onOpenMulti(null)} style={{ ...bs, ...act, borderColor: "#0f766e", color: "#0f766e" }}>
+                        + Vários iguais
+                      </button>
+                    )}
+                    {onOpenConvidarColega && (
+                      <button onClick={onOpenConvidarColega} style={{ ...bs, ...act, borderColor: "#7c3aed", color: "#7c3aed" }}>
+                        Convidar colega
+                      </button>
+                    )}
+                    {totalFound > 0 && (
+                      <button onClick={onOpenFinalizar} style={{ ...bp, ...act }}>
+                        Finalizar
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setInvSubTab("inventariar");
+                        showT?.("Inventário pausado");
+                      }}
+                      style={{ ...bs, ...act }}
+                    >
+                      Pausar
+                    </button>
+                    <button onClick={onOpenCancelar} style={{ ...bs, ...act, color: "#dc2626", borderColor: "#fca5a5" }}>
+                      Cancelar
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
 
             <div style={{ height: 5, borderRadius: 3, background: "#dbeafe", marginBottom: 10 }}>
@@ -606,7 +603,7 @@ export function InventarioPage({
                           setInvSubTab("locais");
                         }
                       }}
-                      style={{ background: "#f1f5f9", color: "#334155", borderRadius: 99, padding: "4px 10px", fontSize: 11, fontWeight: 700, border: "1px solid #e2e8f0", cursor: "pointer" }}
+                      style={{ background: "#f1f5f9", color: "#334155", borderRadius: 99, padding: isMob ? "9px 14px" : "4px 10px", fontSize: isMob ? 13 : 11, minHeight: isMob ? 40 : undefined, fontWeight: 700, border: "1px solid #e2e8f0", cursor: "pointer", touchAction: "manipulation" }}
                       title="Abrir local"
                     >
                       {l.nome} {countLocal ? `(${countLocal})` : ""}
@@ -652,8 +649,17 @@ export function InventarioPage({
           </label>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-            <button onClick={() => setViewMode("padrao")} style={{ ...bp, background: viewMode === "padrao" ? "#0f172a" : "#fff", color: viewMode === "padrao" ? "#fff" : "#0f172a", borderColor: "#0f172a", padding: "6px 12px", fontSize: 12 }}>Visualização Padrão</button>
-            <button onClick={() => setViewMode("categorias")} style={{ ...bp, background: viewMode === "categorias" ? "#0f172a" : "#fff", color: viewMode === "categorias" ? "#fff" : "#0f172a", borderColor: "#0f172a", padding: "6px 12px", fontSize: 12 }}>Agrupar por Categoria</button>
+            <button onClick={() => setViewMode("padrao")} style={{ ...bp, background: viewMode === "padrao" ? "#0f172a" : "#fff", color: viewMode === "padrao" ? "#fff" : "#0f172a", borderColor: "#0f172a", padding: isMob ? "10px 14px" : "6px 12px", fontSize: 12 }}>Visualização Padrão</button>
+            <button onClick={() => setViewMode("categorias")} style={{ ...bp, background: viewMode === "categorias" ? "#0f172a" : "#fff", color: viewMode === "categorias" ? "#fff" : "#0f172a", borderColor: "#0f172a", padding: isMob ? "10px 14px" : "6px 12px", fontSize: 12 }}>Agrupar por Categoria</button>
+            <button
+              onClick={() => {
+                setViewMode("coletados");
+                setColetadosLimit(20);
+              }}
+              style={{ ...bp, background: viewMode === "coletados" ? "#0f766e" : "#fff", color: viewMode === "coletados" ? "#fff" : "#0f766e", borderColor: "#0f766e", padding: isMob ? "10px 14px" : "6px 12px", fontSize: 12 }}
+            >
+              Últimos coletados ({totalFound})
+            </button>
           </div>
 
           {(() => {
@@ -735,6 +741,7 @@ export function InventarioPage({
                       ) : (
                         <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
                       )}
+                      {f?.plaquetaAusente && <Badge label="Sem plaqueta" c={{ bg: "#ffedd5", tx: "#9a3412" }} />}
                       {reservedBy && <Badge label={`Em uso — ${reservedBy.nome}`} c={{ bg: "#fef3c7", tx: "#92400e" }} />}
                       {(item?.isManual || f?.isManual || String(item?.id || "").startsWith("MAN_")) && <Badge label="Inserido Manualmente" c={{ bg: "#fef08a", tx: "#854d0e" }} />}
                       {item?.unidadeId && f?.unidadeId && item.unidadeId !== f.unidadeId && <Badge label="De Outra Unidade" c={{ bg: "#fecaca", tx: "#991b1b" }} />}
@@ -756,6 +763,76 @@ export function InventarioPage({
                 </div>
               );
             };
+
+            if (viewMode === "coletados") {
+              const getLocalNome = (localId) => locais.find((l) => l.id === localId)?.nome || "Sem local";
+              if (coletadosRecentes.length === 0) {
+                return (
+                  <div style={{ ...cd, textAlign: "center", padding: 32 }}>
+                    <p style={{ margin: 0, fontSize: 13, color: "#64748b", fontWeight: 700 }}>Nenhum item coletado nesta sessão ainda.</p>
+                    <p style={{ margin: "6px 0 0", fontSize: 12, color: "#94a3b8" }}>Conforme você registra itens, eles aparecem aqui do mais recente para o mais antigo.</p>
+                  </div>
+                );
+              }
+              return (
+                <div>
+                  <p style={{ margin: "0 0 10px", fontSize: 12, color: "#64748b" }}>
+                    Do mais recente para o mais antigo — toque para reabrir o item.
+                  </p>
+                  <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(auto-fill, minmax(340px,1fr))", gap: 8 }}>
+                    {coletadosRecentes.slice(0, coletadosLimit).map(({ item, f }, idx) => {
+                      const foto = f?.fotoUrls?.[0];
+                      const displayDesc = getDisplayDesc(item, f);
+                      return (
+                        <div
+                          key={`${item.unidadeId}_${item.id}`}
+                          onClick={() => openDetModal(item)}
+                          style={{ ...cd, cursor: "pointer", border: `1.5px solid ${idx === 0 ? "#5eead4" : "#bbf7d0"}`, background: idx === 0 ? "#f0fdfa" : "#fff", display: "flex", gap: 12, alignItems: "flex-start", padding: 12 }}
+                        >
+                          {foto ? (
+                            <PhotoThumb
+                              src={foto}
+                              badge={showFotoManualBadge(item, f)}
+                              size={64}
+                              onImageClick={() => onViewImage?.(foto)}
+                            />
+                          ) : (
+                            <div style={{ width: 64, height: 64, borderRadius: 8, background: "#f1f5f9", border: "1px dashed #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#94a3b8", fontWeight: 700, flexShrink: 0, textAlign: "center", lineHeight: 1.3 }}>
+                              Sem<br />foto
+                            </div>
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#0f766e" }}>
+                              Coletado {formatHoraColeta(f)}
+                              {idx === 0 ? " · último" : ""}
+                            </p>
+                            <p style={{ margin: "3px 0 0", fontSize: 13, fontWeight: 700 }}>{displayDesc}</p>
+                            <p style={{ margin: "2px 0 0", fontSize: 11, color: "#64748b" }}>
+                              Nº {getItemCode(item)} · {getLocalNome(f?.localId)}
+                            </p>
+                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                              <Badge label={f.estado || "—"} c={EC[f.estado]} />
+                              <Badge label={f.situacao || "—"} c={SC[f.situacao]} />
+                              {f?.plaquetaAusente && <Badge label="Sem plaqueta" c={{ bg: "#ffedd5", tx: "#9a3412" }} />}
+                              {(f.usuario || f.user) && <Badge label={f.usuario || f.user} c={{ bg: "#e0e7ff", tx: "#3730a3" }} />}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {coletadosRecentes.length > coletadosLimit && (
+                    <button
+                      type="button"
+                      onClick={() => setColetadosLimit((n) => n + 20)}
+                      style={{ ...bs, width: "100%", marginTop: 10, minHeight: 44 }}
+                    >
+                      Carregar mais ({coletadosRecentes.length - coletadosLimit} restantes)
+                    </button>
+                  )}
+                </div>
+              );
+            }
 
             if (viewMode === "categorias") {
               return (
@@ -797,20 +874,21 @@ export function InventarioPage({
             };
 
             const btnStyle = (active) => ({
-              minWidth: 32,
-              height: 32,
+              minWidth: isMob ? 42 : 32,
+              height: isMob ? 42 : 32,
               borderRadius: 8,
               border: active ? "2px solid #1351B4" : "1.5px solid #e2e8f0",
               background: active ? "#1351B4" : "#fff",
               color: active ? "#fff" : "#374151",
               fontWeight: active ? 800 : 600,
-              fontSize: 13,
+              fontSize: isMob ? 14 : 13,
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               padding: "0 6px",
               transition: "all .15s",
+              touchAction: "manipulation",
             });
 
             return (
@@ -843,7 +921,7 @@ export function InventarioPage({
                     onChange={(e) => { setPerPage(Number(e.target.value)); setLocalPage(1); }}
                     style={{
                       marginLeft: 12,
-                      height: 32,
+                      height: isMob ? 42 : 32,
                       borderRadius: 8,
                       border: "1.5px solid #e2e8f0",
                       background: "#fff",
@@ -899,7 +977,7 @@ export function InventarioPage({
               const l = locais.find((x) => x.id === localSelecionadoId);
               return (
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
                     <button
                       onClick={() => {
                         setLocalSelecionadoId("");
