@@ -9,6 +9,7 @@ export function useAppCamera({ state, data }) {
   const {
     tab, modal, setModal, setCameraTarget, setTab, setOverlayBackdropSuppressMs,
     formRef, editingItemRef, resumeRestoredRef, cameraTargetRef, multiRowsPhotosRef,
+    multiSharedRef, multiRowsRef,
     bumpFt, showT, cameraTarget,
   } = state;
   const {
@@ -30,6 +31,8 @@ export function useAppCamera({ state, data }) {
         tab: patch.tab ?? tab,
         invSubTab: patch.invSubTab ?? inventario.invSubTab,
         pendingPhotos: patch.pendingPhotos ?? prev.pendingPhotos ?? [],
+        multiShared: patch.multiShared ?? multiSharedRef.current ?? prev.multiShared ?? null,
+        multiRows: patch.multiRows ?? multiRowsRef.current ?? prev.multiRows ?? null,
       });
     },
     [tab, inventario.invSubTab, unidadeAtiva?.id]
@@ -185,10 +188,18 @@ export function useAppCamera({ state, data }) {
   const openCamera = (target) => {
     cameraTargetRef.current = target;
     resumeRestoredRef.current = true;
+    // Semeia o resume com as fotos que o alvo já tem (apenas data: URLs são
+    // serializáveis) — se a aba for descartada antes de nova captura,
+    // a restauração não perde o que já foi tirado.
+    let seed = [];
+    if (target === "manual") seed = formRef.current.manPhotos || [];
+    else if (String(target || "").startsWith("multi-row-"))
+      seed = multiRowsPhotosRef.current[String(target).slice("multi-row-".length)] || [];
+    const serializable = seed.length && seed.every((p) => String(p).startsWith("data:")) ? seed : [];
     saveSessionResume({
       modal: "camera",
       cameraTarget: target,
-      pendingPhotos: [],
+      pendingPhotos: serializable,
     });
     setCameraTarget(target);
     setModal("camera");
@@ -237,11 +248,13 @@ export function useAppCamera({ state, data }) {
       const prev = multiRowsPhotosRef.current[idx] || [];
       revokeRemovedBlobs(prev, incoming);
       multiRowsPhotosRef.current[idx] = incoming;
-      cameraTargetRef.current = null;
       setCameraTarget(null);
       setOverlayBackdropSuppressMs(1200);
+      resumeRestoredRef.current = true;
       setModal("multi");
       bumpFt();
+      await persistCameraSession(incoming);
+      cameraTargetRef.current = null;
       return;
     }
 
@@ -262,32 +275,118 @@ export function useAppCamera({ state, data }) {
       formRef.current.detNewBase64 = incoming;
     }
 
-    cameraTargetRef.current = null;
     setCameraTarget(null);
     setOverlayBackdropSuppressMs(1200);
     resumeRestoredRef.current = true;
     setModal(target === "manual" ? "manual" : "detalhe");
     bumpFt();
 
+    // Persiste antes de zerar o alvo — o resume precisa registrar de qual
+    // fluxo (manual/detalhe) as fotos pendentes vieram.
     const photos = target === "manual" ? formRef.current.manPhotos : formRef.current.detNewBase64;
     await persistCameraSession(photos);
+    cameraTargetRef.current = null;
     bumpFt();
   };
 
   const closeCameraModal = () => {
     const target = cameraTargetRef.current || cameraTarget;
+    const isMultiTarget = String(target || "").startsWith("multi-row-");
     cameraTargetRef.current = null;
     setCameraTarget(null);
     setOverlayBackdropSuppressMs(1200);
     ensureDetFormFromResume(loadUiResume());
-    setModal(target === "manual" ? "manual" : target === "semTombo" ? "semTombo" : formRef.current.detItem ? "detalhe" : null);
+    setModal(
+      target === "manual"
+        ? "manual"
+        : target === "semTombo"
+          ? "semTombo"
+          : isMultiTarget
+            ? "multi"
+            : formRef.current.detItem
+              ? "detalhe"
+              : null
+    );
     bumpFt();
-    if (!formRef.current.detItem) clearUiResume();
+    if (!formRef.current.detItem && target !== "manual" && !isMultiTarget) clearUiResume();
   };
 
   const applyUiResume = React.useCallback(
     (resume) => {
-      if (!resume?.itemId && !resume?.itemSnapshot?.id) return false;
+      if (!resume) return false;
+      const camTarget = String(resume.cameraTarget || "");
+      const pendingPh = Array.isArray(resume.pendingPhotos) ? resume.pendingPhotos : [];
+
+      // Fluxo "vários itens" — não depende de item da planilha.
+      if (camTarget.startsWith("multi-row-")) {
+        if (!resume.multiShared && !resume.multiRows?.length && !pendingPh.length) return false;
+        if (resume.tab) setTab(resume.tab);
+        if (resume.invSubTab) inventario.setInvSubTab(resume.invSubTab);
+        if (resume.multiShared) multiSharedRef.current = { ...resume.multiShared };
+        if (resume.multiRows?.length) multiRowsRef.current = resume.multiRows.map((r) => ({ ...r }));
+        if (!multiSharedRef.current) {
+          multiSharedRef.current = {
+            descricao: "", especie: "", marca: "", fornecedor: "", valor: "",
+            localId: "", origem: "Próprio",
+            multiDoacaoModo: "uf", multiDoacaoUf: "MA", multiDoacaoTexto: "",
+          };
+        }
+        if (!multiRowsRef.current) {
+          multiRowsRef.current = [{ tombamento: "", estado: "Bom", obs: "" }];
+        }
+        const rowIdx = camTarget.slice("multi-row-".length);
+        if (pendingPh.length) multiRowsPhotosRef.current[rowIdx] = pendingPh;
+        if (resume.modal === "camera" && !pendingPh.length) {
+          cameraTargetRef.current = camTarget;
+          setCameraTarget(camTarget);
+          setModal("camera");
+        } else {
+          setModal("multi");
+        }
+        bumpFt();
+        return true;
+      }
+
+      // Fluxo "item manual" — restaura os campos digitados (man*) e as fotos
+      // pendentes; antes só as fotos sobreviviam e o resto era apagado.
+      if (camTarget === "manual") {
+        const fs = resume.formSnapshot || {};
+        formRef.current = {
+          ...formRef.current,
+          manDesc: fs.manDesc ?? formRef.current.manDesc ?? "",
+          manPatrimonio: fs.manPatrimonio ?? formRef.current.manPatrimonio ?? "",
+          manQtd: fs.manQtd ?? formRef.current.manQtd ?? 1,
+          manSharePhotos: fs.manSharePhotos ?? formRef.current.manSharePhotos ?? true,
+          manEspecie: fs.manEspecie ?? formRef.current.manEspecie ?? "",
+          manEspecieTouched: fs.manEspecieTouched ?? formRef.current.manEspecieTouched ?? false,
+          manEspecieAuto: fs.manEspecieAuto ?? formRef.current.manEspecieAuto ?? false,
+          manImei: fs.manImei ?? formRef.current.manImei ?? "",
+          manMarca: fs.manMarca ?? formRef.current.manMarca ?? "",
+          manFornecedor: fs.manFornecedor ?? formRef.current.manFornecedor ?? "",
+          manValor: fs.manValor ?? formRef.current.manValor ?? "",
+          manOrigem: fs.manOrigem ?? formRef.current.manOrigem ?? "Próprio",
+          manEstado: fs.manEstado ?? formRef.current.manEstado ?? "Bom",
+          manSituacao: fs.manSituacao ?? formRef.current.manSituacao ?? "Em uso",
+          manLocal: fs.manLocal ?? formRef.current.manLocal ?? "",
+          manDoacaoModo: fs.manDoacaoModo ?? formRef.current.manDoacaoModo ?? "uf",
+          manDoacaoUf: fs.manDoacaoUf ?? formRef.current.manDoacaoUf ?? "MA",
+          manDoacaoTexto: fs.manDoacaoTexto ?? formRef.current.manDoacaoTexto ?? "",
+        };
+        if (pendingPh.length) formRef.current.manPhotos = pendingPh;
+        if (resume.tab) setTab(resume.tab);
+        if (resume.invSubTab) inventario.setInvSubTab(resume.invSubTab);
+        if (resume.modal === "camera" && !pendingPh.length && !(formRef.current.manPhotos || []).length) {
+          cameraTargetRef.current = "manual";
+          setCameraTarget("manual");
+          setModal("camera");
+        } else {
+          setModal("manual");
+        }
+        bumpFt();
+        return true;
+      }
+
+      if (!resume.itemId && !resume.itemSnapshot?.id) return false;
 
       let item = resume.itemSnapshot?.id ? resume.itemSnapshot : null;
       if (!item && unidades.length > 0) {
@@ -325,7 +424,7 @@ export function useAppCamera({ state, data }) {
         detOrigem: fs.detOrigem || f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
         detOrigemLocked: fs.detOrigemLocked ?? !item.isManual,
         detExistingUrls: fs.detExistingUrls?.length ? fs.detExistingUrls : f?.fotoUrls || [],
-        detNewBase64: resume.cameraTarget === "manual" ? [] : restoredPhotos,
+        detNewBase64: restoredPhotos,
         detDescricao: fs.detDescricao || f?.descricaoEdit || item.descricao || "",
         detEspecie: fs.detEspecie || f?.especieEdit || item.especie || "",
         detPermutaDesc: fs.detPermutaDesc || f?.permutaDesc || "",
@@ -340,17 +439,13 @@ export function useAppCamera({ state, data }) {
       };
       editingItemRef.current = item;
 
-      if (pending.length && resume.cameraTarget === "manual") {
-        formRef.current.manPhotos = pending;
-      }
-
       const reopenCamera = resume.modal === "camera" && !pending.length;
       if (reopenCamera) {
         cameraTargetRef.current = resume.cameraTarget || "detalhe";
         setCameraTarget(resume.cameraTarget || "detalhe");
         setModal("camera");
       } else {
-        setModal(resume.cameraTarget === "manual" ? "manual" : "detalhe");
+        setModal("detalhe");
       }
       bumpFt();
       return true;
@@ -361,7 +456,10 @@ export function useAppCamera({ state, data }) {
   const tryRestoreUi = React.useCallback(() => {
     if (!auth.logado || resumeRestoredRef.current) return;
     const resume = loadUiResume();
-    if (!resume?.itemId && !resume?.itemSnapshot?.id) return;
+    if (!resume) return;
+    const camTarget = String(resume.cameraTarget || "");
+    const semItem = camTarget === "manual" || camTarget.startsWith("multi-row-");
+    if (!semItem && !resume.itemId && !resume.itemSnapshot?.id) return;
     if (applyUiResume(resume)) resumeRestoredRef.current = true;
   }, [auth.logado, applyUiResume]);
 
@@ -377,11 +475,21 @@ export function useAppCamera({ state, data }) {
 
   useEffect(() => {
     const persistOnHide = () => {
-      if (modal !== "camera" && modal !== "detalhe" && modal !== "manual") return;
-      saveSessionResume({
-        modal,
-        cameraTarget: cameraTargetRef.current || "detalhe",
-      });
+      if (modal !== "camera" && modal !== "detalhe" && modal !== "manual" && modal !== "multi") return;
+      const prev = loadUiResume() || {};
+      let target = cameraTargetRef.current || "";
+      if (!target) {
+        if (modal === "manual") target = "manual";
+        else if (modal === "multi")
+          target = String(prev.cameraTarget || "").startsWith("multi-row-") ? prev.cameraTarget : "multi-row-0";
+        else target = "detalhe";
+      }
+      const patch = { modal, cameraTarget: target };
+      if (modal === "manual") {
+        const phs = formRef.current.manPhotos || [];
+        if (phs.length && phs.every((p) => String(p).startsWith("data:"))) patch.pendingPhotos = phs;
+      }
+      saveSessionResume(patch);
     };
     const onVis = () => {
       if (document.visibilityState === "hidden") persistOnHide();

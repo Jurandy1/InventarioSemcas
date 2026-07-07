@@ -4,6 +4,7 @@ import { EC, ESTADOS, SITUACOES } from "../constants/inventory.js";
 import { deletePhoto, getDisplayPhotoUrl } from "../services/storage.js";
 import { isSemTomboItem, showFotoManualBadge } from "../utils/semTombo.js";
 import { ItemHistory } from "./ItemHistory.jsx";
+import { isItemInventariado } from "../utils/patrimonioId.js";
 import { inferEspecieFromDesc, supportsImei } from "../utils/itemHelpers.js";
 import { PhotoThumb } from "./PhotoThumb.jsx";
 import { SmartImg } from "./SmartImg.jsx";
@@ -484,7 +485,7 @@ export function ItemDetailModal({
         >
           Cancelar
         </button>
-        {foundSet?.has(item.id) && (
+        {isItemInventariado(item.id, foundSet) && (
           <button
             onClick={onDelete}
             style={{

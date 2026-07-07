@@ -49,7 +49,7 @@ export function AppMainView({ ctx }) {
     formRef, bumpFt, setField, getField, revokeBlobUrls, showT, onViewImage,
     unidades, loadingXlsx, loadXlsx, found, inventario, unidadeAtiva,
     editScopeUnits, editScopeSessionId, sessionLocais, pickLocais,
-    handleDeleteLocal, createSessionLocal, campanhaState, finalizacoesState,
+    handleDeleteLocal, handleDeleteInventariado, createSessionLocal, campanhaState, finalizacoesState,
     abrirConvidarColega, renderOfflineStatus, todosItens, sugestoes,
     aplicarCorrecaoNomes, tombosDup, nfDataList, NF_PER_PAGE, xlsxCorrompidos,
     sessionTotalFound, sessionTotalBens, sessionProgresso, sortedFiltered,
@@ -245,6 +245,7 @@ export function AppMainView({ ctx }) {
               if (entry) showT("Local da sessão adicionado");
             }}
             onDeleteLocal={handleDeleteLocal}
+            onDeleteItem={handleDeleteInventariado}
             showT={showT}
             onViewImage={onViewImage}
           />
@@ -471,7 +472,9 @@ export function AppMainView({ ctx }) {
               ? formRef.current.manPhotos || []
               : cameraTarget === "semTombo"
                 ? formRef.current.stPhotos || []
-                : formRef.current.detNewBase64 || []
+                : String(cameraTarget || "").startsWith("multi-row-")
+                  ? multiRowsPhotosRef.current[String(cameraTarget).slice("multi-row-".length)] || []
+                  : formRef.current.detNewBase64 || []
           }
           onCapture={onCameraCapture}
           onClose={closeCameraModal}
@@ -527,9 +530,10 @@ export function AppMainView({ ctx }) {
               }
             }}
             onDelete={async () => {
-              await found.deleteFound(formRef.current.detItem.id);
-              closeDetModal();
-              showT("Removido");
+              if (!assertPodeEditar()) return;
+              const item = formRef.current.detItem;
+              const removed = await handleDeleteInventariado(item);
+              if (removed) closeDetModal();
             }}
           />
         </Overlay>
@@ -674,6 +678,7 @@ export function AppMainView({ ctx }) {
             multiRowsPhotosRef.current = {};
             multiSharedRef.current = null;
             multiRowsRef.current = null;
+            clearUiResume();
             setModal(null);
           }}
           onOpenCamera={(target) => openCamera(target)}

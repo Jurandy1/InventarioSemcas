@@ -54,7 +54,15 @@ export function MultiItemModal({
   const removeRow = (idx) => {
     rowsRef.current = rowsRef.current.filter((_, i) => i !== idx);
     if (rowsPhotosRef?.current) {
-      delete rowsPhotosRef.current[String(idx)];
+      // Reindexa as fotos: sem isso, as fotos das linhas seguintes
+      // ficavam associadas à linha errada após uma remoção.
+      const next = {};
+      for (const [k, v] of Object.entries(rowsPhotosRef.current)) {
+        const n = Number(k);
+        if (Number.isNaN(n) || n === idx) continue;
+        next[String(n > idx ? n - 1 : n)] = v;
+      }
+      rowsPhotosRef.current = next;
     }
     bump();
   };
@@ -75,9 +83,16 @@ export function MultiItemModal({
       alert("Selecione um local");
       return;
     }
-    const validRows = rows.filter(
-      (r) => String(r.tombamento || "").trim() || photoCountForRow(rows.indexOf(r)) > 0
-    );
+    // Anexa as fotos a cada linha antes de filtrar — o salvamento não pode
+    // depender do índice, que muda quando linhas vazias são descartadas.
+    const validRows = rows
+      .map((r, idx) => ({
+        ...r,
+        photos: Array.isArray(rowsPhotosRef?.current?.[String(idx)])
+          ? rowsPhotosRef.current[String(idx)]
+          : [],
+      }))
+      .filter((r) => String(r.tombamento || "").trim() || r.photos.length > 0);
     if (validRows.length === 0) {
       alert("Adicione ao menos um item com tombamento ou foto");
       return;

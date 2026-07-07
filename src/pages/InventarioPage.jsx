@@ -101,6 +101,7 @@ export function InventarioPage({
   sessionId,
   onQuickAddLocal,
   onDeleteLocal,
+  onDeleteItem,
   showT,
   onViewImage,
 }) {
@@ -689,6 +690,10 @@ export function InventarioPage({
                 }
                 openDetModal(item);
               };
+              const handleDeleteClick = async (e, targetItem) => {
+                e.stopPropagation();
+                await onDeleteItem?.(targetItem);
+              };
               return (
                 <div
                   key={`${item.unidadeId}_${item.id}`}
@@ -767,6 +772,25 @@ export function InventarioPage({
                       </div>
                     )}
                   </div>
+                  {isF && onDeleteItem && !campanhaFechada && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteClick(e, item)}
+                      title="Remover do inventário"
+                      style={{
+                        ...bs,
+                        alignSelf: "flex-start",
+                        flexShrink: 0,
+                        padding: isMob ? "10px 12px" : "6px 10px",
+                        fontSize: 11,
+                        color: "#dc2626",
+                        borderColor: "#fca5a5",
+                        minHeight: isMob ? 44 : undefined,
+                      }}
+                    >
+                      Excluir
+                    </button>
+                  )}
                 </div>
               );
             };
@@ -824,6 +848,28 @@ export function InventarioPage({
                               {(f.usuario || f.user) && <Badge label={f.usuario || f.user} c={{ bg: "#e0e7ff", tx: "#3730a3" }} />}
                             </div>
                           </div>
+                          {onDeleteItem && !campanhaFechada && (
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                await onDeleteItem(item);
+                              }}
+                              title="Remover do inventário"
+                              style={{
+                                ...bs,
+                                flexShrink: 0,
+                                alignSelf: "flex-start",
+                                padding: isMob ? "10px 12px" : "6px 10px",
+                                fontSize: 11,
+                                color: "#dc2626",
+                                borderColor: "#fca5a5",
+                                minHeight: isMob ? 44 : undefined,
+                              }}
+                            >
+                              Excluir
+                            </button>
+                          )}
                         </div>
                       );
                     })}
@@ -1094,6 +1140,18 @@ export function InventarioPage({
                                 </button>
                               ) : (
                                 <span style={{ fontSize: 11, color: "#94a3b8" }}>—</span>
+                              )}
+                              {onDeleteItem && !campanhaFechada && it && (
+                                <button
+                                  type="button"
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    await onDeleteItem(it);
+                                  }}
+                                  style={{ ...bs, padding: "8px 10px", fontSize: 11, color: "#dc2626", borderColor: "#fca5a5" }}
+                                >
+                                  Excluir
+                                </button>
                               )}
                               </div>
                             </div>

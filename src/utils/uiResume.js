@@ -38,6 +38,26 @@ export function buildFormSnapshot(formRef) {
     detPermutaDesc: f.detPermutaDesc || "",
     detPermutaMarca: f.detPermutaMarca || "",
     detPermutaEstado: f.detPermutaEstado || "Bom",
+    // Formulário do item manual — sem isso, o recarregamento da página
+    // durante a câmera nativa apagava tudo que o usuário digitou.
+    manDesc: f.manDesc || "",
+    manPatrimonio: f.manPatrimonio || "",
+    manQtd: f.manQtd || 1,
+    manSharePhotos: f.manSharePhotos !== false,
+    manEspecie: f.manEspecie || "",
+    manEspecieTouched: !!f.manEspecieTouched,
+    manEspecieAuto: !!f.manEspecieAuto,
+    manImei: f.manImei || "",
+    manMarca: f.manMarca || "",
+    manFornecedor: f.manFornecedor || "",
+    manValor: f.manValor || "",
+    manOrigem: f.manOrigem || "Próprio",
+    manEstado: f.manEstado || "Bom",
+    manSituacao: f.manSituacao || "Em uso",
+    manLocal: f.manLocal || "",
+    manDoacaoModo: f.manDoacaoModo || "uf",
+    manDoacaoUf: f.manDoacaoUf || "MA",
+    manDoacaoTexto: f.manDoacaoTexto || "",
   };
 }
 

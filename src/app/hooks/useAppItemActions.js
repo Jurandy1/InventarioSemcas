@@ -12,6 +12,7 @@ import { rankTombosForAjuste } from "../../utils/ajusteMatch.js";
 import { buildFinalizacaoStats, criarFinalizacao, atualizarStatsFinalizacao } from "../../services/finalizacoes.js";
 import { buildManualPatrimonio } from "../helpers/appHelpers.js";
 import { isManualItem } from "../../utils/nomeCorrecao.js";
+import { clearUiResume } from "../../utils/uiResume.js";
 
 export function useAppItemActions({ state, data }) {
   const {
@@ -319,6 +320,7 @@ export function useAppItemActions({ state, data }) {
           isManual: true,
         });
       }
+      clearUiResume();
       setModal(null);
       showT(qty > 1 ? `${qty} itens na fila (offline)` : "Na fila (offline)");
       notificationService.notify(EVENTOS.ITEM_ENCONTRADO, { message: "Item enfileirado offline", type: "info" });
@@ -364,6 +366,7 @@ export function useAppItemActions({ state, data }) {
       await logAuditoria("create", "manuais", it.id, null, { ...it, unidadeId: unidadeAtiva?.id, fotoUrls, inventario: createdResult?.entry });
     }
 
+    clearUiResume();
     setModal(null);
     showT(qty > 1 ? `Itens adicionados: ${qty}` : "Salvo!");
     notificationService.notify(EVENTOS.ITEM_ENCONTRADO, { message: "Item manual salvo", type: "success" });
@@ -554,7 +557,9 @@ export function useAppItemActions({ state, data }) {
 
     for (let idx = 0; idx < rows.length; idx++) {
       const row = rows[idx];
-      const rowPhotos = multiRowsPhotosRef.current[String(idx)] || [];
+      const rowPhotos = Array.isArray(row.photos)
+        ? row.photos
+        : multiRowsPhotosRef.current[String(idx)] || [];
       const tombamento = String(row.tombamento || "").trim();
       if (!tombamento && rowPhotos.length === 0) continue;
 
@@ -629,6 +634,7 @@ export function useAppItemActions({ state, data }) {
     }
 
     multiRowsPhotosRef.current = {};
+    clearUiResume();
     setModal(null);
     showT(`${saved} item(s) cadastrado(s)`);
   };

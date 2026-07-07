@@ -207,14 +207,32 @@ export function useFound({ showT, applyDescOverride } = {}) {
   const deleteFound = useCallback(
     async (itemId) => {
       const docId = normalizePatrimonioId(itemId);
-      await fsDel("inventario", docId);
       const base = foundRef.current || [];
-      const next = base.filter((f) => normalizePatrimonioId(f.patrimonioId) !== docId);
+      const entry =
+        getFoundEntry(itemId, foundMap) ||
+        base.find((f) => normalizePatrimonioId(f.patrimonioId || f._id) === docId) ||
+        null;
+
+      if (!navigator.onLine) {
+        await offlineManager.queueOperation("delete", { collection: "inventario", docId });
+      } else {
+        await fsDel("inventario", docId);
+      }
+
+      const next = base.filter((f) => {
+        const pid = normalizePatrimonioId(f.patrimonioId || f._id);
+        const raw = String(f.patrimonioId || f._id || "");
+        return pid !== docId && raw !== String(itemId);
+      });
       syncFoundRef(next);
       bumpCacheBuster();
       await setCachedData("inventario", next);
+
+      if (entry) {
+        await logAuditoria("delete-inventario", "inventario", docId, entry, null).catch(() => {});
+      }
     },
-    [syncFoundRef]
+    [syncFoundRef, foundMap]
   );
 
   const saveDetail = useCallback(

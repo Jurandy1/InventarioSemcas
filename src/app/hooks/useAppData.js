@@ -200,6 +200,28 @@ export function useAppData({ firebaseOk, state }) {
     return true;
   }, [campanhaState.fechada, auth.logado?.role, showT]);
 
+  // Depois de assertPodeEditar — usa auth/campanhaState, que só existem aqui.
+  const handleDeleteInventariado = React.useCallback(
+    async (item) => {
+      if (!assertPodeEditar()) return false;
+      if (!item?.id) return false;
+      const f = getFoundEntry(item.id, found.foundMap);
+      if (!f) {
+        showT("Item não está na lista de inventariados");
+        return false;
+      }
+      const label = f.descricaoEdit || item.descricao || item.especie || item.id;
+      const ok = window.confirm(
+        `Remover "${label}" da lista de inventariados?\n\nO item voltará a ficar pendente. A marca e os dados do patrimônio não são apagados.`
+      );
+      if (!ok) return false;
+      await found.deleteFound(item.id);
+      showT("Item removido do inventário");
+      return true;
+    },
+    [assertPodeEditar, found, showT]
+  );
+
   useEffect(() => {
     if (!auth.logado || unidades.length === 0) return;
     const scopeUnits = finalizadoEdit?.units?.length ? finalizadoEdit.units : inventario.unidadesAtivas;
@@ -396,7 +418,7 @@ export function useAppData({ firebaseOk, state }) {
   return { queueStatus, updateQueueStatus, unidades, setUnidades, loadingXlsx, loadXlsx,
     found, locais, inventario, unidadeAtiva, editScopeUnits, editScopeSessionId,
     scopeAllItens, resolveItemUnit, activeUnitIdList, isFinalizadoScope,
-    sessionLocais, pickLocais, handleDeleteLocal, createSessionLocal,
+    sessionLocais, pickLocais, handleDeleteLocal, handleDeleteInventariado, createSessionLocal,
     auth, campanhaState, finalizacoesState, assertPodeEditar, abrirConvidarColega,
     activeUnitIds, todosItens, sugestoes, tombosDup, nfDataList, NF_PER_PAGE,
     xlsxCorrompidos, sessionTotalFound, sessionTotalBens, sessionProgresso,
