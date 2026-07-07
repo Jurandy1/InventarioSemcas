@@ -41,6 +41,7 @@ const CAMEL_OVERRIDES = {
   descricaoEdit: "descricao_edit",
   especieEdit: "especie_edit",
   semTombo: "sem_tombo",
+  tomboRef: "tombo_referencia",
   tomboReferencia: "tombo_referencia",
   permutaDesc: "permuta_desc",
   permutaMarca: "permuta_marca",
@@ -217,6 +218,14 @@ function toRow(collection, docId, data) {
     row.dados = { ...(data || {}) };
   }
 
+  if (collection === "manuais") {
+    if (data.tomboRef && !row.patrimonio_label) row.patrimonio_label = data.tomboRef;
+    if (!row.tipo_entrada) row.tipo_entrada = data.tipoEntrada || "Próprio";
+    delete row.extras;
+    delete row.is_manual;
+    delete row.tombo_referencia;
+  }
+
   return row;
 }
 
@@ -286,7 +295,10 @@ export async function sbSet(collection, docId, data) {
   if (!c || !sb || !accessToken) return;
   const row = toRow(collection, docId, data);
   const { error } = await sb.from(c.table).upsert(row, { onConflict: c.pk });
-  if (error) console.warn(`Supabase set ${collection}/${docId}:`, error.message);
+  if (error) {
+    console.error(`Supabase set ${collection}/${docId}:`, error.message);
+    throw new Error(error.message || `Falha ao salvar em ${collection}`);
+  }
 }
 
 export async function sbSetStrict(collection, docId, data) {
