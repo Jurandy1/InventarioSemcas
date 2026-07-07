@@ -71,7 +71,7 @@ function AtributoChips({ nome, marca }) {
 }
 
 function ItemPhoto({ foundMap, itemId, onViewImage }) {
-  const urls = foundMap?.[itemId]?.fotoUrls || [];
+  const urls = getItemFotos(itemId, foundMap);
   const src = urls[0];
   if (!src) {
     return (
@@ -131,6 +131,7 @@ export function CorrecaoNomesPage({
   const [selecionados, setSelecionados] = useState(() => new Set());
   const [nomeEditado, setNomeEditado] = useState("");
   const [grupoChecks, setGrupoChecks] = useState(() => new Map());
+  const [grupoNomes, setGrupoNomes] = useState(() => new Map());
 
   const manuais = useMemo(
     () => filterManualItems(todosItens, foundMap, { unidadeId, query }),
@@ -156,7 +157,8 @@ export function CorrecaoNomesPage({
 
   const escolherReferencia = (item) => {
     setReferenciaId(item.id);
-    setNomeEditado(getItemLabel(item, foundMap));
+    // Sugere já o nome limpo (abreviações expandidas, capitalizado)
+    setNomeEditado(limparNomeParaExibicao(getItemLabel(item, foundMap)));
     setSelecionados((prev) => {
       const next = new Set(prev);
       next.delete(item.id);
@@ -181,18 +183,33 @@ export function CorrecaoNomesPage({
     setNomeEditado("");
   };
 
+  const getGrupoNome = (grupo) =>
+    String(grupoNomes.get(grupo.key) ?? grupo.sugestaoNome ?? grupo.referenceLabel ?? "").trim();
+
   const aplicarGrupo = async (grupo, targetIds) => {
-    if (!targetIds.length) {
+    const descricao = getGrupoNome(grupo);
+    if (!descricao) {
+      showT?.("Digite o nome padrão do grupo");
+      return;
+    }
+    const ids = new Set(targetIds);
+    // Se o nome final é diferente do rótulo da referência, renomeia ela também
+    if (descricao !== grupo.referenceLabel) ids.add(grupo.referenceId);
+    if (!ids.size) {
       showT?.("Nenhum item selecionado no grupo");
       return;
     }
-    const descricao = grupo.referenceLabel;
     const especie =
       inferEspecieFromDesc?.(descricao, especies) ||
       grupo.referenceItem?.especie ||
       "";
-    await onAplicarCorrecao?.({ targetIds, descricao, especie });
+    await onAplicarCorrecao?.({ targetIds: [...ids], descricao, especie });
     setGrupoChecks((prev) => {
+      const next = new Map(prev);
+      next.delete(grupo.key);
+      return next;
+    });
+    setGrupoNomes((prev) => {
       const next = new Map(prev);
       next.delete(grupo.key);
       return next;
@@ -316,6 +333,7 @@ export function CorrecaoNomesPage({
             {manuais.map((item) => {
               const label = getItemLabel(item, foundMap);
               const marca = getItemMarca(item, foundMap);
+              const found = getFoundEntry(item.id, foundMap);
               const isRef = item.id === referenciaId;
               const checked = selecionados.has(item.id);
               return (
@@ -346,7 +364,7 @@ export function CorrecaoNomesPage({
                     <div style={{ fontSize: 12, color: "var(--gov-text-muted)", marginTop: 4 }}>
                       {item.especie || "—"} · {item.unidadeNome || item.unidadeId} · {item.id}
                     </div>
-                    {foundMap[item.id]?.descricaoEdit && foundMap[item.id].descricaoEdit !== item.descricao && (
+                    {found?.descricaoEdit && found.descricaoEdit !== item.descricao && (
                       <div style={{ fontSize: 11, color: "#b45309", marginTop: 4 }}>
                         Catálogo: {item.descricao || "—"}
                       </div>
@@ -376,9 +394,11 @@ export function CorrecaoNomesPage({
           )}
           {grupos.map((grupo) => {
             const targets = getGrupoTargets(grupo);
+            const nomeFinal = getGrupoNome(grupo);
+            const totalAplicar = targets.length + (nomeFinal && nomeFinal !== grupo.referenceLabel ? 1 : 0);
             return (
               <div key={grupo.key} className="gov-card" style={{ ...cd, padding: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
                   <div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "var(--gov-primary)", textTransform: "uppercase" }}>
                       Sugestão automática · {grupo.members.length} itens
@@ -393,11 +413,28 @@ export function CorrecaoNomesPage({
                     type="button"
                     className="gov-btn gov-btn--primary"
                     style={bs}
-                    disabled={busy || !targets.length}
+                    disabled={busy || !totalAplicar || !nomeFinal}
                     onClick={() => aplicarGrupo(grupo, targets)}
                   >
-                    Padronizar {targets.length} variante(s)
+                    Padronizar {totalAplicar} item(ns)
                   </button>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", textTransform: "uppercase", marginBottom: 4 }}>
+                    ✨ Nome padronizado sugerido — edite se quiser
+                  </div>
+                  <TInput
+                    key={`nome-${grupo.key}`}
+                    initial={grupoNomes.get(grupo.key) ?? grupo.sugestaoNome ?? grupo.referenceLabel}
+                    onVal={(v) =>
+                      setGrupoNomes((prev) => {
+                        const next = new Map(prev);
+                        next.set(grupo.key, v);
+                        return next;
+                      })
+                    }
+                    style={{ ...inp, width: "100%" }}
+                  />
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {grupo.members.map((m) => {

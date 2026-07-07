@@ -703,16 +703,17 @@ function OrganizedApp({ firebaseOk, isProd }) {
         for (const id of ids) {
           const item = todosItens.find((i) => i.id === id);
           if (!item) continue;
-          const f = found.foundMap[id];
+          const f = getFoundEntry(id, found.foundMap);
           const antes = {
             descricao: f?.descricaoEdit || item.descricao,
             especie: f?.especieEdit || item.especie,
           };
           await fsSet("manuais", id, { ...item, descricao: desc, especie: esp, unidadeId: item.unidadeId });
           if (f) {
-            await fsSet("inventario", id, {
+            const invId = f.patrimonioId || f._id || normalizePatrimonioId(id);
+            await fsSet("inventario", invId, {
               ...f,
-              patrimonioId: id,
+              patrimonioId: invId,
               descricaoEdit: desc,
               especieEdit: esp,
               ultimaAtualizacao: now,
@@ -724,13 +725,14 @@ function OrganizedApp({ firebaseOk, isProd }) {
         }
 
         const idSet = new Set(ids);
+        const idSetNorm = new Set(ids.map((id) => normalizePatrimonioId(id)));
         const patchItem = (it) => (idSet.has(it.id) ? { ...it, descricao: desc, especie: esp } : it);
         setUnidades((prev) => prev.map((u) => ({ ...u, itens: u.itens.map(patchItem) })));
         inventario.setUnidadesAtivas((prev) => prev.map((u) => ({ ...u, itens: u.itens.map(patchItem) })));
 
         const nextFound = (found.foundRef.current || []).map((f) => {
           const pid = f.patrimonioId || f._id;
-          if (!idSet.has(pid)) return f;
+          if (!idSet.has(pid) && !idSetNorm.has(normalizePatrimonioId(pid))) return f;
           return { ...f, descricaoEdit: desc, especieEdit: esp, ultimaAtualizacao: now };
         });
         found.syncFoundRef(nextFound);
