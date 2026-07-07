@@ -17,7 +17,9 @@ export function LoginPage({ firebaseOk, isProd, loginError, onEmail, onSenha, on
         <div className="gov-alert gov-alert--warning" style={{ marginBottom: 16 }}>
           <p style={{ margin: 0, fontWeight: 700 }}>Firebase não configurado</p>
           <p style={{ margin: "6px 0 0" }}>
-            {isProd ? "Configure os secrets no GitHub Actions e faça redeploy." : "Crie o arquivo .env com as variáveis do Firebase."}
+            {isProd
+              ? "Configure VITE_FB_API_KEY, VITE_FB_PROJECT_ID e VITE_FB_STORAGE_BUCKET na Vercel (Settings → Environment Variables) ou nos secrets do GitHub Actions, depois faça redeploy."
+              : "Crie o arquivo .env com as variáveis do Firebase."}
           </p>
         </div>
       )}

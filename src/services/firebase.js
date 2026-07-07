@@ -7,6 +7,21 @@ import {
   avaliarNomeSimilar,
   normalizeCadastroMatricula,
 } from "../utils/cadastroDedup.js";
+import {
+  clearSupabaseAccessToken,
+  isSupabaseConfigured,
+  sbDel,
+  sbGetAll,
+  sbGetDoc,
+  sbGetDocPublic,
+  sbQueryPage,
+  sbSet,
+  sbSetStrict,
+  setSupabaseAccessToken,
+  useSupabaseForData,
+} from "./supabase.js";
+
+export { isSupabaseConfigured };
 
 const FB = {
   apiKey: import.meta.env.VITE_FB_API_KEY || "",
@@ -21,7 +36,7 @@ export function isFirebaseConfigured() {
 function assertFirebaseConfigured() {
   if (!isFirebaseConfigured()) {
     const msg = import.meta.env.PROD
-      ? "Firebase não configurado no deploy. Configure os secrets do GitHub Actions: VITE_FB_API_KEY, VITE_FB_PROJECT_ID e VITE_FB_STORAGE_BUCKET e faça um redeploy."
+      ? "Firebase não configurado no deploy. Configure VITE_FB_API_KEY, VITE_FB_PROJECT_ID e VITE_FB_STORAGE_BUCKET nas variáveis de ambiente (Vercel ou GitHub Actions) e faça redeploy."
       : "Firebase não configurado. Crie um arquivo .env na raiz com VITE_FB_API_KEY, VITE_FB_PROJECT_ID e VITE_FB_STORAGE_BUCKET e reinicie o servidor.";
     throw new Error(msg);
   }
@@ -45,11 +60,13 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 12000) {
 export function setFirebaseSession({ token, uid }) {
   authToken = token || null;
   authUid = uid || null;
+  setSupabaseAccessToken(token || null);
 }
 
 export function clearFirebaseSession() {
   authToken = null;
   authUid = null;
+  clearSupabaseAccessToken();
 }
 
 export function getFirebaseSession() {
@@ -189,6 +206,7 @@ function fromFsDoc(doc) {
 }
 
 export async function fsGetDocPublic(collection, docId) {
+  if (useSupabaseForData()) return sbGetDocPublic(collection, docId);
   assertFirebaseConfigured();
   const id = String(docId || "").trim();
   const col = String(collection || "").trim();
@@ -210,6 +228,7 @@ export async function fsGetDocPublic(collection, docId) {
 }
 
 export async function fsGetDoc(collection, docId) {
+  if (useSupabaseForData()) return sbGetDoc(collection, docId);
   assertFirebaseConfigured();
   if (!authToken) return null;
   const id = String(docId || "").trim();
@@ -275,6 +294,7 @@ function safeParseJson(val) {
 }
 
 export async function fsQueryPage(collection, opts = {}) {
+  if (useSupabaseForData()) return sbQueryPage(collection, opts);
   assertFirebaseConfigured();
   if (!authToken) return { docs: [], nextCursor: null, hasMore: false };
   const col = String(collection || "").trim();
@@ -346,6 +366,7 @@ export async function fsQueryPage(collection, opts = {}) {
 }
 
 export async function fsSet(collection, docId, data) {
+  if (useSupabaseForData()) return sbSet(collection, docId, data);
   assertFirebaseConfigured();
   if (!authToken) return;
   const col = String(collection || "").trim();
@@ -362,6 +383,7 @@ export async function fsSet(collection, docId, data) {
 }
 
 export async function fsSetStrict(collection, docId, data) {
+  if (useSupabaseForData()) return sbSetStrict(collection, docId, data);
   assertFirebaseConfigured();
   if (!authToken) throw new Error("Usuário não autenticado");
   const col = String(collection || "").trim();
@@ -390,11 +412,12 @@ export async function fsSetStrict(collection, docId, data) {
 }
 
 export async function fsGetAll(collection) {
+  const opts = arguments.length > 1 && typeof arguments[1] === "object" ? arguments[1] : {};
+  if (useSupabaseForData()) return sbGetAll(collection, opts);
   assertFirebaseConfigured();
   if (!authToken) return [];
   const col = String(collection || "").trim();
   if (!col) return [];
-  const opts = arguments.length > 1 && typeof arguments[1] === "object" ? arguments[1] : {};
   const pageSize = Math.max(1, Math.min(1000, Number(opts.pageSize || 250) || 250));
 
   if (opts.where || opts.orderBy) {
@@ -436,6 +459,7 @@ export async function fsGetAll(collection) {
 }
 
 export async function fsDel(collection, docId) {
+  if (useSupabaseForData()) return sbDel(collection, docId);
   assertFirebaseConfigured();
   if (!authToken) return;
   const col = String(collection || "").trim();
