@@ -35,14 +35,18 @@ jobs:
           VITE_FB_API_KEY: ${{ secrets.VITE_FB_API_KEY }}
           VITE_FB_PROJECT_ID: ${{ secrets.VITE_FB_PROJECT_ID }}
           VITE_FB_STORAGE_BUCKET: ${{ secrets.VITE_FB_STORAGE_BUCKET }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: >-
-          node -e "const req=['VITE_FB_API_KEY','VITE_FB_PROJECT_ID','VITE_FB_STORAGE_BUCKET'];const miss=req.filter(k=>!process.env[k]);if(miss.length){console.error('Missing secrets: '+miss.join(', '));process.exit(1)}console.log('Firebase secrets present')"
+          node -e "const req=['VITE_FB_API_KEY','VITE_FB_PROJECT_ID','VITE_FB_STORAGE_BUCKET'];const miss=req.filter(k=>!process.env[k]);if(miss.length){console.error('Missing secrets: '+miss.join(', '));process.exit(1)}console.log('Firebase secrets present');if(process.env.VITE_SUPABASE_URL)console.log('Supabase secrets present')"
 
       - name: Build
         env:
           VITE_FB_API_KEY: ${{ secrets.VITE_FB_API_KEY }}
           VITE_FB_PROJECT_ID: ${{ secrets.VITE_FB_PROJECT_ID }}
           VITE_FB_STORAGE_BUCKET: ${{ secrets.VITE_FB_STORAGE_BUCKET }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: npm run build
 
       - name: Upload artifact

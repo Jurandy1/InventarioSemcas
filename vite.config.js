@@ -7,11 +7,12 @@ const projectRoot = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig(({ command }) => {
   const repoName = "InventarioSemcas";
   const baseOverride = String(process.env.VITE_BASE || "").trim();
-  const isCI = Boolean(process.env.GITHUB_ACTIONS || process.env.CI);
+  // Só GitHub Pages usa subpath; Vercel/Netlify também setam CI=true — não usar CI aqui.
+  const isGitHubPages = Boolean(process.env.GITHUB_ACTIONS);
 
   return {
     envDir: projectRoot,
-    base: baseOverride || (command === "build" ? (isCI ? `/${repoName}/` : "/") : "/"),
+    base: baseOverride || (command === "build" ? (isGitHubPages ? `/${repoName}/` : "/") : "/"),
     plugins: [react({ jsxRuntime: "classic" })],
     build:
       command === "build"
