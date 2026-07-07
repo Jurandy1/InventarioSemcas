@@ -12,7 +12,7 @@ import { garantirCampanhaAberta } from "../services/campanha.js";
 import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "./categories.js";
 import { compressPhotoArray, getCachedData, bumpCacheBuster, perfMonitor, setCachedData } from "../utils/performance.js";
 import { loadUnidades } from "../utils/xlsx.js";
-import { gerarTodasSugestoes } from "../utils/suggestions.js";
+import { gerarSugestoesEspecie, gerarTodasSugestoes } from "../utils/suggestions.js";
 import { buildDoacaoOrigemExtras, defaultEstadoForItem, inferEspecieFromDesc, parseBrDate, sortByDataNF } from "../utils/itemHelpers.js";
 import { DoacaoOrigemFields } from "../components/DoacaoOrigemFields.jsx";
 import { detectTombosDuplicados } from "../utils/tomboDup.js";
@@ -63,6 +63,7 @@ const LazyBuscaPage = lazyWithRetry(() => import("../pages/BuscaPage.jsx").then(
 const LazyItensPage = lazyWithRetry(() => import("../pages/ItensPage.jsx").then((m) => ({ default: m.ItensPage })));
 const LazyNotasFiscaisPage = lazyWithRetry(() => import("../pages/NotasFiscaisPage.jsx").then((m) => ({ default: m.NotasFiscaisPage })));
 const LazyFinalizadosPage = lazyWithRetry(() => import("../pages/FinalizadosPage.jsx").then((m) => ({ default: m.FinalizadosPage })));
+const LazyCorrecaoNomesPage = lazyWithRetry(() => import("../pages/CorrecaoNomesPage.jsx").then((m) => ({ default: m.CorrecaoNomesPage })));
 
 const EMPTY_SUGESTOES = { descricoes: [], especies: [], marcas: [], fornecedores: [] };
 
@@ -675,12 +676,71 @@ function OrganizedApp({ firebaseOk, isProd }) {
   );
 
   const needsSugestoes =
-    tab === "inventario" || modal === "manual" || modal === "detalhe" || modal === "semTombo";
+    tab === "inventario" || tab === "correcao" || modal === "manual" || modal === "detalhe" || modal === "semTombo";
 
   const sugestoes = React.useMemo(() => {
     if (!needsSugestoes) return EMPTY_SUGESTOES;
     return gerarTodasSugestoes(todosItens);
   }, [needsSugestoes, todosItens]);
+
+  const aplicarCorrecaoNomes = React.useCallback(
+    async ({ targetIds, descricao, especie }) => {
+      if (!assertPodeEditar()) return;
+      const ids = (targetIds || []).filter(Boolean);
+      if (!ids.length) return;
+      setBusy(true);
+      try {
+        const now = new Date().toISOString();
+        const desc = String(descricao || "").trim();
+        const esp = String(especie || "").trim();
+        if (!desc) throw new Error("Nome vazio");
+
+        for (const id of ids) {
+          const item = todosItens.find((i) => i.id === id);
+          if (!item) continue;
+          const f = found.foundMap[id];
+          const antes = {
+            descricao: f?.descricaoEdit || item.descricao,
+            especie: f?.especieEdit || item.especie,
+          };
+          await fsSet("manuais", id, { ...item, descricao: desc, especie: esp, unidadeId: item.unidadeId });
+          if (f) {
+            await fsSet("inventario", id, {
+              ...f,
+              patrimonioId: id,
+              descricaoEdit: desc,
+              especieEdit: esp,
+              ultimaAtualizacao: now,
+              usuario: auth.logado?.nome || "",
+              email: auth.logado?.email || "",
+            });
+          }
+          await logAuditoria("rename", "manuais", id, antes, { descricao: desc, especie: esp });
+        }
+
+        const idSet = new Set(ids);
+        const patchItem = (it) => (idSet.has(it.id) ? { ...it, descricao: desc, especie: esp } : it);
+        setUnidades((prev) => prev.map((u) => ({ ...u, itens: u.itens.map(patchItem) })));
+        inventario.setUnidadesAtivas((prev) => prev.map((u) => ({ ...u, itens: u.itens.map(patchItem) })));
+
+        const nextFound = (found.foundRef.current || []).map((f) => {
+          const pid = f.patrimonioId || f._id;
+          if (!idSet.has(pid)) return f;
+          return { ...f, descricaoEdit: desc, especieEdit: esp, ultimaAtualizacao: now };
+        });
+        found.syncFoundRef(nextFound);
+        await setCachedData("inventario", nextFound);
+        bumpCacheBuster();
+        showT(`Nomes padronizados: ${ids.length} item(ns)`);
+      } catch (e) {
+        showT("Erro ao corrigir nomes: " + (e?.message || e));
+        throw e;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [assertPodeEditar, todosItens, found, auth.logado, inventario, setUnidades, showT]
+  );
 
   const tombosDup = React.useMemo(() => {
     if (tab !== "tombos") return [];
@@ -786,11 +846,13 @@ function OrganizedApp({ firebaseOk, isProd }) {
     { id: "tombos", l: "Tombos" },
     { id: "dash", l: "Dashboard" },
     ...(canGerirCoord ? [{ id: "coordenadores", l: "Coordenadores" }] : []),
+    ...(canGerirCoord ? [{ id: "correcao", l: "Nomes" }] : []),
     ...(isAdmin ? [{ id: "inventariantes", l: "Inventariantes" }] : []),
   ];
 
   useEffect(() => {
     if (!canGerirCoord && tab === "coordenadores") setTab("inventario");
+    if (!canGerirCoord && tab === "correcao") setTab("inventario");
     if (!isAdmin && tab === "inventariantes") setTab("inventario");
   }, [isAdmin, canGerirCoord, tab]);
 
@@ -2515,6 +2577,25 @@ function OrganizedApp({ firebaseOk, isProd }) {
         )}
 
         {tab === "coordenadores" && <CoordenadoresTab unidades={unidades} showT={showT} isMob={isMob} />}
+        {tab === "correcao" && canGerirCoord && (
+          <Suspense fallback={tabFallback}>
+            <LazyCorrecaoNomesPage
+              todosItens={todosItens}
+              unidades={unidades}
+              foundMap={found.foundMap}
+              especies={gerarSugestoesEspecie(todosItens)}
+              inferEspecieFromDesc={inferEspecieFromDesc}
+              onAplicarCorrecao={aplicarCorrecaoNomes}
+              onViewImage={onViewImage}
+              showT={showT}
+              busy={busy}
+              isMob={isMob}
+              inp={inp}
+              cd={cd}
+              bs={bs}
+            />
+          </Suspense>
+        )}
         {tab === "inventariantes" && <InventariantesTab showT={showT} isMob={isMob} />}
       </NavBar>
 
