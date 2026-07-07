@@ -103,6 +103,19 @@ function NavIcon({ id, active, size = 18 }) {
   }
 }
 
+const MOBILE_NAV_LABELS = {
+  inventario: "Inv.",
+  finalizados: "Fin.",
+  busca: "Busca",
+  itens: "Itens",
+  nf: "NF",
+  tombos: "Tomb.",
+  dash: "Dash",
+  coordenadores: "Coord.",
+  inventariantes: "Invit.",
+  correcao: "Nomes",
+};
+
 export function NavBar({
   navs,
   activeTab,
@@ -149,8 +162,9 @@ export function NavBar({
           </div>
           <div className="gov-header__actions">
             {logado && (
-              <button type="button" className="gov-btn gov-btn--ghost" onClick={onReloadXlsx}>
-                {loadingXlsx ? "Atualizando…" : "Atualizar base"}
+              <button type="button" className="gov-btn gov-btn--ghost gov-btn--compact-mobile" onClick={onReloadXlsx}>
+                {loadingXlsx ? "…" : <span className="gov-btn__full-label">Atualizar base</span>}
+                {!loadingXlsx && <span className="gov-btn__short-label" aria-hidden="true">↻</span>}
               </button>
             )}
             <button type="button" className="gov-btn gov-btn--ghost" onClick={onLogout}>
@@ -205,7 +219,7 @@ export function NavBar({
               <div style={{ height: 20, display: "flex", alignItems: "center" }}>
                 <NavIcon id={n.id} active={activeTab === n.id} size={20} />
               </div>
-              <span>{n.l}</span>
+              <span>{MOBILE_NAV_LABELS[n.id] || n.l}</span>
             </button>
           ))}
         </nav>

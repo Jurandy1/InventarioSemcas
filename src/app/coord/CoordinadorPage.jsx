@@ -1,19 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Badge } from "../components/Badge.jsx";
-import { CameraModal } from "../components/CameraModal.jsx";
-import { TArea, TInput } from "../components/FormFields.jsx";
-import { EC, ESTADOS, SC, SITUACOES } from "../constants/inventory.js";
-import { fsGetAll, fsSet } from "../services/firebase.js";
-import { uploadPhotos } from "../services/storage.js";
-import { compressPhotoArray } from "../utils/performance.js";
-import { loadUnidades } from "../utils/xlsx.js";
-import { maskTipoEntrada } from "../utils/itemHelpers.js";
-import { PhotoThumb } from "../components/PhotoThumb.jsx";
-import { getDisplayPhotoUrl } from "../services/storage.js";
-import { gerarRelatorioExcelCoord, offlineManager, queueOfflineWithPhotos } from "../services/features.js";
-import { fecharCampanha, isCampanhaFechada, loadCampanhaAtiva } from "../services/campanha.js";
-import { getAppStyles, COLORS } from "../constants/theme.js";
-import { useOfflineQueue } from "../hooks/useOfflineQueue.js";
+import { Badge } from "../../components/Badge.jsx";
+import { CameraModal } from "../../components/CameraModal.jsx";
+import { TArea, TInput } from "../../components/FormFields.jsx";
+import { EC, ESTADOS, SC, SITUACOES } from "../../constants/inventory.js";
+import { fsGetAll, fsSet } from "../../services/firebase.js";
+import { uploadPhotos } from "../../services/storage.js";
+import { compressPhotoArray } from "../../utils/performance.js";
+import { loadUnidades } from "../../utils/xlsx.js";
+import { maskTipoEntrada } from "../../utils/itemHelpers.js";
+import { PhotoThumb } from "../../components/PhotoThumb.jsx";
+import { getDisplayPhotoUrl } from "../../services/storage.js";
+import { gerarRelatorioExcelCoord, offlineManager, queueOfflineWithPhotos } from "../../services/features.js";
+import { fecharCampanha, isCampanhaFechada, loadCampanhaAtiva } from "../../services/campanha.js";
+import { getAppStyles, COLORS } from "../../constants/theme.js";
+import { useOfflineQueue } from "../../hooks/useOfflineQueue.js";
 
 const COORD_PER_PAGE = 30;
 
@@ -176,7 +176,7 @@ export function CoordinadorPage({ token, coordData, onLogout }) {
     const checkStatus = async () => {
       if (document.visibilityState === "hidden") return;
       try {
-        const { obterCoordPorUid } = await import("../services/firebase.js");
+        const { obterCoordPorUid } = await import("../../services/firebase.js");
         const coord = await obterCoordPorUid(coordData?.uid);
 
         if (!coord || coord.status === "rejeitada" || coord.status === "desativada") {

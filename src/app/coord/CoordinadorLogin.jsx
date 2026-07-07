@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { AuthPageLayout } from "../components/AuthPageLayout.jsx";
-import { getAppStyles } from "../constants/theme.js";
-import { clearFirebaseSession, fbLogin, isFirebaseConfigured, obterCoordPorUid, refreshAuthToken, setFirebaseSession } from "../services/firebase.js";
-import { clearCoordSession, loadCoordSession, saveCoordSession } from "../utils/coordRedirect.js";
+import { AuthPageLayout } from "../../components/AuthPageLayout.jsx";
+import { getAppStyles } from "../../constants/theme.js";
+import { clearFirebaseSession, fbLogin, isFirebaseConfigured, obterCoordPorUid, refreshAuthToken, setFirebaseSession } from "../../services/firebase.js";
+import { clearCoordSession, loadCoordSession, saveCoordSession } from "../../utils/coordRedirect.js";
 import { CoordinadorPage } from "./CoordinadorPage.jsx";
 
 export function CoordinadorLogin() {

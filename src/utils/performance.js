@@ -1,5 +1,5 @@
 import { fsQueryPage } from "../services/firebase.js";
-import { getPhotoBatchDelayMs, getPhotoBatchSize } from "./mobilePerf.js";
+import { getPhotoBatchDelayMs, getPhotoBatchSize, shouldReduceWork } from "./mobilePerf.js";
 
 export async function paginarItens(unidadeId, pageSize = 50, cursor = null) {
   try {
@@ -220,10 +220,10 @@ export async function compressPhotoArray(base64Array, onProgress) {
   const results = [];
   const BATCH_SIZE = getPhotoBatchSize();
   const batchDelay = getPhotoBatchDelayMs();
-  const slow = BATCH_SIZE === 1;
-  const maxW = slow ? 1280 : 1600;
-  const maxH = slow ? 960 : 1200;
-  const targetBytes = slow ? 280 * 1024 : 360 * 1024;
+  const reduce = shouldReduceWork();
+  const maxW = reduce ? 1120 : 1600;
+  const maxH = reduce ? 840 : 1200;
+  const targetBytes = reduce ? 240 * 1024 : 360 * 1024;
 
   for (let i = 0; i < base64Array.length; i += BATCH_SIZE) {
     const batch = base64Array.slice(i, i + BATCH_SIZE);

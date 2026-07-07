@@ -5,3 +5,8 @@ dist
 
 scripts/serviceAccountKey.json
 
+# IDE / logs
+.cursor/
+.claude/
+*.log
+

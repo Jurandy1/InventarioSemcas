@@ -18,22 +18,87 @@ export function isLikelySlowDevice() {
   return false;
 }
 
+export function isMobileViewport() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia("(max-width: 767px)").matches;
+}
+
+/** Celular ou aparelho lento — reduz trabalho em background. */
+export function shouldReduceWork() {
+  return isMobileViewport() || isLikelySlowDevice();
+}
+
+/** Margem do IntersectionObserver: menor no mobile para carregar menos fotos à frente. */
+export function getLazyImageRootMargin() {
+  if (shouldReduceWork()) return "60px";
+  return "200px";
+}
+
+/** Limites de captura da câmera conforme o aparelho. */
+export function getCameraCaptureLimits() {
+  const mobile = isMobileViewport();
+  const slow = isLikelySlowDevice();
+  if (mobile || slow) {
+    return {
+      idealWidth: 1280,
+      idealHeight: 720,
+      maxWidth: 1280,
+      maxHeight: 960,
+      jpegQuality: 0.72,
+    };
+  }
+  return {
+    idealWidth: 1920,
+    idealHeight: 1080,
+    maxWidth: 1600,
+    maxHeight: 1200,
+    jpegQuality: 0.8,
+  };
+}
+
+/** Paginação e lotes de lista — menos itens no mobile. */
+export function getListLimits(isMobile = isMobileViewport()) {
+  if (isMobile) {
+    return {
+      perPage: 12,
+      coletadosLimit: 10,
+      localItemsStep: 10,
+      coletadosStep: 10,
+    };
+  }
+  return {
+    perPage: 24,
+    coletadosLimit: 20,
+    localItemsStep: 15,
+    coletadosStep: 20,
+  };
+}
+
+/** Intervalos de polling de presença da equipe. */
+export function getPresencePollMs(isMobile = isMobileViewport()) {
+  if (isMobile || isLikelySlowDevice()) {
+    return { activeMs: 60_000, hiddenMs: 180_000, teamActiveMs: 90_000, teamHiddenMs: 300_000 };
+  }
+  return { activeMs: 45_000, hiddenMs: 120_000, teamActiveMs: 45_000, teamHiddenMs: 180_000 };
+}
+
 export function isPageHidden() {
   return typeof document !== "undefined" && document.hidden;
 }
 
 /** Intervalos de sync mais longos em celular lento ou aba em segundo plano. */
-export function getSyncIntervals({ paused = false, isMobile = false } = {}) {
+export function getSyncIntervals({ paused = false, isMobile = false, lowPriority = false } = {}) {
   const slow = isLikelySlowDevice();
   const base = slow || isMobile ? 2 : 1;
+  const tabMul = lowPriority ? 3 : 1;
   if (paused) {
-    return { inventarioMs: Math.round(300000 * base), locaisMs: 999999999 }; // 5 minutes when paused
+    return { inventarioMs: Math.round(300000 * base * tabMul), locaisMs: 999999999 };
   }
   return {
-    inventarioMs: Math.round(60000 * base), // 1 minute when active (was 15s)
-    locaisMs: Math.round(120000 * base), // 2 minutes (was 30s)
-    hiddenInventarioMs: Math.round(300000 * base), // 5 minutes (was 2m)
-    hiddenLocaisMs: Math.round(600000 * base), // 10 minutes (was 3m)
+    inventarioMs: Math.round(60000 * base * tabMul),
+    locaisMs: Math.round(120000 * base * tabMul),
+    hiddenInventarioMs: Math.round(300000 * base * tabMul),
+    hiddenLocaisMs: Math.round(600000 * base * tabMul),
   };
 }
 
@@ -80,9 +145,11 @@ export function createVisibilityAwarePoller(fn, { activeMs, hiddenMs = activeMs 
 
 /** Tamanho de lote para compressão de fotos conforme o aparelho. */
 export function getPhotoBatchSize() {
-  return isLikelySlowDevice() ? 1 : 2;
+  if (shouldReduceWork()) return 1;
+  return 2;
 }
 
 export function getPhotoBatchDelayMs() {
-  return isLikelySlowDevice() ? 180 : 100;
+  if (shouldReduceWork()) return 220;
+  return 100;
 }

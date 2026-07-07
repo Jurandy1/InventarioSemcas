@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { Badge } from "../components/Badge.jsx";
-import { TInput, TArea } from "../components/FormFields.jsx";
+import { Badge } from "../../components/Badge.jsx";
+import { TInput, TArea } from "../../components/FormFields.jsx";
 import {
   obterCoordenadores,
   gerarLinkConviteCoordinador,
   aprovarCoordenador,
   rejeitarCoordenador,
   desativarCoordenador,
-} from "../services/firebase.js";
+} from "../../services/firebase.js";
 
 export function CoordenadoresTab({ unidades, showT, isMob }) {
   const [coordPendentes, setCoordPendentes] = useState([]);

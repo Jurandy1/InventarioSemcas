@@ -1,5 +1,6 @@
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { getDisplayPhotoUrl } from "../services/storage.js";
+import { getLazyImageRootMargin } from "../utils/mobilePerf.js";
 
 /**
  * Imagem com lazy-load e resolução automática de URLs Firebase.
@@ -15,6 +16,7 @@ export function SmartImg({ src, alt = "", style, ...rest }) {
   const [visible, setVisible] = useState(false);
   const fetchingRef = useRef(false);
   const safeSrc = String(src || "");
+  const rootMargin = useMemo(() => getLazyImageRootMargin(), []);
 
   useEffect(() => {
     const el = ref.current;
@@ -30,7 +32,7 @@ export function SmartImg({ src, alt = "", style, ...rest }) {
           obs.disconnect();
         }
       },
-      { rootMargin: "200px", threshold: 0.01 }
+      { rootMargin, threshold: 0.01 }
     );
     obs.observe(el);
     return () => obs.disconnect();

@@ -3,8 +3,9 @@ import MiniSearch from "minisearch";
 import { Badge } from "../components/Badge.jsx";
 import { TInput } from "../components/FormFields.jsx";
 import { ESTADOS, EC } from "../constants/inventory.js";
-import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "../app/categories.js";
+import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "../constants/categories.js";
 import { SmartImg } from "../components/SmartImg.jsx";
+import { getListLimits } from "../utils/mobilePerf.js";
 
 function getItemCode(item) {
   return item?.patrimonioLabel || item?.id || "—";
@@ -15,6 +16,7 @@ function getDisplayDesc(item, foundEntry) {
 }
 
 export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva, formRef, bumpFt, setModal, isMob, inp, cd, bs, onViewImage }) {
+  const listLimits = React.useMemo(() => getListLimits(isMob), [isMob]);
   const [localCat, setLocalCat] = useState("Todas");
   const [localSub, setLocalSub] = useState(null);
   const [localEst, setLocalEst] = useState("Todos");
@@ -22,7 +24,12 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
   const [localStat, setLocalStat] = useState("Todos");
   const [localQ, setLocalQ] = useState("");
   const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(24);
+  const [perPage, setPerPage] = useState(() => getListLimits(isMob).perPage);
+
+  useEffect(() => {
+    setPerPage(getListLimits(isMob).perPage);
+    setPage(1);
+  }, [isMob]);
   const defQ = React.useDeferredValue(localQ);
 
   const resetPage = () => setPage(1);

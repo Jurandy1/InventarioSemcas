@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Badge } from "../components/Badge.jsx";
-import { TArea, TInput } from "../components/FormFields.jsx";
+import { Badge } from "../../components/Badge.jsx";
+import { TArea, TInput } from "../../components/FormFields.jsx";
 import {
   obterInventariantes,
   aprovarInventariante,
@@ -8,8 +8,8 @@ import {
   desativarInventariante,
   gerarLinkConviteInventariante,
   sincronizarIndiceCadastro,
-} from "../services/firebase.js";
-import { acharDuplicatasNaLista } from "../utils/cadastroDedup.js";
+} from "../../services/firebase.js";
+import { acharDuplicatasNaLista } from "../../utils/cadastroDedup.js";
 
 export function InventariantesTab({ showT, isMob }) {
   const [pendentes, setPendentes] = useState([]);

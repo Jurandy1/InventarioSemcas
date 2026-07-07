@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { getCameraCaptureLimits } from "../utils/mobilePerf.js";
 
 function canvasToJpegObjectUrl(canvas, quality = 0.8) {
   return new Promise((resolve) => {
@@ -170,10 +171,15 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
     }
 
     try {
+      const caps = getCameraCaptureLimits();
       let s;
       try {
         s = await getUserMedia({
-          video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+          video: {
+            facingMode: facing,
+            width: { ideal: caps.idealWidth },
+            height: { ideal: caps.idealHeight },
+          },
         });
       } catch (firstErr) {
         if (firstErr?.name === "OverconstrainedError" || facing === "environment") {
@@ -273,8 +279,9 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
     c.height = v.videoHeight;
     const ctx = c.getContext("2d");
     ctx.drawImage(v, 0, 0);
-    const maxW = 1600;
-    const maxH = 1200;
+    const caps = getCameraCaptureLimits();
+    const maxW = caps.maxWidth;
+    const maxH = caps.maxHeight;
     let w = c.width;
     let h = c.height;
     if (w > maxW || h > maxH) {
@@ -283,9 +290,9 @@ export function CameraModal({ onCapture, onClose, existingPhotos = [], onPhotosC
       c2.width = w * sc;
       c2.height = h * sc;
       c2.getContext("2d").drawImage(c, 0, 0, c2.width, c2.height);
-      canvasToJpegObjectUrl(c2, 0.8).then(setPreview);
+      canvasToJpegObjectUrl(c2, caps.jpegQuality).then(setPreview);
     } else {
-      canvasToJpegObjectUrl(c, 0.8).then(setPreview);
+      canvasToJpegObjectUrl(c, caps.jpegQuality).then(setPreview);
     }
   };
 

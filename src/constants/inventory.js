@@ -20,6 +20,7 @@ export const SC = {
 };
 
 export const PER_PAGE = 20;
+export const PER_PAGE_MOBILE = 12;
 
 /** UFs para origem de doação (manual / sem tombo). */
 export const UFS_BRASIL = [

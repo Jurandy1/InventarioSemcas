@@ -101,13 +101,13 @@ async function boot() {
   const root = createRoot(el);
 
   if (isInvRegistro) {
-    const mod = await importWithRetry(() => import("./app/InventarianteRegistro.jsx"));
+    const mod = await importWithRetry(() => import("./app/inventariante/InventarianteRegistro.jsx"));
     root.render(React.createElement(React.StrictMode, null, React.createElement(mod.InventarianteRegistro)));
   } else if (isCoordRegistro) {
-    const mod = await importWithRetry(() => import("./app/CoordinadorRegistro.jsx"));
+    const mod = await importWithRetry(() => import("./app/coord/CoordinadorRegistro.jsx"));
     root.render(React.createElement(React.StrictMode, null, React.createElement(mod.CoordinadorRegistro)));
   } else if (isCoordPage) {
-    const mod = await importWithRetry(() => import("./app/CoordinadorLogin.jsx"));
+    const mod = await importWithRetry(() => import("./app/coord/CoordinadorLogin.jsx"));
     root.render(React.createElement(React.StrictMode, null, React.createElement(mod.CoordinadorLogin)));
   } else {
     const mod = await importWithRetry(() => import("./app/App.jsx"));

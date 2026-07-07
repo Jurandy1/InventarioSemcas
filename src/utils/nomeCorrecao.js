@@ -1,5 +1,5 @@
 import { normalizeMatchText, textSimilarity } from "./ajusteMatch.js";
-import { getFoundEntry } from "./patrimonioId.js";
+import { getFoundEntry, isItemInventariado } from "./patrimonioId.js";
 
 export function getItemLabel(item, foundMap) {
   const f = getFoundEntry(item?.id, foundMap);
@@ -190,7 +190,7 @@ export function describeNomeAtributos(nome) {
   for (const q of a.qualificadores) chips.push({ tipo: "qualificador", texto: q });
   for (const cor of a.cores) chips.push({ tipo: "cor", texto: cor });
   for (const mat of a.materiais) chips.push({ tipo: "material", texto: mat });
-  for (const [palavra, com] of a.flags) chips.push({ tipo: "flag", texto: `${com ? "c/" : "s/"} ${palavra}` });
+  for (const [palavra, com] of a.flags) chips.push({ tipo: "flag", texto: `${com ? "com" : "sem"} ${palavra}` });
   for (const [unidade, valores] of a.medidas) {
     for (const v of valores) chips.push({ tipo: "medida", texto: `${v} ${unidade}` });
   }
@@ -245,16 +245,128 @@ export function nomeSimilarity(a, b) {
 
 /**
  * Limpa um nome para exibição/padronização: expande abreviações mantendo o
- * restante do texto, tira espaços duplicados e capitaliza a primeira letra.
+ * restante do texto, tira espaços duplicados e aplica capitalização PT-BR.
  */
-export function limparNomeParaExibicao(nome) {
+const PT_LOWER_WORDS = new Set([
+  "de", "da", "do", "das", "dos", "e", "em", "com", "sem", "para", "a", "o", "as", "os", "na", "no", "nas", "nos",
+]);
+
+/**
+ * Padronização completa de um nome de item.
+ * Ex.: "Cadeira Plastica s/Braço" → "Cadeira de plástico sem braço"
+ */
+const ORTOGRAFIA = {
+  plastico: "plástico",
+  plastica: "plástico",
+  aco: "aço",
+  aluminio: "alumínio",
+  braco: "braço",
+  giratorio: "giratório",
+  giratoria: "giratória",
+  regulavel: "regulável",
+  marmore: "mármore",
+  analogico: "analógico",
+  analogica: "analógico",
+  eletrico: "elétrico",
+  eletrica: "elétrico",
+  portatil: "portátil",
+  universitario: "universitário",
+  universitaria: "universitário",
+  salmao: "salmão",
+};
+
+const MATERIAIS_COM_DE = new Set([
+  "plástico", "plastico", "madeira", "aço", "aco", "metal", "ferro", "alumínio", "aluminio",
+  "mdf", "mdp", "inox", "couro", "tecido", "vidro", "granito", "mármore", "marmore", "acrilico",
+  "acrilico", "formica", "compensado", "polipropileno", "courino", "vime", "fibra",
+]);
+
+function aplicarOrtografia(text) {
+  return String(text || "")
+    .split(" ")
+    .map((w) => {
+      if (!w) return "";
+      const low = w.toLowerCase();
+      return ORTOGRAFIA[low] || w;
+    })
+    .join(" ");
+}
+
+function inserirPreposicaoDe(text) {
+  const words = String(text || "").split(" ").filter(Boolean);
+  const out = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    const wLow = w.toLowerCase();
+    const prevLow = out[out.length - 1]?.toLowerCase();
+    if (
+      i > 0 &&
+      MATERIAIS_COM_DE.has(wLow) &&
+      prevLow &&
+      prevLow !== "de" &&
+      prevLow !== "com" &&
+      prevLow !== "sem" &&
+      prevLow !== "para"
+    ) {
+      out.push("de");
+    }
+    out.push(w);
+  }
+  return out.join(" ");
+}
+
+function expandirAbreviacoesCompletas(nome) {
   let t = String(nome || "").trim().replace(/\s+/g, " ");
+  t = t.replace(/\bs\/\s*p(?:orta)?\b/gi, "sem porta");
+  t = t.replace(/\bc\/\s*p(?:orta)?\b/gi, "com porta");
+  t = t.replace(/\bs\/\s*enc(?:osto)?\b/gi, "sem encosto");
+  t = t.replace(/\bc\/\s*enc(?:osto)?\b/gi, "com encosto");
   t = t.replace(/\bs\/\s*b(?:r(?:aco|aço)?)?\b/gi, "sem braço");
   t = t.replace(/\bc\/\s*b(?:r(?:aco|aço)?)?\b/gi, "com braço");
+  t = t.replace(/\bs\/\s*rod(?:inha|as)?\b/gi, "sem rodinha");
+  t = t.replace(/\bc\/\s*rod(?:inha|as)?\b/gi, "com rodinha");
+  t = t.replace(/\bs\/\s*gav(?:eta)?s?\b/gi, "sem gaveta");
+  t = t.replace(/\bc\/\s*gav(?:eta)?s?\b/gi, "com gaveta");
   t = t.replace(/\bs\/\s*/gi, "sem ").replace(/\bc\/\s*/gi, "com ").replace(/\bp\/\s*/gi, "para ");
-  t = t.replace(/\s+/g, " ").trim();
-  if (!t) return "";
-  return t.charAt(0).toUpperCase() + t.slice(1);
+  t = t.replace(/\breg\.?\b/gi, "regulável");
+  t = t.replace(/\bgir\.?\b/gi, "giratório");
+  return t.replace(/\s+/g, " ").trim();
+}
+
+export function padronizarNome(nome) {
+  let t = expandirAbreviacoesCompletas(nome);
+  t = aplicarOrtografia(t);
+  t = inserirPreposicaoDe(t);
+  t = formatarNomePadrao(t);
+  return t.trim();
+}
+
+/** Nome precisa de padronização de grafia? */
+export function precisaPadronizacao(nome) {
+  const original = String(nome || "").trim();
+  if (!original) return false;
+  const pad = padronizarNome(original);
+  return normalizeMatchText(original) !== normalizeMatchText(pad);
+}
+
+export function limparNomeParaExibicao(nome) {
+  return padronizarNome(nome);
+}
+
+/** Capitalização inteligente para descrições de patrimônio (preserva siglas curtas). */
+export function formatarNomePadrao(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  return raw
+    .split(" ")
+    .map((word, idx) => {
+      if (!word) return "";
+      const low = word.toLowerCase();
+      if (idx > 0 && PT_LOWER_WORDS.has(low)) return low;
+      if (/^[A-Z0-9]{2,5}$/.test(word) && word === word.toUpperCase()) return word;
+      return low.charAt(0).toUpperCase() + low.slice(1);
+    })
+    .join(" ");
 }
 
 /**
@@ -354,7 +466,218 @@ export function clusterSimilarManualItems(items, foundMap, { minScore = 0.68 } =
   return groups.sort((a, b) => b.members.length - a.members.length);
 }
 
-export function filterManualItems(items, foundMap, { unidadeId, query } = {}) {
+/**
+ * Agrupa itens que serão padronizados para o MESMO nome final.
+ * Vários itens com o mesmo nome padronizado é normal (ex.: 20 cadeiras iguais).
+ */
+export function agruparItensParaPadronizacao(items, foundMap, foundSet, { unidadeId } = {}) {
+  let list = (items || []).filter((i) => isItemInventariado(i.id, foundSet));
+  if (unidadeId && unidadeId !== "todas") {
+    list = list.filter((i) => i.unidadeId === unidadeId);
+  }
+
+  const map = new Map();
+  for (const item of list) {
+    const labelOriginal = getItemLabel(item, foundMap);
+    if (!precisaPadronizacao(labelOriginal)) continue;
+    const nomePadronizado = padronizarNome(labelOriginal);
+    if (!map.has(nomePadronizado)) {
+      map.set(nomePadronizado, { key: nomePadronizado, nomePadronizado, members: [] });
+    }
+    map.get(nomePadronizado).members.push({
+      item,
+      id: item.id,
+      labelOriginal,
+      nomePadronizado,
+      marca: getItemMarca(item, foundMap),
+    });
+  }
+
+  return [...map.values()].sort((a, b) => b.members.length - a.members.length);
+}
+
+export const FILTRO_PROBLEMA = {
+  TODOS: "todos",
+  ABREVIACAO: "abreviacao",
+  MAIUSCULAS: "maiusculas",
+  SEM_FOTO: "sem_foto",
+  SEM_ESPECIE: "sem_especie",
+  BAIXA_QUALIDADE: "baixa_qualidade",
+  PRECISA_PADRONIZAR: "precisa_padronizar",
+};
+
+export const ESTADO_LISTA = {
+  PENDENTES: "pendentes",
+  CORRIGIDOS: "corrigidos",
+};
+
+/** Problemas de grafia/formatação no nome de um item manual. */
+export function detectProblemasNome(item, foundMap) {
+  const label = getItemLabel(item, foundMap);
+  const problemas = [];
+  if (!label || label.length < 4) {
+    problemas.push({ id: "curto", label: "Nome muito curto", severidade: "alta" });
+  }
+  if (/\b[csp]\//i.test(label)) {
+    problemas.push({ id: "abreviacao", label: "Abreviação (c/, s/, p/)", severidade: "media" });
+  }
+  if (label.length > 4 && label === label.toUpperCase() && /[A-Z]/.test(label)) {
+    problemas.push({ id: "maiusculas", label: "Todo em MAIÚSCULAS", severidade: "media" });
+  }
+  if (label.length > 4 && label === label.toLowerCase()) {
+    problemas.push({ id: "minusculas", label: "Todo em minúsculas", severidade: "baixa" });
+  }
+  if (/[^\w\sáàâãéêíóôõúüçÁÀÂÃÉÊÍÓÔÕÚÜÇ.,/\-+%]/.test(label)) {
+    problemas.push({ id: "caracteres", label: "Caracteres incomuns", severidade: "baixa" });
+  }
+  if (!getItemFotos(item.id, foundMap).length) {
+    problemas.push({ id: "sem_foto", label: "Sem foto", severidade: "baixa" });
+  }
+  const esp = String(item.especie || getFoundEntry(item.id, foundMap)?.especieEdit || "").trim();
+  if (!esp || esp === "—") {
+    problemas.push({ id: "sem_especie", label: "Espécie não definida", severidade: "media" });
+  }
+  if (precisaPadronizacao(label)) {
+    problemas.push({ id: "precisa_padronizar", label: "Grafia não padronizada", severidade: "media" });
+  }
+  return problemas;
+}
+
+/** Pontuação 0–100: quanto maior, melhor o nome. */
+export function computeNomeQualityScore(item, foundMap) {
+  const label = getItemLabel(item, foundMap);
+  let score = 100;
+  const problemas = detectProblemasNome(item, foundMap);
+  for (const p of problemas) {
+    if (p.severidade === "alta") score -= 28;
+    else if (p.severidade === "media") score -= 14;
+    else score -= 6;
+  }
+  const palavras = normalizeMatchText(expandNomeAbreviacoes(label)).split(" ").filter(Boolean).length;
+  if (palavras < 2) score -= 10;
+  if (getItemFotos(item.id, foundMap).length) score += 5;
+  if (/[áéíóúâêôãõç]/i.test(label)) score += 3;
+  return Math.max(0, Math.min(100, score));
+}
+
+/** KPIs do painel de padronização. */
+export function buildCorrecaoDashboard(items, foundMap, foundSet, lotes = []) {
+  const inventariados = (items || []).filter((i) => isItemInventariado(i.id, foundSet));
+  let comProblema = 0;
+  let semFoto = 0;
+  let comAbrev = 0;
+  let baixaQualidade = 0;
+  let precisaPadronizar = 0;
+  let jaPadronizados = 0;
+  for (const item of inventariados) {
+    const label = getItemLabel(item, foundMap);
+    const probs = detectProblemasNome(item, foundMap);
+    if (probs.length) comProblema++;
+    if (!getItemFotos(item.id, foundMap).length) semFoto++;
+    if (probs.some((p) => p.id === "abreviacao")) comAbrev++;
+    if (computeNomeQualityScore(item, foundMap) < 55) baixaQualidade++;
+    if (precisaPadronizacao(label)) precisaPadronizar++;
+    else jaPadronizados++;
+  }
+  const itensPadronizaveis = (lotes || []).reduce((acc, g) => acc + g.members.length, 0);
+  return {
+    total: inventariados.length,
+    comProblema,
+    precisaPadronizar,
+    jaPadronizados,
+    lotes: lotes.length,
+    itensPadronizaveis,
+    semFoto,
+    comAbrev,
+    baixaQualidade,
+  };
+}
+
+/** Diff palavra a palavra para preview antes/depois. */
+export function diffNomePalavras(antes, depois) {
+  const a = normalizeMatchText(expandNomeAbreviacoes(antes)).split(" ").filter(Boolean);
+  const b = normalizeMatchText(expandNomeAbreviacoes(depois)).split(" ").filter(Boolean);
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1][j - 1] + 1
+          : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  const antesOut = [];
+  const depoisOut = [];
+  let i = m;
+  let j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      antesOut.unshift({ text: a[i - 1], type: "same" });
+      depoisOut.unshift({ text: b[j - 1], type: "same" });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      depoisOut.unshift({ text: b[j - 1], type: "added" });
+      j--;
+    } else {
+      antesOut.unshift({ text: a[i - 1], type: "removed" });
+      i--;
+    }
+  }
+  return { antes: antesOut, depois: depoisOut };
+}
+
+function matchesFiltroProblema(item, foundMap, filtro) {
+  if (!filtro || filtro === FILTRO_PROBLEMA.TODOS) return true;
+  const probs = detectProblemasNome(item, foundMap);
+  if (filtro === FILTRO_PROBLEMA.BAIXA_QUALIDADE) {
+    return computeNomeQualityScore(item, foundMap) < 55;
+  }
+  if (filtro === FILTRO_PROBLEMA.PRECISA_PADRONIZAR) {
+    return precisaPadronizacao(getItemLabel(item, foundMap));
+  }
+  return probs.some((p) => p.id === filtro);
+}
+
+export function filterInventariadosItems(items, foundMap, foundSet, { unidadeId, query, filtroProblema, estadoLista } = {}) {
+  let list = (items || []).filter((i) => isItemInventariado(i.id, foundSet));
+  if (unidadeId && unidadeId !== "todas") {
+    list = list.filter((i) => i.unidadeId === unidadeId);
+  }
+  const q = String(query || "").trim().toLowerCase();
+  if (q) {
+    list = list.filter((i) => {
+      const label = getItemLabel(i, foundMap).toLowerCase();
+      const marca = getItemMarca(i, foundMap).toLowerCase();
+      return label.includes(q) || marca.includes(q) || String(i.id).toLowerCase().includes(q);
+    });
+  }
+  if (estadoLista === ESTADO_LISTA.PENDENTES) {
+    list = list.filter((i) => precisaPadronizacao(getItemLabel(i, foundMap)));
+  } else if (estadoLista === ESTADO_LISTA.CORRIGIDOS) {
+    list = list.filter((i) => !precisaPadronizacao(getItemLabel(i, foundMap)));
+  }
+  if (filtroProblema && filtroProblema !== FILTRO_PROBLEMA.TODOS) {
+    list = list.filter((i) => matchesFiltroProblema(i, foundMap, filtroProblema));
+  }
+  if (estadoLista === ESTADO_LISTA.CORRIGIDOS) {
+    return list.sort((a, b) =>
+      getItemLabel(a, foundMap).localeCompare(getItemLabel(b, foundMap), "pt-BR")
+    );
+  }
+  return list.sort((a, b) => {
+    const qa = computeNomeQualityScore(a, foundMap);
+    const qb = computeNomeQualityScore(b, foundMap);
+    if (qa !== qb) return qa - qb;
+    return getItemLabel(a, foundMap).localeCompare(getItemLabel(b, foundMap), "pt-BR");
+  });
+}
+
+/** @deprecated Use filterInventariadosItems */
+export function filterManualItems(items, foundMap, { unidadeId, query, filtroProblema, foundSet } = {}) {
+  if (foundSet) return filterInventariadosItems(items, foundMap, foundSet, { unidadeId, query, filtroProblema });
   let list = (items || []).filter(isManualItem);
   if (unidadeId && unidadeId !== "todas") {
     list = list.filter((i) => i.unidadeId === unidadeId);
@@ -367,5 +690,13 @@ export function filterManualItems(items, foundMap, { unidadeId, query } = {}) {
       return label.includes(q) || marca.includes(q) || String(i.id).toLowerCase().includes(q);
     });
   }
-  return list.sort((a, b) => getItemLabel(a, foundMap).localeCompare(getItemLabel(b, foundMap), "pt-BR"));
+  if (filtroProblema && filtroProblema !== FILTRO_PROBLEMA.TODOS) {
+    list = list.filter((i) => matchesFiltroProblema(i, foundMap, filtroProblema));
+  }
+  return list.sort((a, b) => {
+    const qa = computeNomeQualityScore(a, foundMap);
+    const qb = computeNomeQualityScore(b, foundMap);
+    if (qa !== qb) return qa - qb;
+    return getItemLabel(a, foundMap).localeCompare(getItemLabel(b, foundMap), "pt-BR");
+  });
 }

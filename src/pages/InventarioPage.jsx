@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { getCategoryGroup } from "../app/categories.js";
+import { getCategoryGroup } from "../constants/categories.js";
 import { SmartImg } from "../components/SmartImg.jsx";
 import { TInput } from "../components/FormFields.jsx";
 import { Badge } from "../components/Badge.jsx";
@@ -11,6 +11,7 @@ import { getTeamMemberEditingItem } from "../utils/inventoryPresence.js";
 import { isAjustePendente, isSemTomboItem, SEM_TOMBO_BADGE, showFotoManualBadge } from "../utils/semTombo.js";
 import { PhotoThumb } from "../components/PhotoThumb.jsx";
 import { AjusteWorkbench, buildOrigemLine, getDisplayDesc, getItemCode, TIPO_ENTRADA_BADGE } from "../components/AjusteWorkbench.jsx";
+import { getListLimits } from "../utils/mobilePerf.js";
 
 function formatBRL(v) {
   const n = Number(v || 0) || 0;
@@ -103,21 +104,27 @@ export function InventarioPage({
   showT,
   onViewImage,
 }) {
+  const listLimits = useMemo(() => getListLimits(isMob), [isMob]);
   const [viewMode, setViewMode] = useState("padrao");
-  const [coletadosLimit, setColetadosLimit] = useState(20);
+  const [coletadosLimit, setColetadosLimit] = useState(() => listLimits.coletadosLimit);
   const [localPage, setLocalPage] = useState(1);
-  const [perPage, setPerPage] = useState(24);
+  const [perPage, setPerPage] = useState(() => listLimits.perPage);
   const [expandedCats, setExpandedCats] = useState({});
   const [unidadeSearch, setUnidadeSearch] = useState("");
   const [localNomeRapido, setLocalNomeRapido] = useState("");
   const [localSelecionadoId, setLocalSelecionadoId] = useState("");
   const [localAddSearch, setLocalAddSearch] = useState("");
-  const [localItemsLimit, setLocalItemsLimit] = useState(15);
-  const LOCAL_ITEMS_STEP = 15;
+  const [localItemsLimit, setLocalItemsLimit] = useState(() => listLimits.localItemsStep);
+  const LOCAL_ITEMS_STEP = listLimits.localItemsStep;
 
   useEffect(() => {
     setLocalItemsLimit(LOCAL_ITEMS_STEP);
-  }, [localSelecionadoId]);
+  }, [localSelecionadoId, LOCAL_ITEMS_STEP]);
+
+  useEffect(() => {
+    setColetadosLimit(listLimits.coletadosLimit);
+    setPerPage(listLimits.perPage);
+  }, [listLimits.coletadosLimit, listLimits.perPage]);
   const itemById = useMemo(() => {
     const map = new Map();
     for (const u of unidadesAtivas) for (const i of u.itens) map.set(i.id, { ...i, unidadeId: u.id, unidadeNome: u.nome });
@@ -654,7 +661,7 @@ export function InventarioPage({
             <button
               onClick={() => {
                 setViewMode("coletados");
-                setColetadosLimit(20);
+                setColetadosLimit(listLimits.coletadosLimit);
               }}
               style={{ ...bp, background: viewMode === "coletados" ? "#0f766e" : "#fff", color: viewMode === "coletados" ? "#fff" : "#0f766e", borderColor: "#0f766e", padding: isMob ? "10px 14px" : "6px 12px", fontSize: 12 }}
             >
@@ -824,7 +831,7 @@ export function InventarioPage({
                   {coletadosRecentes.length > coletadosLimit && (
                     <button
                       type="button"
-                      onClick={() => setColetadosLimit((n) => n + 20)}
+                      onClick={() => setColetadosLimit((n) => n + listLimits.coletadosStep)}
                       style={{ ...bs, width: "100%", marginTop: 10, minHeight: 44 }}
                     >
                       Carregar mais ({coletadosRecentes.length - coletadosLimit} restantes)

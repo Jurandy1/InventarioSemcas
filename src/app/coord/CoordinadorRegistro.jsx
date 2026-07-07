@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AuthPageLayout } from "../components/AuthPageLayout.jsx";
-import { getAppStyles } from "../constants/theme.js";
+import { AuthPageLayout } from "../../components/AuthPageLayout.jsx";
+import { getAppStyles } from "../../constants/theme.js";
 import {
   fsGetDocPublic,
   fsSetStrict,
@@ -10,8 +10,8 @@ import {
   marcarConviteCoordUsado,
   verificarCadastroDuplicado,
   registrarCadastroIndice,
-} from "../services/firebase.js";
-import { TInput } from "../components/FormFields.jsx";
+} from "../../services/firebase.js";
+import { TInput } from "../../components/FormFields.jsx";
 
 function getTokenFromLocation() {
   const path = String(window.location.pathname || "");

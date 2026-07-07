@@ -11,8 +11,9 @@ import MiniSearch from "minisearch";
 import { EC, SC } from "../constants/inventory.js";
 import { isItemInventariado } from "../utils/patrimonioId.js";
 import { PhotoThumb } from "../components/PhotoThumb.jsx";
+import { getListLimits } from "../utils/mobilePerf.js";
 
-const PER_PAGE = 24;
+const PER_PAGE_DESKTOP = 24;
 
 function shortUnitName(nome) {
   return String(nome || "").replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 48);
@@ -68,7 +69,13 @@ export function FinalizadosPage({
   const [hideFound, setHideFound] = useState(false);
   const [page, setPage] = useState(1);
   const [nePage, setNePage] = useState(1);
-  const [perPage, setPerPage] = useState(24);
+  const [perPage, setPerPage] = useState(() => getListLimits(isMob).perPage);
+
+  React.useEffect(() => {
+    setPerPage(getListLimits(isMob).perPage);
+    setPage(1);
+    setNePage(1);
+  }, [isMob]);
 
   const [hideIncorporados, setHideIncorporados] = useState(() => {
     try { return localStorage.getItem("inv-hide-incorporados") === "1"; } catch { return false; }
