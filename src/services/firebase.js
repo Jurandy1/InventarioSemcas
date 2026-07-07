@@ -107,6 +107,7 @@ export async function refreshAuthToken(storedRefreshToken) {
   if (d.error) throw new Error(d.error.message || "Falha ao renovar sessão");
   authToken = d.id_token;
   authUid = d.user_id;
+  setSupabaseAccessToken(authToken);
   return { token: d.id_token, refreshToken: d.refresh_token, uid: d.user_id };
 }
 
@@ -123,6 +124,7 @@ export async function fbLogin(email, password) {
   }
   authToken = d.idToken;
   authUid = d.localId;
+  setSupabaseAccessToken(authToken);
   return {
     uid: d.localId,
     email: d.email,
@@ -143,6 +145,7 @@ export async function fbAnonymousLogin() {
   if (d.error) throw new Error(mapFirebaseAuthError(d.error.message));
   authToken = d.idToken;
   authUid = d.localId;
+  setSupabaseAccessToken(authToken);
   return { uid: d.localId, token: d.idToken, refreshToken: d.refreshToken };
 }
 
@@ -159,6 +162,7 @@ export async function fbRegister(email, password) {
   }
   authToken = d.idToken;
   authUid = d.localId;
+  setSupabaseAccessToken(authToken);
   return {
     uid: d.localId,
     email: d.email,
@@ -540,7 +544,15 @@ export async function obterCoordenadores(status = "pendente_aprovacao") {
 export async function obterCoordPorUid(uid) {
   assertFirebaseConfigured();
   if (!authToken || !uid) return null;
-  return fsGetDoc("coordenadores", uid);
+  const direto = await fsGetDoc("coordenadores", uid);
+  if (direto) return direto;
+  // Fallback: procura na lista completa (registros antigos podem ter uid só no _id)
+  try {
+    const todos = await fsGetAll("coordenadores");
+    return todos.find((c) => c.uid === uid || c._id === uid) || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function obterCoordPorUnidade(unidadeId) {
@@ -692,7 +704,10 @@ export async function obterInventariantePorUid(uid) {
   assertFirebaseConfigured();
   if (!authToken || !uid) return null;
   try {
-    return await fsGetDoc("inventariantes", uid);
+    const direto = await fsGetDoc("inventariantes", uid);
+    if (direto) return direto;
+    const todos = await fsGetAll("inventariantes");
+    return todos.find((c) => c.uid === uid || c._id === uid) || null;
   } catch {
     return null;
   }

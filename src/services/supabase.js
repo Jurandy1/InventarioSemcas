@@ -9,24 +9,131 @@ let authClient = null;
 let publicClient = null;
 let accessToken = null;
 
+// Colunas reais de cada tabela (schema + upgrade). Qualquer campo fora da lista
+// vai para a coluna de overflow (extras/dados) em vez de gerar erro PGRST204.
 const COL = {
-  inventario: { table: "inventario", pk: "patrimonio_id" },
-  manuais: { table: "manuais", pk: "id" },
-  locais: { table: "locais", pk: "id" },
-  inventariantes: { table: "inventariantes", pk: "uid" },
-  coordenadores: { table: "coordenadores", pk: "uid" },
-  tombosNE: { table: "tombos_ne", pk: "id" },
-  finalizacoes: { table: "finalizacoes", pk: "id" },
-  campanhas: { table: "campanhas", pk: "id" },
-  auditoria: { table: "auditoria", pk: "id" },
-  convites: { table: "convites", pk: "id" },
-  convites_inventariantes: { table: "convites_inventariantes", pk: "id" },
-  cadastro_indice: { table: "cadastro_indice", pk: "id" },
-  presenca_inventario: { table: "presenca_inventario", pk: "uid" },
-  aprovacoes: { table: "aprovacoes", pk: "id" },
-  rejeicoes: { table: "rejeicoes", pk: "id" },
-  backups: { table: "backups", pk: "id" },
+  inventario: {
+    table: "inventario",
+    pk: "patrimonio_id",
+    overflow: "extras",
+    columns: [
+      "patrimonio_id", "unidade_id", "unidade_nome", "estado", "situacao", "local_id",
+      "obs", "marca", "origem", "foto_urls", "data", "hora", "usuario", "email",
+      "ultima_atualizacao", "is_manual", "descricao_edit", "especie_edit", "imei",
+      "sem_tombo", "tombo_referencia", "permuta_desc", "permuta_marca", "permuta_estado",
+      "identificado_por_foto", "extras",
+    ],
+  },
+  manuais: {
+    table: "manuais",
+    pk: "id",
+    overflow: "extras",
+    columns: [
+      "id", "unidade_id", "patrimonio_label", "data", "especie", "descricao", "marca",
+      "fornecedor", "empenho", "nf", "data_nf", "tipo_entrada", "valor", "valor_atual",
+      "imei", "extras",
+    ],
+  },
+  locais: {
+    table: "locais",
+    pk: "id",
+    overflow: "extras",
+    columns: ["id", "nome", "unidade_id", "unidade_ids", "criado_por", "criado_em", "desc", "session_id", "extras"],
+  },
+  inventariantes: {
+    table: "inventariantes",
+    pk: "uid",
+    overflow: "extras",
+    columns: [
+      "uid", "email", "nome", "matricula", "cargo", "unidade_id", "unidade_ids",
+      "unidade_nome", "unidade_nomes", "status", "criado_em", "data_criacao",
+      "convite_token", "data_aprovacao", "observacoes", "aprovado_por", "data_rejeicao",
+      "motivo_rejeicao", "rejeitado_por", "data_desativacao", "motivo_desativacao",
+      "desativado_por", "extras",
+    ],
+  },
+  coordenadores: {
+    table: "coordenadores",
+    pk: "uid",
+    overflow: "extras",
+    columns: [
+      "uid", "email", "nome", "matricula", "unidade_id", "unidade_ids",
+      "unidade_nome", "unidade_nomes", "status", "criado_em", "data_criacao",
+      "convite_token", "data_aprovacao", "observacoes", "aprovado_por", "data_rejeicao",
+      "motivo_rejeicao", "rejeitada_por", "data_desativacao", "motivo_desativacao",
+      "desativada_por", "extras",
+    ],
+  },
+  tombosNE: {
+    table: "tombos_ne",
+    pk: "id",
+    overflow: "extras",
+    columns: ["id", "unidade_id", "descricao", "obs", "usuario", "data", "extras"],
+  },
+  finalizacoes: {
+    table: "finalizacoes",
+    pk: "id",
+    overflow: "extras",
+    columns: [
+      "id", "campanha_id", "unidade_ids", "unidade_nomes", "session_id", "finalized_at",
+      "finalized_by", "coordenadora", "convite_token", "stats", "status", "ultima_edicao",
+      "extras",
+    ],
+  },
+  campanhas: { table: "campanhas", pk: "id", overflow: "dados", columns: ["id", "status", "dados"] },
+  auditoria: {
+    table: "auditoria",
+    pk: "id",
+    overflow: "dados",
+    columns: ["id", "acao", "colecao", "doc_id", "usuario", "uid", "dados", "criado_em"],
+  },
+  convites: {
+    table: "convites",
+    pk: "id",
+    overflow: "extras",
+    columns: [
+      "id", "token", "status", "criado_por", "data_criacao", "data_expiracao", "usado_por",
+      "unidade_id", "unidade_nome", "matricula", "data_uso", "extras",
+    ],
+  },
+  convites_inventariantes: {
+    table: "convites_inventariantes",
+    pk: "id",
+    overflow: "extras",
+    columns: [
+      "id", "token", "status", "criado_por", "data_criacao", "data_expiracao", "usado_por",
+      "unidade_id", "unidade_nome", "extras",
+    ],
+  },
+  cadastro_indice: {
+    table: "cadastro_indice",
+    pk: "id",
+    overflow: "extras",
+    columns: ["id", "uid", "email", "matricula", "nome", "status", "papel", "chave", "atualizado_em", "extras"],
+  },
+  presenca_inventario: {
+    table: "presenca_inventario",
+    pk: "uid",
+    overflow: "extras",
+    columns: ["uid", "nome", "email", "unidade_ids", "item_em_edicao", "item_descricao", "atualizado_em", "ultimo_ping", "extras"],
+  },
+  aprovacoes: { table: "aprovacoes", pk: "id", overflow: "dados", columns: ["id", "item_id", "approver_id", "dados"] },
+  rejeicoes: { table: "rejeicoes", pk: "id", overflow: "dados", columns: ["id", "item_id", "approver_id", "dados"] },
+  backups: { table: "backups", pk: "id", overflow: "dados", columns: ["id", "criado_em", "criado_por", "dados"] },
 };
+
+// Colunas TIMESTAMPTZ: string vazia vira null para não quebrar o insert.
+const TIMESTAMP_COLS = new Set([
+  "inventario.ultima_atualizacao",
+  "locais.criado_em",
+  "inventariantes.criado_em",
+  "coordenadores.criado_em",
+  "finalizacoes.finalized_at",
+  "finalizacoes.ultima_edicao",
+  "auditoria.criado_em",
+  "presenca_inventario.atualizado_em",
+  "backups.criado_em",
+]);
 
 const CAMEL_OVERRIDES = {
   patrimonioId: "patrimonio_id",
@@ -73,9 +180,18 @@ const CAMEL_OVERRIDES = {
   entidade: "colecao",
 };
 
-const SNAKE_OVERRIDES = Object.fromEntries(
-  Object.entries(CAMEL_OVERRIDES).map(([camel, snake]) => [snake, camel])
-);
+// Mapa reverso snake→camel. Construído com "primeiro vence" e correções manuais
+// para chaves ambíguas (ex.: uid NÃO pode virar userId — quebrava aprovação de
+// coordenadoras/inventariantes, que dependem de row.uid).
+const SNAKE_OVERRIDES = {};
+for (const [camel, snake] of Object.entries(CAMEL_OVERRIDES)) {
+  if (!(snake in SNAKE_OVERRIDES)) SNAKE_OVERRIDES[snake] = camel;
+}
+SNAKE_OVERRIDES.uid = "uid";
+SNAKE_OVERRIDES.doc_id = "docId";
+SNAKE_OVERRIDES.colecao = "colecao";
+SNAKE_OVERRIDES.tombo_referencia = "tomboReferencia";
+SNAKE_OVERRIDES.data_nf = "dataNF";
 
 export function isSupabaseConfigured() {
   return Boolean(URL && ANON);
@@ -153,6 +269,8 @@ function fromRow(collection, row) {
   const id = c ? merged[c.pk] : merged.id;
   if (id != null) out._id = id;
   if (collection === "inventario" && id != null && !out.patrimonioId) out.patrimonioId = id;
+  if (c?.pk === "uid" && id != null && !out.uid) out.uid = id;
+  if (c?.pk === "id" && id != null && out.id === undefined) out.id = id;
   if (collection === "auditoria") {
     if (!out.timestamp && merged.criado_em) out.timestamp = merged.criado_em;
     if (!out.userId && merged.uid) out.userId = merged.uid;
@@ -167,45 +285,50 @@ function fromRow(collection, row) {
 
 function toRow(collection, docId, data) {
   const c = cfg(collection);
-  const known = new Set(["id", "extras", "dados"]);
-  if (c) known.add(c.pk);
+  const cols = new Set(c?.columns || []);
+  const overflowKey = c?.overflow || null;
 
   const row = {};
-  const extras = {};
+  const overflow = {};
 
   for (const [k, v] of Object.entries(data || {})) {
-    if (k === "_id") continue;
+    if (k === "_id" || v === undefined) continue;
     const snake = toSnake(k);
-    if (c && snake === c.pk) {
-      row[snake] = v;
-      continue;
-    }
+    if (c && snake === c.pk) continue; // pk vem de docId, abaixo
     if (
       collection === "auditoria" &&
       ["timestamp", "userId", "entidade", "entidadeId", "antes", "depois", "mudancas"].includes(k)
     ) {
       continue;
     }
-    row[snake] = v;
-    known.add(snake);
+    if (k === "extras" && v && typeof v === "object" && !Array.isArray(v)) {
+      Object.assign(overflow, v);
+      continue;
+    }
+    if (!cols.size || cols.has(snake)) {
+      row[snake] = v === "" && c && TIMESTAMP_COLS.has(`${c.table}.${snake}`) ? null : v;
+    } else {
+      // Campo sem coluna própria: preserva no JSONB de overflow (extras/dados)
+      overflow[k] = v;
+    }
   }
 
   if (c) row[c.pk] = docId;
 
-  for (const [k, v] of Object.entries(data || {})) {
-    if (k === "_id") continue;
-    const snake = toSnake(k);
-    if (!(snake in row) && !known.has(snake)) extras[k] = v;
+  if (overflowKey && Object.keys(overflow).length) {
+    if (overflowKey === "dados") {
+      row.dados = { ...overflow, ...(row.dados && typeof row.dados === "object" ? row.dados : {}) };
+    } else {
+      row[overflowKey] = overflow;
+    }
   }
-  if (Object.keys(extras).length) row.extras = extras;
 
   if (collection === "auditoria") {
     row.uid = data.userId || data.uid || null;
     row.colecao = data.entidade || data.colecao || null;
     row.doc_id = data.entidadeId || data.doc_id || null;
     row.criado_em = data.timestamp || new Date().toISOString();
-    row.dados = { ...(data || {}), ...(row.dados || {}) };
-    delete row.extras;
+    row.dados = { ...(data || {}) };
   }
 
   if (collection === "backups") {
@@ -221,12 +344,65 @@ function toRow(collection, docId, data) {
   if (collection === "manuais") {
     if (data.tomboRef && !row.patrimonio_label) row.patrimonio_label = data.tomboRef;
     if (!row.tipo_entrada) row.tipo_entrada = data.tipoEntrada || "Próprio";
-    delete row.extras;
-    delete row.is_manual;
-    delete row.tombo_referencia;
   }
 
   return row;
+}
+
+// Colunas que o banco reportou como inexistentes (por tabela) — evita repetir
+// tentativas falhas em cada escrita da sessão.
+const deadColsByTable = new Map();
+
+/**
+ * Upsert com autocorreção: se o Supabase reclamar de coluna inexistente
+ * (PGRST204 — ex.: banco sem o upgrade SQL aplicado), move o campo para o
+ * JSONB de overflow ou o descarta e tenta de novo, em vez de falhar tudo.
+ */
+async function upsertRow(sb, c, initialRow) {
+  const dead = deadColsByTable.get(c.table);
+  let overflowOk = !dead?.has(c.overflow);
+  let attempt = initialRow;
+
+  if (dead?.size) {
+    attempt = { ...initialRow };
+    for (const col of dead) {
+      if (!(col in attempt)) continue;
+      if (col !== c.overflow && overflowOk && c.overflow && c.overflow !== "dados") {
+        const cur = attempt[c.overflow];
+        attempt[c.overflow] = { ...(cur && typeof cur === "object" && !Array.isArray(cur) ? cur : {}), [col]: attempt[col] };
+      }
+      delete attempt[col];
+    }
+  }
+
+  let lastError = null;
+
+  for (let i = 0; i < 8; i++) {
+    const { error } = await sb.from(c.table).upsert(attempt, { onConflict: c.pk });
+    if (!error) return null;
+    lastError = error;
+
+    const m = error.code === "PGRST204" ? /Could not find the '([^']+)' column/.exec(error.message || "") : null;
+    if (!m) return error;
+
+    const col = m[1];
+    if (!deadColsByTable.has(c.table)) deadColsByTable.set(c.table, new Set());
+    deadColsByTable.get(c.table).add(col);
+
+    const next = { ...attempt };
+    if (col === c.overflow) {
+      overflowOk = false;
+      delete next[col];
+    } else {
+      if (overflowOk && c.overflow && c.overflow !== "dados") {
+        const cur = next[c.overflow];
+        next[c.overflow] = { ...(cur && typeof cur === "object" && !Array.isArray(cur) ? cur : {}), [col]: next[col] };
+      }
+      delete next[col];
+    }
+    attempt = next;
+  }
+  return lastError;
 }
 
 function applyWhere(query, collection, where = []) {
@@ -294,7 +470,7 @@ export async function sbSet(collection, docId, data) {
   const sb = getAuthClient();
   if (!c || !sb || !accessToken) return;
   const row = toRow(collection, docId, data);
-  const { error } = await sb.from(c.table).upsert(row, { onConflict: c.pk });
+  const error = await upsertRow(sb, c, row);
   if (error) {
     console.error(`Supabase set ${collection}/${docId}:`, error.message);
     throw new Error(error.message || `Falha ao salvar em ${collection}`);
@@ -307,7 +483,7 @@ export async function sbSetStrict(collection, docId, data) {
   if (!c || !sb) throw new Error("Supabase não configurado");
   if (!accessToken) throw new Error("Usuário não autenticado");
   const row = toRow(collection, docId, data);
-  const { error } = await sb.from(c.table).upsert(row, { onConflict: c.pk });
+  const error = await upsertRow(sb, c, row);
   if (error) {
     if (error.code === "42501" || /permission|policy/i.test(error.message)) {
       throw new Error(`Sem permissão no Supabase (${collection}). Verifique as políticas RLS.`);

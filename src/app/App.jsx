@@ -315,6 +315,11 @@ function OrganizedApp({ firebaseOk, isProd }) {
   const loadAfterAuth = React.useCallback(async () => {
     await loadXlsx(false);
     await Promise.all([found.loadFoundAndTombos([], { cacheOnly: true }), locais.loadLocais([], { cacheOnly: true })]);
+    // Atualiza em segundo plano com TODOS os registros do servidor, para que os
+    // menus Itens/Dashboard/Correção mostrem os encontrados sem sessão ativa.
+    found.loadFoundAndTombos([], { allUnits: true }).catch((e) => {
+      console.warn("Refresh completo do inventário falhou:", e?.message || e);
+    });
   }, [loadXlsx, found.loadFoundAndTombos, locais.loadLocais]);
 
   const auth = useAuth({ firebaseOk, loadAfterAuth, showT });

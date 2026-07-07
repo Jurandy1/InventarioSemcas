@@ -6,7 +6,7 @@ import { logAuditoria } from "../services/audit.js";
 import { bumpCacheBuster, compressPhotoArray, getCachedData, perfMonitor, setCachedData } from "../utils/performance.js";
 import { mergeFoundRecords } from "../utils/inventorySession.js";
 import { getFoundEntry, normalizePatrimonioId } from "../utils/patrimonioId.js";
-import { fetchInventarioForUnits, normalizeFoundRecord } from "../services/inventarioLoad.js";
+import { fetchInventarioAll, fetchInventarioForUnits, normalizeFoundRecord } from "../services/inventarioLoad.js";
 import { saveOfflinePhotos } from "../utils/offlineStore.js";
 
 export function useFound({ showT, applyDescOverride } = {}) {
@@ -63,9 +63,11 @@ export function useFound({ showT, applyDescOverride } = {}) {
       let foundDocs = [];
       let neDocs = [];
       if (!options.cacheOnly) {
-        foundDocs = await fetchInventarioForUnits(ids, {
-          patrimonioIds: options.patrimonioIds || [],
-        });
+        foundDocs = options.allUnits
+          ? await fetchInventarioAll()
+          : await fetchInventarioForUnits(ids, {
+              patrimonioIds: options.patrimonioIds || [],
+            });
         neDocs = await fsGetAll("tombosNE", { pageSize: 200 });
       } else {
         neDocs = Array.isArray(cachedTombos) ? cachedTombos : [];

@@ -30,7 +30,7 @@ export function useUnidades({ showT } = {}) {
                 fornecedor: m.fornecedor || "",
                 empenho: m.empenho || "",
                 nf: m.nf || "",
-                dataNF: m.dataNF || "",
+                dataNF: m.dataNF || m.dataNf || "",
                 tipoEntrada: m.tipoEntrada || "Próprio",
                 valor: Number(m.valor || 0) || 0,
                 valorAtual: Number(m.valorAtual || 0) || 0,
@@ -47,7 +47,9 @@ export function useUnidades({ showT } = {}) {
               }
             }
           }
-        } catch {}
+        } catch (e) {
+          console.warn("Falha ao mesclar itens manuais:", e?.message || e);
+        }
 
         setUnidades(unids);
         return unids;

@@ -3,9 +3,72 @@ import { SmartImg } from "../components/SmartImg.jsx";
 import { TInput } from "../components/FormFields.jsx";
 import {
   clusterSimilarManualItems,
+  describeNomeAtributos,
   filterManualItems,
+  getItemFotos,
   getItemLabel,
+  getItemMarca,
+  limparNomeParaExibicao,
 } from "../utils/nomeCorrecao.js";
+import { getFoundEntry } from "../utils/patrimonioId.js";
+
+const COR_HEX = {
+  preto: "#0f172a", branco: "#e2e8f0", azul: "#2563eb", vermelho: "#dc2626",
+  verde: "#16a34a", amarelo: "#eab308", cinza: "#6b7280", chumbo: "#4b5563",
+  grafite: "#374151", marrom: "#92400e", bege: "#d6c9a8", rosa: "#ec4899",
+  roxo: "#7c3aed", lilas: "#c084fc", laranja: "#ea580c", vinho: "#7f1d1d",
+  creme: "#f5f0dc", dourado: "#ca8a04", prata: "#9ca3af", prateado: "#9ca3af",
+  cromado: "#cbd5e1", turquesa: "#06b6d4", salmao: "#fa8072", fume: "#64748b",
+};
+
+/** Marca + atributos detectados (cor, material, medidas, c//s/) como chips. */
+function AtributoChips({ nome, marca }) {
+  const chips = describeNomeAtributos(nome);
+  if (!chips.length && !marca) return null;
+  const base = {
+    fontSize: 10,
+    fontWeight: 700,
+    borderRadius: 99,
+    padding: "2px 8px",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    whiteSpace: "nowrap",
+  };
+  return (
+    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 5 }}>
+      {marca && (
+        <span style={{ ...base, background: "#dbeafe", color: "#1d4ed8", textTransform: "uppercase" }}>
+          {marca}
+        </span>
+      )}
+      {chips.map((c, i) => {
+        if (c.tipo === "cor") {
+          return (
+            <span key={i} style={{ ...base, background: "#f1f5f9", color: "#334155" }}>
+              <span
+                style={{
+                  width: 9,
+                  height: 9,
+                  borderRadius: 99,
+                  background: COR_HEX[c.texto] || "#94a3b8",
+                  border: "1px solid rgba(0,0,0,.2)",
+                  flexShrink: 0,
+                }}
+              />
+              {c.texto}
+            </span>
+          );
+        }
+        return (
+          <span key={i} style={{ ...base, background: "#f1f5f9", color: "#64748b" }}>
+            {c.texto}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
 
 function ItemPhoto({ foundMap, itemId, onViewImage }) {
   const urls = foundMap?.[itemId]?.fotoUrls || [];
@@ -252,6 +315,7 @@ export function CorrecaoNomesPage({
             )}
             {manuais.map((item) => {
               const label = getItemLabel(item, foundMap);
+              const marca = getItemMarca(item, foundMap);
               const isRef = item.id === referenciaId;
               const checked = selecionados.has(item.id);
               return (
@@ -278,6 +342,7 @@ export function CorrecaoNomesPage({
                   <ItemPhoto foundMap={foundMap} itemId={item.id} onViewImage={onViewImage} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, wordBreak: "break-word" }}>{label}</div>
+                    <AtributoChips nome={label} marca={marca} />
                     <div style={{ fontSize: 12, color: "var(--gov-text-muted)", marginTop: 4 }}>
                       {item.especie || "—"} · {item.unidadeNome || item.unidadeId} · {item.id}
                     </div>
@@ -319,6 +384,10 @@ export function CorrecaoNomesPage({
                       Sugestão automática · {grupo.members.length} itens
                     </div>
                     <div style={{ fontWeight: 700, fontSize: 15, marginTop: 4 }}>{grupo.referenceLabel}</div>
+                    <AtributoChips
+                      nome={grupo.referenceLabel}
+                      marca={grupo.members.find((m) => m.isReference)?.marca || ""}
+                    />
                   </div>
                   <button
                     type="button"
@@ -358,11 +427,11 @@ export function CorrecaoNomesPage({
                         <ItemPhoto foundMap={foundMap} itemId={m.id} onViewImage={onViewImage} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: isRef ? 700 : 500, wordBreak: "break-word" }}>{m.label}</div>
-                          {!isRef && (
-                            <div style={{ fontSize: 11, color: "var(--gov-text-muted)" }}>
-                              Similaridade: {Math.round((m.score || 0) * 100)}%
-                            </div>
-                          )}
+                          <AtributoChips nome={m.label} marca={m.marca || getItemMarca(m.item, foundMap)} />
+                          <div style={{ fontSize: 11, color: "var(--gov-text-muted)", marginTop: 3 }}>
+                            {m.item?.unidadeNome || m.item?.unidadeId || ""}
+                            {!isRef && <> · Similaridade: {Math.round((m.score || 0) * 100)}%</>}
+                          </div>
                         </div>
                         {isRef && (
                           <span style={{ fontSize: 11, fontWeight: 700, color: "var(--gov-primary)" }}>PADRÃO</span>
