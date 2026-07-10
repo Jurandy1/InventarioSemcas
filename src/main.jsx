@@ -54,10 +54,38 @@ const isAbortError = (err) => {
   return name === "AbortError" || m.includes("signal is aborted") || m.includes("aborted without reason") || m.includes("the user aborted");
 };
 
+// Um erro engolido (ex.: ReferenceError num handler async de botão) faz o
+// usuário achar que "o botão não funciona". Em vez de só logar no console,
+// mostramos um banner visível — o usuário vê que algo estourou e sabe que
+// precisa reportar ou recarregar. Também acionamos recarga forçada quando
+// suspeitamos de bundle stale (fica logo depois de deploy novo).
+const showErrorBanner = (err) => {
+  try {
+    if (document.getElementById("__inv_err_banner")) return;
+    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err || "");
+    const el = document.createElement("div");
+    el.id = "__inv_err_banner";
+    el.style.cssText =
+      "position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:#991b1b;color:#fff;padding:10px 14px;font:600 13px system-ui,-apple-system,Segoe UI,Roboto,Arial;display:flex;gap:10px;align-items:center;box-shadow:0 -2px 12px rgba(0,0,0,.2)";
+    el.innerHTML =
+      '<span style="flex:1;line-height:1.35">Ocorreu um erro. Tente recarregar (se persistir, feche o app e abra de novo).<br><span style="font-weight:400;opacity:.85;font-size:11px">' +
+      msg.replace(/</g, "&lt;") +
+      '</span></span><button style="background:#fff;color:#991b1b;border:0;border-radius:6px;padding:8px 12px;font:700 12px inherit;cursor:pointer">Recarregar</button><button aria-label="Fechar" style="background:transparent;color:#fff;border:0;font-size:20px;cursor:pointer;padding:2px 8px">×</button>';
+    const [reloadBtn, closeBtn] = el.querySelectorAll("button");
+    reloadBtn.addEventListener("click", () => {
+      try { sessionStorage.removeItem(CHUNK_RELOAD_KEY); } catch {}
+      window.location.reload();
+    });
+    closeBtn.addEventListener("click", () => el.remove());
+    document.body.appendChild(el);
+  } catch {}
+};
+
 window.addEventListener("error", (e) => {
   const err = e?.error || e?.message;
   if (isAbortError(err)) return;
   console.error("Erro não tratado:", err);
+  showErrorBanner(err);
 });
 window.addEventListener("unhandledrejection", (e) => {
   const err = e?.reason;
@@ -67,6 +95,7 @@ window.addEventListener("unhandledrejection", (e) => {
     return;
   }
   console.error("Promise rejeitada:", err);
+  showErrorBanner(err);
   e.preventDefault?.();
 });
 
