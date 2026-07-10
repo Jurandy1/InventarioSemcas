@@ -67,6 +67,34 @@ export function ItemDetailModal({
 
   const getItemCode = (it) => it?.patrimonioLabel || it?.id || "—";
 
+  const handleSaveWithValidation = () => {
+    // Validação: verificar se o estado foi selecionado explicitamente
+    const estado = formRef.current.detEstado;
+    if (!estado || estado.trim() === "") {
+      alert("Por favor, selecione um Estado de Conservação antes de salvar.");
+      return;
+    }
+
+    // Validação: verificar se uma situação foi selecionada
+    const situacao = getField("detSituacao") || "Em uso";
+    if (!situacao || situacao.trim() === "") {
+      alert("Por favor, selecione uma Situação antes de salvar.");
+      return;
+    }
+
+    // Se for permuta, validar campos obrigatórios
+    if (situacao === "Permuta") {
+      const permutaDesc = String(getField("detPermutaDesc") || "").trim();
+      if (!permutaDesc) {
+        alert("Para items em Permuta, descreva o item encontrado no lugar.");
+        return;
+      }
+    }
+
+    // Chama a função onSave original
+    onSave?.();
+  };
+
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
@@ -127,7 +155,7 @@ export function ItemDetailModal({
           }}
           placeholder="Descrição do item..."
           suggestions={sugestoes?.descricoes}
-          style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none", marginBottom: 10 }}
+          style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none", marginBottom: 0 }}
         />
         <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: "#374151" }}>
           Espécie / Tipo
@@ -416,7 +444,7 @@ export function ItemDetailModal({
             onVal={(v) => setField("detPermutaDesc", v)}
             placeholder="Ex: Televisor 43 polegadas, Cadeira giratória..."
             suggestions={sugestoes?.descricoes}
-            style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none", marginBottom: 10 }}
+            style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none", marginBottom: 0 }}
           />
 
           <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700, color: "#374151" }}>Marca do item real</p>
@@ -426,7 +454,7 @@ export function ItemDetailModal({
             onVal={(v) => setField("detPermutaMarca", v)}
             placeholder="Ex: Samsung, Tramontina..."
             suggestions={sugestoes?.marcas}
-            style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none", marginBottom: 10 }}
+            style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none", marginBottom: 0 }}
           />
 
           <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#374151" }}>Estado do item real</p>
@@ -504,7 +532,7 @@ export function ItemDetailModal({
           </button>
         )}
         <button
-          onClick={onSave}
+          onClick={handleSaveWithValidation}
           style={{
             background: "#1351B4",
             color: "#fff",
@@ -523,4 +551,3 @@ export function ItemDetailModal({
     </>
   );
 }
-
