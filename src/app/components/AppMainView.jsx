@@ -61,7 +61,7 @@ export function AppMainView({ ctx }) {
     toggleStPending, gerarRelatorio, fazerBackup, finalizarComCoordenadora,
     multiRowsPhotosRef, multiSharedRef, multiRowsRef, manualPatrimonioRef,
     lookupTombo, persistCameraSession, saveSessionResume, resolveItemUnit,
-    assertPodeEditar, scopeAllItens,
+    assertPodeEditar, scopeAllItens, updateQueueStatus,
   } = ctx;
 
   if (auth.loading)
@@ -508,23 +508,29 @@ export function AppMainView({ ctx }) {
             onSave={async () => {
               if (!assertPodeEditar()) return;
               formRef.current.detForceWrite = false;
-              await found.saveDetail({
-                formRef,
-                getField,
-                unidadeAtiva: resolveItemUnit(formRef.current.detItem),
-                itemUnit: resolveItemUnit(formRef.current.detItem),
-                logado: auth.logado,
-                updateQueueStatus,
-                closeModal: closeDetModal,
-                onConflict: (serverEntry) => {
-                  setSaveConflict({
-                    serverEntry,
-                    item: formRef.current.detItem,
-                    who: serverEntry?.usuario || serverEntry?.user || "outro usuário",
-                    when: serverEntry?.ultimaAtualizacao || serverEntry?.hora || "",
-                  });
-                },
-              });
+              try {
+                await found.saveDetail({
+                  formRef,
+                  getField,
+                  unidadeAtiva: resolveItemUnit(formRef.current.detItem),
+                  itemUnit: resolveItemUnit(formRef.current.detItem),
+                  logado: auth.logado,
+                  updateQueueStatus,
+                  closeModal: closeDetModal,
+                  onConflict: (serverEntry) => {
+                    setSaveConflict({
+                      serverEntry,
+                      item: formRef.current.detItem,
+                      who: serverEntry?.usuario || serverEntry?.user || "outro usuário",
+                      when: serverEntry?.ultimaAtualizacao || serverEntry?.hora || "",
+                    });
+                  },
+                });
+              } catch (e) {
+                console.error("Erro ao salvar item:", e);
+                showT(e?.message || "Erro ao salvar o item");
+                return;
+              }
               if (getField("detLocal")) {
                 inventario.setActiveLocalId(getField("detLocal"));
               }
