@@ -415,7 +415,15 @@ function applyWhere(query, collection, where = []) {
       q = q.eq(col, w.value);
       continue;
     }
-    q = q.eq(toSnake(field), w.value);
+    const col = toSnake(field);
+    // ARRAY_CONTAINS (herdado do Firestore) precisa virar containment JSONB no
+    // Postgres. Sem isso, .eq() num JSONB dispara "invalid input syntax for type json"
+    // e o PostgREST devolve zero linhas.
+    if (String(w.op || "").toUpperCase() === "ARRAY_CONTAINS") {
+      q = q.contains(col, [w.value]);
+      continue;
+    }
+    q = q.eq(col, w.value);
   }
   return q;
 }
