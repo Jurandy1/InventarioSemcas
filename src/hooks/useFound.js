@@ -242,11 +242,8 @@ export function useFound({ showT, applyDescOverride } = {}) {
 
       const unit = itemUnit?.id ? itemUnit : unidadeAtiva;
 
-      const localId = String(getField("detLocal") || "").trim();
-      if (!localId) {
-        showT?.("Selecione um local antes de salvar");
-        return;
-      }
+      // ✅ CORREÇÃO: Local é opcional, não é obrigatório
+      const localId = String(getField("detLocal") || "").trim() || "sem-local";
 
       perfMonitor.start("saveDetail");
 
@@ -290,13 +287,16 @@ export function useFound({ showT, applyDescOverride } = {}) {
           });
         }
 
+        // ✅ CORREÇÃO: Ler detEstado de formRef.current, não de getField
+        const estadoVal = formRef.current.detEstado || getField("detEstado") || "Bom";
+
         const offlineEntry = {
           patrimonioId: item.id,
           unidadeId: unit?.id || item?.unidadeId || "",
           unidadeNome: unit?.nome || item?.unidadeNome || "",
-          estado: getField("detEstado") || "Bom",
+          estado: estadoVal,
           situacao: situacaoAtual,
-          localId: getField("detLocal"),
+          localId: localId,
           obs: getField("detObs"),
           marca: getField("detMarca") || "",
           origem: getField("detOrigem") || "Próprio",
@@ -358,9 +358,9 @@ export function useFound({ showT, applyDescOverride } = {}) {
 
         const markResult = await markFound({
           itemId: item.id,
-          estado: getField("detEstado") || "Bom",
+          estado: estadoVal,
           situacao: situacaoAtual,
-          localId: getField("detLocal"),
+          localId: localId,
           obs: getField("detObs"),
           marca: getField("detMarca"),
           origem: getField("detOrigem") || "Próprio",
@@ -404,6 +404,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
         closeModal?.();
         showT?.("Salvo com " + (allUrls.length > existingUrls.length ? "fotos" : "sucesso") + "!");
       } catch (e) {
+        console.error("Erro ao salvar:", e);
         showT?.(e?.message || "Erro ao salvar");
       } finally {
         setUploading(false);
@@ -434,4 +435,3 @@ export function useFound({ showT, applyDescOverride } = {}) {
     deletePhoto,
   };
 }
-
