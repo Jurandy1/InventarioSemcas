@@ -68,34 +68,6 @@ export function ItemDetailModal({
 
   const getItemCode = (it) => it?.patrimonioLabel || it?.id || "—";
 
-  const handleSaveWithValidation = () => {
-    // Validação: verificar se o estado foi selecionado explicitamente
-    const estado = getField("detEstado");
-    if (!estado || estado.trim() === "") {
-      alert("Por favor, selecione um Estado de Conservação antes de salvar.");
-      return;
-    }
-
-    // Validação: verificar se uma situação foi selecionada
-    const situacao = getField("detSituacao") || "Em uso";
-    if (!situacao || situacao.trim() === "") {
-      alert("Por favor, selecione uma Situação antes de salvar.");
-      return;
-    }
-
-    // Se for permuta, validar campos obrigatórios
-    if (situacao === "Permuta") {
-      const permutaDesc = String(getField("detPermutaDesc") || "").trim();
-      if (!permutaDesc) {
-        alert("Para itens em Permuta, descreva o item encontrado no lugar.");
-        return;
-      }
-    }
-
-    // Chama a função onSave original
-    onSave?.();
-  };
-
   return (
     <>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
@@ -535,7 +507,7 @@ export function ItemDetailModal({
           </button>
         )}
         <button
-          onClick={handleSaveWithValidation}
+          onClick={onSave}
           style={{
             background: "#1351B4",
             color: "#fff",
