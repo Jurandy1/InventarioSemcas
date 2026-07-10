@@ -269,7 +269,12 @@ export function useFound({ showT, applyDescOverride } = {}) {
         extras.permutaEstado = getField("detPermutaEstado") || "Bom";
       }
 
-      if (before?.semTombo || item?.semTombo || before?.identificadoPorFoto) {
+      // "sem tombo" digitado na observação (fluxo antigo) marca automaticamente
+      // como sem plaqueta — evita ter que casar UI antiga com feature nova.
+      const obsVal = String(getField("detObs") || "").trim();
+      const obsIndicaSemTombo = /\bsem[\s_-]+tomb(?:o|amento)\b/i.test(obsVal);
+
+      if (before?.semTombo || item?.semTombo || before?.identificadoPorFoto || obsIndicaSemTombo) {
         extras.semTombo = true;
         extras.identificadoPorFoto = true;
         const tomboRef = String(formRef.current.detTomboRef || "").trim();

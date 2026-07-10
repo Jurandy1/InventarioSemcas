@@ -371,7 +371,7 @@ export function useAppData({ firebaseOk, state }) {
     { id: "busca", l: "Busca" },
     { id: "itens", l: "Itens" },
     { id: "nf", l: "Notas" },
-    { id: "tombos", l: "Tombos" },
+    { id: "tombos", l: "Tombos", badge: tombosDup.length > 0 ? tombosDup.length : null },
     { id: "dash", l: "Dashboard" },
     ...(canGerirCoord ? [{ id: "coordenadores", l: "Coordenadores" }] : []),
     ...(canGerirCoord ? [{ id: "correcao", l: "Nomes" }] : []),
