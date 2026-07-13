@@ -17,7 +17,7 @@ import { clearUiResume } from "../../utils/uiResume.js";
 export function useAppItemActions({ state, data }) {
   const {
     formRef, finalizadoEdit, setFinalizadoEdit, finalizandoRef,
-    setBusy, setModal, setQrCodeUrl, setCoordRegistroLink,
+    busy, setBusy, setModal, setQrCodeUrl, setCoordRegistroLink,
     hideIncorporados, multiRowsPhotosRef, showT, getField, bumpFt,
   } = state;
   const {
