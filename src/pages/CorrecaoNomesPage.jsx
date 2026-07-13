@@ -40,6 +40,7 @@ export function CorrecaoNomesPage({
   inferEspecieFromDesc,
   onAplicarCorrecao,
   onViewImage,
+  onOpenItem,
   showT,
   busy,
   isMob,
@@ -394,7 +395,7 @@ export function CorrecaoNomesPage({
                       onChange={() => toggleSel(item.id)}
                       aria-label={`Selecionar ${label}`}
                     />
-                    <CorrecaoItemPhoto foundMap={foundMap} itemId={item.id} onViewImage={onViewImage} />
+                    <CorrecaoItemPhoto foundMap={foundMap} itemId={item.id} onViewImage={onViewImage} onAddPhoto={onOpenItem ? () => onOpenItem(item) : undefined} />
                     <div className="correcao-item__main">
                       <div className="correcao-item__title">{label}</div>
                       {marca && (
@@ -513,7 +514,7 @@ export function CorrecaoNomesPage({
                 <article key={item.id} className="correcao-item" style={{ borderLeft: "3px solid #16a34a" }}>
                   <span className={scoreClass(score)} title="Qualidade do nome">{score}</span>
                   <span style={{ marginTop: 28, fontSize: 16, color: "#16a34a", flexShrink: 0 }} aria-hidden="true">✓</span>
-                  <CorrecaoItemPhoto foundMap={foundMap} itemId={item.id} onViewImage={onViewImage} />
+                  <CorrecaoItemPhoto foundMap={foundMap} itemId={item.id} onViewImage={onViewImage} onAddPhoto={onOpenItem ? () => onOpenItem(item) : undefined} />
                   <div className="correcao-item__main">
                     <div className="correcao-item__title">{label}</div>
                     {marca && (

@@ -257,6 +257,18 @@
   border: 1px dashed var(--gov-border);
 }
 
+.correcao-photo--add {
+  flex-direction: column;
+  border: 1.5px dashed #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.correcao-photo--add:hover {
+  background: #dbeafe;
+}
+
 .correcao-chips {
   display: flex;
   gap: 4px;

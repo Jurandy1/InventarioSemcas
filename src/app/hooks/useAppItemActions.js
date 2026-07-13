@@ -671,7 +671,9 @@ export function useAppItemActions({ state, data }) {
         steps.push({
           collection: "inventario",
           docId: itemId,
-          usePhotos: count === 0,
+          // Foto do lote é compartilhada por TODOS os itens (igual ao fluxo
+          // online) — antes só o 1º passo recebia a foto ao sincronizar.
+          usePhotos: true,
           content: {
             patrimonioId: itemId,
             unidadeId: unit?.id || "",

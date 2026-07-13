@@ -453,6 +453,7 @@ export function AppMainView({ ctx }) {
               inferEspecieFromDesc={inferEspecieFromDesc}
               onAplicarCorrecao={aplicarCorrecaoNomes}
               onViewImage={onViewImage}
+              onOpenItem={openDetModal}
               showT={showT}
               busy={busy}
               isMob={isMob}

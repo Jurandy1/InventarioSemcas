@@ -2,10 +2,24 @@ import React from "react";
 import { SmartImg } from "../SmartImg.jsx";
 import { getItemFotos } from "../../utils/nomeCorrecao.js";
 
-export function CorrecaoItemPhoto({ foundMap, itemId, onViewImage, size = 72 }) {
+export function CorrecaoItemPhoto({ foundMap, itemId, onViewImage, onAddPhoto, size = 72 }) {
   const urls = getItemFotos(itemId, foundMap);
   const src = urls[0];
   if (!src) {
+    if (onAddPhoto) {
+      return (
+        <button
+          type="button"
+          className="correcao-photo correcao-photo--empty correcao-photo--add"
+          style={{ width: size, height: size, cursor: "pointer" }}
+          onClick={onAddPhoto}
+          title="Abrir o item para adicionar foto"
+        >
+          Sem foto
+          <span style={{ display: "block", fontSize: 10, fontWeight: 700, marginTop: 2 }}>+ adicionar</span>
+        </button>
+      );
+    }
     return (
       <div className="correcao-photo correcao-photo--empty" style={{ width: size, height: size }}>
         Sem foto

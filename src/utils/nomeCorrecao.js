@@ -654,7 +654,11 @@ export function filterInventariadosItems(items, foundMap, foundSet, { unidadeId,
       return label.includes(q) || marca.includes(q) || String(i.id).toLowerCase().includes(q);
     });
   }
-  if (estadoLista === ESTADO_LISTA.PENDENTES) {
+  // Filtros de problema físico (ex.: sem foto) mostram TODOS os itens com o
+  // problema — inclusive os de nome já padronizado, que sairiam da lista
+  // "pendentes" e ficariam sem lugar para correção.
+  const filtroIgnoraPendencia = filtroProblema === FILTRO_PROBLEMA.SEM_FOTO;
+  if (estadoLista === ESTADO_LISTA.PENDENTES && !filtroIgnoraPendencia) {
     list = list.filter((i) => precisaPadronizacao(getItemLabel(i, foundMap)));
   } else if (estadoLista === ESTADO_LISTA.CORRIGIDOS) {
     list = list.filter((i) => !precisaPadronizacao(getItemLabel(i, foundMap)));
