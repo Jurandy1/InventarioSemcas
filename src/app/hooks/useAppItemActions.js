@@ -849,17 +849,25 @@ export function useAppItemActions({ state, data }) {
     setBusy(true);
     try {
       const stItem = scopeAllItens.find((i) => i.id === stId) || formRef.current.ajusteStItem;
-      const unit = editScopeUnits.find((u) => u.id === (stFound.unidadeId || stItem?.unidadeId)) || unidadeAtiva;
+      // Origem manual (ST_/MAN_) some da lista; tombo da planilha volta a pendente.
+      const sourceIsManual = !!(stItem?.isManual || /^(ST_|MAN_)/i.test(stId));
       const entry = {
         ...stFound,
         patrimonioId: realId,
         unidadeId: realUnit.id,
         unidadeNome: realUnit.nome,
-        vinculadoDeSemTombo: true,
         alocadoManualmente: true,
-        semTomboOrigemId: stId,
-        semTomboOrigemDesc: stFound.descricaoEdit || stItem?.descricao || "",
-        tomboLabelFisico: String(stFound.tomboReferencia || stItem?.patrimonioLabel || stId).trim() || "",
+        ...(sourceIsManual
+          ? {
+              vinculadoDeSemTombo: true,
+              semTomboOrigemId: stId,
+              semTomboOrigemDesc: stFound.descricaoEdit || stItem?.descricao || "",
+              tomboLabelFisico: String(stFound.tomboReferencia || stItem?.patrimonioLabel || stId).trim() || "",
+            }
+          : {
+              reatribuidoDeTombo: stId,
+              reatribuidoDeLabel: String(stItem?.patrimonioLabel || stId),
+            }),
         semTombo: false,
         identificadoPorFoto: false,
         ultimaAtualizacao: new Date().toISOString(),
@@ -868,28 +876,32 @@ export function useAppItemActions({ state, data }) {
 
       await fsSet("inventario", realId, entry);
       await fsDel("inventario", stId);
-      try {
-        await fsDel("manuais", stId);
-      } catch {}
+      if (sourceIsManual) {
+        try {
+          await fsDel("manuais", stId);
+        } catch {}
+      }
 
       const nextFound = found.found.filter((f) => f.patrimonioId !== stId);
       nextFound.push({ ...entry, _id: realId, patrimonioId: realId });
-      found.setFound(nextFound);
+      found.syncFoundRef(nextFound);
       bumpCacheBuster();
       await setCachedData("inventario", nextFound);
 
-      setUnidades((prev) =>
-        prev.map((u) => ({
-          ...u,
-          itens: u.itens.filter((i) => i.id !== stId),
-        })),
-      );
-      inventario.setUnidadesAtivas((prev) =>
-        prev.map((u) => ({
-          ...u,
-          itens: u.itens.filter((i) => i.id !== stId),
-        })),
-      );
+      if (sourceIsManual) {
+        setUnidades((prev) =>
+          prev.map((u) => ({
+            ...u,
+            itens: u.itens.filter((i) => i.id !== stId),
+          })),
+        );
+        inventario.setUnidadesAtivas((prev) =>
+          prev.map((u) => ({
+            ...u,
+            itens: u.itens.filter((i) => i.id !== stId),
+          })),
+        );
+      }
 
       if (finalizadoEdit?.fin?.id && !finalizadoEdit.fin.legacy) {
         const stats = buildFinalizacaoStats(finalizadoEdit.units, found.foundSet);
@@ -898,9 +910,106 @@ export function useAppItemActions({ state, data }) {
 
       await logAuditoria("link-tombo", "inventario", realId, stFound, entry);
       setModal(null);
-      showT(`Vinculado ao tombo ${realItem.patrimonioLabel || realId}`);
+      showT(
+        sourceIsManual
+          ? `Vinculado ao tombo ${realItem.patrimonioLabel || realId}`
+          : `Registro movido para o tombo ${realItem.patrimonioLabel || realId} — o tombo ${stItem?.patrimonioLabel || stId} voltou a pendente`,
+      );
     } catch (e) {
       showT(e?.message || "Erro ao vincular tombo");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Correção pós-registro: o item foi inventariado num tombo da planilha, mas
+  // descobriu-se depois que o tombo estava errado e o item físico não tem tombo.
+  // O registro (fotos, local, estado, obs) vira um item manual S/T e o tombo
+  // original volta a ficar pendente na planilha.
+  const corrigirParaSemTombo = async () => {
+    if (!assertPodeEditar()) return;
+    const item = formRef.current.detItem;
+    if (!item?.id) return;
+    const f = getFoundEntry(item.id, found.foundMap);
+    if (!f) {
+      showT("Item ainda não foi inventariado");
+      return;
+    }
+    if (item.isManual || isSemTomboItem(item, f) || /^(ST_|MAN_)/i.test(String(item.id))) {
+      showT("Disponível apenas para tombos da planilha");
+      return;
+    }
+    const label = item.patrimonioLabel || item.id;
+    const ok = window.confirm(
+      `Corrigir registro?\n\nEste registro (fotos, local, estado) vira um item manual SEM TOMBO e o tombo ${label} volta a ficar pendente na planilha.`
+    );
+    if (!ok) return;
+
+    setBusy(true);
+    try {
+      const unit = editScopeUnits.find((u) => u.id === (f.unidadeId || item.unidadeId)) || unidadeAtiva;
+      const newId = `ST_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const desc = f.descricaoEdit || item.descricao || item.especie || "";
+      const temFoto = (f.fotoUrls || []).length > 0;
+      const manualItem = {
+        id: newId,
+        patrimonioLabel: "S/T",
+        data: new Date().toLocaleDateString("pt-BR"),
+        especie: f.especieEdit || item.especie || "",
+        descricao: desc,
+        marca: f.marca || item.marca || "",
+        fornecedor: "",
+        empenho: "",
+        nf: "",
+        dataNF: "",
+        valor: 0,
+        valorAtual: 0,
+        isManual: true,
+        tipoEntrada: f.origem || "Próprio",
+        semTombo: true,
+        identificadoPorFoto: temFoto,
+      };
+      const entry = {
+        ...f,
+        patrimonioId: newId,
+        unidadeId: unit?.id || f.unidadeId || "",
+        unidadeNome: unit?.nome || f.unidadeNome || "",
+        isManual: true,
+        semTombo: true,
+        identificadoPorFoto: temFoto,
+        descricaoEdit: desc,
+        corrigidoDeTombo: item.id,
+        corrigidoDeLabel: label,
+        ultimaAtualizacao: new Date().toISOString(),
+      };
+      delete entry._id;
+
+      await fsSet("manuais", newId, { ...manualItem, unidadeId: unit?.id || "" });
+      await fsSet("inventario", newId, entry);
+      await fsDel("inventario", normalizePatrimonioId(item.id));
+
+      const oldNorm = normalizePatrimonioId(item.id);
+      const nextFound = (found.foundRef.current || []).filter(
+        (x) => normalizePatrimonioId(x.patrimonioId || x._id) !== oldNorm
+      );
+      nextFound.push({ ...entry, _id: newId });
+      found.syncFoundRef(nextFound);
+      bumpCacheBuster();
+      await setCachedData("inventario", nextFound);
+
+      if (unit?.id) {
+        const addTo = (u) => (u.id === unit.id ? { ...u, itens: [...u.itens, manualItem] } : u);
+        setUnidades((prev) => prev.map(addTo));
+        inventario.setUnidadesAtivas((prev) => prev.map(addTo));
+        appendItemsToFinalizadoScope(unit.id, [manualItem]);
+      }
+
+      await logAuditoria("corrige-tombo-semtombo", "inventario", newId, f, entry);
+      clearUiResume();
+      setModal(null);
+      showT(`Registro virou item sem tombo — tombo ${label} voltou a pendente`);
+    } catch (e) {
+      showT(e?.message || "Erro ao corrigir registro");
     } finally {
       setBusy(false);
     }
@@ -1107,7 +1216,7 @@ export function useAppItemActions({ state, data }) {
   };
 
   return { aplicarCorrecaoNomes, lookupTombo, addManual, addSemTomboItem, addMultiItems,
-    addSemTomboPendentes, openLinkTomboModal, linkSemTomboToTombo,
+    addSemTomboPendentes, openLinkTomboModal, linkSemTomboToTombo, corrigirParaSemTombo,
     confirmarTomboDivergente, getSemTomboPendentes, toggleStPending,
     gerarRelatorio, fazerBackup, finalizarInv, finalizarComCoordenadora };
 }

@@ -424,6 +424,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
   return {
     found,
     setFound,
+    syncFoundRef,
     foundRef,
     foundSet,
     foundMap,

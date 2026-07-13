@@ -27,6 +27,8 @@ export function ItemDetailModal({
   onClose,
   onSave,
   onDelete,
+  onReassignTombo,
+  onConvertSemTombo,
 }) {
   // Re-render local sem trocar as keys (bumpFt remontaria o input em edição).
   const [, refreshLocal] = React.useReducer((n) => n + 1, 0);
@@ -470,6 +472,34 @@ export function ItemDetailModal({
       />
 
       <ItemHistory itemId={item.id} />
+
+      {foundEntry && !semTombo && (onReassignTombo || onConvertSemTombo) && (
+        <div style={{ background: "#fdf2f8", border: "1.5px solid #fbcfe8", borderRadius: 12, padding: "12px 14px", marginTop: 16 }}>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 800, color: "#9d174d" }}>Registrou no tombo errado?</p>
+          <p style={{ margin: "4px 0 10px", fontSize: 11, color: "#831843", lineHeight: 1.45 }}>
+            Se este registro (fotos, local, estado) pertence a outro item, você pode movê-lo para o tombo correto
+            ou transformá-lo em item sem tombo. O tombo atual volta a ficar pendente na planilha.
+          </p>
+          <div style={{ display: "flex", gap: 8, flexDirection: isMobile ? "column" : "row" }}>
+            {onReassignTombo && (
+              <button
+                onClick={onReassignTombo}
+                style={{ flex: 1, background: "#fff", color: "#9d174d", border: "1.5px solid #f9a8d4", borderRadius: 9, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", minHeight: isMobile ? 44 : undefined, touchAction: "manipulation" }}
+              >
+                Mover para outro tombo
+              </button>
+            )}
+            {onConvertSemTombo && !item.isManual && (
+              <button
+                onClick={onConvertSemTombo}
+                style={{ flex: 1, background: "#fff", color: "#92400e", border: "1.5px solid #fcd34d", borderRadius: 9, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", minHeight: isMobile ? 44 : undefined, touchAction: "manipulation" }}
+              >
+                Mudar para item sem tombo
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 9, marginTop: 16, flexDirection: isMobile ? "column" : "row" }}>
         <button

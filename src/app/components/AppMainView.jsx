@@ -57,7 +57,7 @@ export function AppMainView({ ctx }) {
     doGlobalSearch, openDetModal, openNextPending, openCamera, onCameraCapture,
     closeCameraModal, closeDetModal, applyServerEntryToDetForm, addManual,
     addSemTomboItem, addMultiItems, addSemTomboPendentes, openLinkTomboModal,
-    linkSemTomboToTombo, confirmarTomboDivergente, getSemTomboPendentes,
+    linkSemTomboToTombo, corrigirParaSemTombo, confirmarTomboDivergente, getSemTomboPendentes,
     toggleStPending, gerarRelatorio, fazerBackup, finalizarComCoordenadora,
     multiRowsPhotosRef, multiSharedRef, multiRowsRef, manualPatrimonioRef,
     lookupTombo, persistCameraSession, saveSessionResume, resolveItemUnit,
@@ -541,6 +541,12 @@ export function AppMainView({ ctx }) {
               const removed = await handleDeleteInventariado(item);
               if (removed) closeDetModal();
             }}
+            onReassignTombo={() => {
+              if (!assertPodeEditar()) return;
+              const it = formRef.current.detItem;
+              openLinkTomboModal(it, getFoundEntry(it.id, found.foundMap));
+            }}
+            onConvertSemTombo={corrigirParaSemTombo}
           />
         </Overlay>
       )}

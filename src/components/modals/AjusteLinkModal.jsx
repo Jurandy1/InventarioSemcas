@@ -19,15 +19,30 @@ export function AjusteLinkModal({
   inp,
   ft,
 }) {
+  const srcItem = formRef.current.ajusteStItem;
+  const isReassign = !!srcItem && !srcItem.isManual && !/^(ST_|MAN_)/i.test(String(srcItem.id || ""));
   return (
     <Overlay isMobile={isMob} onClose={() => setModal(null)}>
-      <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>Vincular foto ao tombo</h2>
+      <h2 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700 }}>
+        {isReassign ? "Mover registro para outro tombo" : "Vincular foto ao tombo"}
+      </h2>
       <p style={{ margin: "0 0 12px", fontSize: 12, color: "#64748b", lineHeight: 1.45 }}>
-        Foto/descrição: <strong>{formRef.current.ajusteStItem.descricao || formRef.current.ajusteStFound?.descricaoEdit || "—"}</strong>
+        {isReassign ? (
+          <>
+            Registro atual: <strong>Nº {srcItem.patrimonioLabel || srcItem.id}</strong> ·{" "}
+            {formRef.current.ajusteStFound?.descricaoEdit || srcItem.descricao || "—"}
+          </>
+        ) : (
+          <>
+            Foto/descrição: <strong>{srcItem?.descricao || formRef.current.ajusteStFound?.descricaoEdit || "—"}</strong>
+          </>
+        )}
       </p>
       <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: 10, marginBottom: 12 }}>
         <p style={{ margin: 0, fontSize: 11, color: "#92400e" }}>
-          Escolha um tombo da planilha que ainda não foi inventariado. A foto será transferida para esse patrimônio.
+          {isReassign
+            ? `Escolha o tombo correto (ainda não inventariado). O registro — fotos, local, estado — será transferido e o tombo ${srcItem.patrimonioLabel || srcItem.id} voltará a ficar pendente.`
+            : "Escolha um tombo da planilha que ainda não foi inventariado. A foto será transferida para esse patrimônio."}
         </p>
       </div>
       <TInput
@@ -110,7 +125,7 @@ export function AjusteLinkModal({
       </div>
       <div style={{ display: "flex", gap: 9, marginTop: 16 }}>
         <button onClick={() => setModal(null)} style={{ ...bs, flex: 1 }}>Cancelar</button>
-        <button onClick={linkSemTomboToTombo} style={{ ...bp, flex: 1 }}>Vincular</button>
+        <button onClick={linkSemTomboToTombo} style={{ ...bp, flex: 1 }}>{isReassign ? "Mover registro" : "Vincular"}</button>
       </div>
     </Overlay>
   );
