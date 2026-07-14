@@ -416,11 +416,12 @@ function applyWhere(query, collection, where = []) {
       continue;
     }
     const col = toSnake(field);
-    // ARRAY_CONTAINS (herdado do Firestore) precisa virar containment JSONB no
-    // Postgres. Sem isso, .eq() num JSONB dispara "invalid input syntax for type json"
-    // e o PostgREST devolve zero linhas.
+    // ARRAY_CONTAINS em colunas JSONB: PostgREST exige literal JSON
+    // (ex. '["u_140_55"]'). Um array JS vira {u_140_55} e dispara
+    // "invalid input syntax for type json".
     if (String(w.op || "").toUpperCase() === "ARRAY_CONTAINS") {
-      q = q.contains(col, [w.value]);
+      const payload = Array.isArray(w.value) ? w.value : [w.value];
+      q = q.filter(col, "cs", JSON.stringify(payload));
       continue;
     }
     q = q.eq(col, w.value);
