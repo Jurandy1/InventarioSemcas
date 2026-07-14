@@ -46,6 +46,38 @@ export function useInventario({ unidades, foundSet }) {
     } catch {}
   }, []);
 
+  // Remove unidades finalizadas das sessões pausadas — senão o card
+  // "Inventários pausados" ressuscita a unidade com a opção de finalizar
+  // de novo mesmo após a finalização.
+  const limparSessoesDeUnidades = useCallback(
+    (unitIds = []) => {
+      const alvo = new Set((unitIds || []).filter(Boolean));
+      if (!alvo.size) return;
+      const next = loadSessoesPausadas()
+        .map((s) => {
+          const ids = s.unitIds || [];
+          if (!ids.some((id) => alvo.has(id))) return s;
+          const keepIdx = ids.map((id, i) => (alvo.has(id) ? -1 : i)).filter((i) => i >= 0);
+          return {
+            ...s,
+            unitIds: keepIdx.map((i) => ids[i]),
+            unitNomes: (s.unitNomes || []).filter((_, i) => keepIdx.includes(i)),
+          };
+        })
+        .filter((s) => (s.unitIds || []).length > 0);
+      persistSessoes(next);
+    },
+    [persistSessoes]
+  );
+
+  const descartarSessaoPausada = useCallback(
+    (entry) => {
+      if (!entry?.id) return;
+      persistSessoes(loadSessoesPausadas().filter((s) => s.id !== entry.id));
+    },
+    [persistSessoes]
+  );
+
   const arquivarSessaoAtual = useCallback(() => {
     if (unidadesAtivas.length === 0) return null;
     const sid = getSessionId() || sessionId;
@@ -193,6 +225,8 @@ export function useInventario({ unidades, foundSet }) {
     saveAtiva,
     arquivarSessaoAtual,
     retomarSessaoPausada,
+    descartarSessaoPausada,
+    limparSessoesDeUnidades,
     sessoesPausadas,
     pausedUnitIds,
     activeLocalId,

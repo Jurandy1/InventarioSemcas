@@ -1123,6 +1123,7 @@ export function useAppItemActions({ state, data }) {
     }
     found.setTombosNE((prev) => [...prev, ...pendentes.map((i) => ({ ...i, unidade: i.unidadeNome, dataFin: new Date().toLocaleDateString("pt-BR") }))]);
     // Clear active inventory and paused sessions when finalizing!
+    inventario.limparSessoesDeUnidades(inventario.unidadesAtivas.map((u) => u.id));
     inventario.clearAtivas();
     setModal(null);
     showT(`Finalizado! ${pendentes.length} não encontrado(s)`);
@@ -1205,6 +1206,7 @@ export function useAppItemActions({ state, data }) {
       }
 
       // Clear active inventory and paused sessions when finalizing!
+      inventario.limparSessoesDeUnidades(unidadeIds);
       inventario.clearAtivas();
       setModal("qrcode-resultado");
       showT("Convite criado! A coordenadora se cadastra pelo QR Code e você aprova em Coordenadores.");

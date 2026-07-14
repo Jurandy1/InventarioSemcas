@@ -126,8 +126,10 @@ export function AppMainView({ ctx }) {
             confirmarAtivas={inventario.confirmarAtivas}
             removeAtiva={inventario.removeAtiva}
             retomarSessaoPausada={inventario.retomarSessaoPausada}
+            descartarSessaoPausada={inventario.descartarSessaoPausada}
             sessoesPausadas={inventario.sessoesPausadas}
             pausedUnitIds={inventario.pausedUnitIds}
+            finalizacoes={finalizacoesState.finalizacoes}
             foundSet={found.foundSet}
             foundMap={found.foundMap}
             activeLocalId={inventario.activeLocalId}

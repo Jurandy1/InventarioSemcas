@@ -62,8 +62,10 @@ export function InventarioPage({
   confirmarAtivas,
   removeAtiva,
   retomarSessaoPausada,
+  descartarSessaoPausada,
   sessoesPausadas,
   pausedUnitIds,
+  finalizacoes = [],
   foundSet,
   foundMap,
   isMob,
@@ -106,6 +108,27 @@ export function InventarioPage({
   onViewImage,
 }) {
   const listLimits = useMemo(() => getListLimits(isMob), [isMob]);
+  // Última finalização registrada de cada unidade (lista já vem ordenada da
+  // mais recente para a mais antiga em useFinalizacoes).
+  const finalizacaoPorUnidade = useMemo(() => {
+    const m = new Map();
+    for (const f of finalizacoes || []) {
+      for (const id of f.unidadeIds || []) {
+        if (!m.has(id)) m.set(id, f);
+      }
+    }
+    return m;
+  }, [finalizacoes]);
+
+  const formatFinData = (v) => {
+    if (!v) return "";
+    if (String(v).includes("/")) return v;
+    try {
+      return new Date(v).toLocaleDateString("pt-BR");
+    } catch {
+      return String(v);
+    }
+  };
   const [viewMode, setViewMode] = useState("padrao");
   const [coletadosLimit, setColetadosLimit] = useState(() => listLimits.coletadosLimit);
   const [localPage, setLocalPage] = useState(1);
@@ -366,24 +389,46 @@ export function InventarioPage({
                 Inventários pausados ({sessoesPausadas.length})
               </p>
               <div style={{ display: "grid", gap: 8 }}>
-                {sessoesPausadas.map((s) => (
-                  <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <div>
-                      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#78350f" }}>
-                        {(s.unitNomes || s.unitIds || []).join(", ") || "Unidades"}
-                      </p>
-                      <p style={{ margin: "2px 0 0", fontSize: 11, color: "#a16207" }}>
-                        Pausado em {s.savedAt ? new Date(s.savedAt).toLocaleString("pt-BR") : "—"}
-                      </p>
+                {sessoesPausadas.map((s) => {
+                  const finalizadas = (s.unitIds || []).filter((id) => finalizacaoPorUnidade.has(id));
+                  return (
+                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#78350f" }}>
+                          {(s.unitNomes || s.unitIds || []).join(", ") || "Unidades"}
+                        </p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#a16207" }}>
+                          Pausado em {s.savedAt ? new Date(s.savedAt).toLocaleString("pt-BR") : "—"}
+                        </p>
+                        {finalizadas.length > 0 && (
+                          <p style={{ margin: "2px 0 0", fontSize: 11, fontWeight: 700, color: "#15803d" }}>
+                            ✓ Unidade já finalizada — pode descartar esta sessão
+                          </p>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          onClick={() => retomarSessaoPausada?.(s)}
+                          style={{ ...bp, fontSize: 12, padding: "8px 12px", background: "#b45309" }}
+                        >
+                          Retomar
+                        </button>
+                        {descartarSessaoPausada && (
+                          <button
+                            onClick={() => {
+                              if (window.confirm("Descartar esta sessão pausada?\n\nOs itens já inventariados NÃO são apagados — só a seleção de unidades desta sessão é removida.")) {
+                                descartarSessaoPausada(s);
+                              }
+                            }}
+                            style={{ ...bs, fontSize: 12, padding: "8px 12px", color: "#dc2626", borderColor: "#fca5a5" }}
+                          >
+                            Descartar
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <button
-                      onClick={() => retomarSessaoPausada?.(s)}
-                      style={{ ...bp, fontSize: 12, padding: "8px 12px", background: "#b45309" }}
-                    >
-                      Retomar
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -420,11 +465,19 @@ export function InventarioPage({
                   const isActive = unidadesAtivas.some((x) => x.id === u.id);
                   const isArchivedPaused = pausedUnitIds?.has?.(u.id) && !isActive;
                   const selected = pendingUnids.has(u.id);
+                  const fin = finalizacaoPorUnidade.get(u.id);
+                  const isFinalizada = !!fin && !isActive && !isArchivedPaused;
                   return (
                     <button
                       key={u.id}
                       onClick={() => {
                         if (isActive) return;
+                        if (isFinalizada && !selected) {
+                          const ok = window.confirm(
+                            `"${u.nome}" já foi FINALIZADA em ${formatFinData(fin.finalizedAt)}.\n\nPara corrigir itens dessa unidade, use a aba Finalizados → Editar inventário (não precisa reabrir).\n\nDeseja mesmo iniciar um NOVO inventário para esta unidade?`
+                          );
+                          if (!ok) return;
+                        }
                         setPendingUnids((prev) => {
                           const next = new Set(prev);
                           if (next.has(u.id)) next.delete(u.id);
@@ -432,12 +485,18 @@ export function InventarioPage({
                           return next;
                         });
                       }}
-                      style={{ ...cd, border: `2px solid ${isActive ? "#86efac" : isArchivedPaused ? "#fcd34d" : selected ? "#1351B4" : "#e2e8f0"}`, cursor: isActive ? "default" : "pointer", textAlign: "left", position: "relative", overflow: "hidden", background: isActive ? "#f0fdf4" : isArchivedPaused ? "#fffbeb" : selected ? "#eff6ff" : "#fff" }}
+                      style={{ ...cd, border: `2px solid ${isActive ? "#86efac" : isArchivedPaused ? "#fcd34d" : selected ? "#1351B4" : isFinalizada ? "#bbf7d0" : "#e2e8f0"}`, cursor: isActive ? "default" : "pointer", textAlign: "left", position: "relative", overflow: "hidden", background: isActive ? "#f0fdf4" : isArchivedPaused ? "#fffbeb" : selected ? "#eff6ff" : isFinalizada ? "#fafffb" : "#fff" }}
                     >
                       <div style={{ position: "absolute", top: 10, right: 10, width: 20, height: 20, borderRadius: 6, border: `2px solid ${isActive ? "#16a34a" : isArchivedPaused ? "#d97706" : selected ? "#1351B4" : "#d1d5db"}`, background: isActive ? "#16a34a" : isArchivedPaused ? "#f59e0b" : selected ? "#1351B4" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#fff", fontWeight: 900 }}>
                         {isActive ? "OK" : isArchivedPaused ? "P" : selected ? "OK" : ""}
                       </div>
                       <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: isActive ? "#15803d" : isArchivedPaused ? "#92400e" : selected ? "#1351B4" : "#0f172a", paddingRight: 28 }}>{u.nome}</p>
+                      {isFinalizada && (
+                        <p style={{ margin: "4px 0 0", fontSize: 11, fontWeight: 800, color: "#15803d" }}>
+                          ✓ Finalizado em {formatFinData(fin.finalizedAt)}
+                          {fin.coordenadora?.nome ? ` · Coord. ${fin.coordenadora.nome}` : ""}
+                        </p>
+                      )}
                       <p style={{ margin: "4px 0 8px", fontSize: 12, color: isActive ? "#16a34a" : isArchivedPaused ? "#b45309" : "#64748b" }}>
                         {isActive ? "Em inventário" : isArchivedPaused ? "Inventário pausado (retome abaixo)" : `${u.itens.length} itens · ${inv} inventariados`}
                       </p>
@@ -518,6 +577,31 @@ export function InventarioPage({
             <div style={{ height: 5, borderRadius: 3, background: "#dbeafe", marginBottom: 10 }}>
               <div style={{ height: "100%", background: progresso === 100 ? "#16a34a" : "#1351B4", borderRadius: 3, width: `${progresso}%`, transition: "width .3s" }} />
             </div>
+
+            {(() => {
+              const jaFinalizadas = unidadesAtivas.filter((u) => finalizacaoPorUnidade.has(u.id));
+              if (!jaFinalizadas.length) return null;
+              return (
+                <div style={{ marginBottom: 10, padding: "10px 12px", background: "#f0fdf4", border: "1.5px solid #86efac", borderRadius: 9 }}>
+                  <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: "#15803d" }}>
+                    {jaFinalizadas.length > 1 ? "Estas unidades já foram finalizadas:" : "Esta unidade já foi finalizada:"}
+                  </p>
+                  {jaFinalizadas.map((u) => {
+                    const f = finalizacaoPorUnidade.get(u.id);
+                    return (
+                      <p key={u.id} style={{ margin: "4px 0 0", fontSize: 11, color: "#166534" }}>
+                        ✓ {u.nome} — em {formatFinData(f?.finalizedAt)}
+                        {f?.coordenadora?.nome ? ` (Coord. ${f.coordenadora.nome})` : ""}
+                      </p>
+                    );
+                  })}
+                  <p style={{ margin: "6px 0 0", fontSize: 11, color: "#166534", lineHeight: 1.45 }}>
+                    Não é preciso finalizar de novo — para corrigir itens, use <strong>Finalizados → Editar inventário</strong>.
+                    Se esta sessão sobrou por engano, use <strong>Cancelar</strong> (os registros não são apagados).
+                  </p>
+                </div>
+              );
+            })()}
 
             {Array.isArray(teamOnline) && teamOnline.length > 0 && (
               <div style={{ marginBottom: 10, padding: "8px 12px", background: "#ecfdf5", border: "1px solid #bbf7d0", borderRadius: 9 }}>
