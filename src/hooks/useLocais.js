@@ -3,6 +3,7 @@ import { fsDel, fsSet } from "../services/firebase.js";
 import { fetchLocaisForUnits, mergeLocaisRecords } from "../services/locaisLoad.js";
 import { bumpCacheBuster, getCachedData, setCachedData } from "../utils/performance.js";
 import { offlineManager } from "../services/features.js";
+import { findLocalByNomeAndUnits } from "../utils/inventorySession.js";
 
 export function useLocais() {
   const [locais, setLocais] = useState([]);
@@ -49,10 +50,37 @@ export function useLocais() {
   }, []);
 
   const createLocal = useCallback(async ({ nome, desc, sessionId, unidadeIds }, { updateQueueStatus } = {}) => {
-    const id = `loc_${Date.now()}`;
+    const nomeLimpo = String(nome || "").trim();
     const unitList = Array.isArray(unidadeIds) ? unidadeIds.filter(Boolean) : [];
+
+    const reuse = (hit) => {
+      if (!hit) return null;
+      const id = hit.id || hit._id;
+      return { ...hit, id, _id: id };
+    };
+
+    // Reaproveita sala já existente na unidade (mesma Recepção = mesmo local).
+    let existing = reuse(findLocalByNomeAndUnits(locaisRef.current || [], nomeLimpo, unitList));
+    if (existing) return existing;
+
+    if (navigator.onLine && unitList.length) {
+      try {
+        const remote = await fetchLocaisForUnits(unitList);
+        if (remote.length) {
+          const next = mergeLocaisRecords(locaisRef.current || [], remote);
+          setLocais(next);
+          try {
+            await setCachedData("locais", next);
+          } catch {}
+          existing = reuse(findLocalByNomeAndUnits(next, nomeLimpo, unitList));
+          if (existing) return existing;
+        }
+      } catch {}
+    }
+
+    const id = `loc_${Date.now()}`;
     const localData = {
-      nome: String(nome || "").trim(),
+      nome: nomeLimpo,
       desc: desc || "",
       sessionId: sessionId || "",
       unidadeIds: unitList,

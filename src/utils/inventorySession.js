@@ -38,6 +38,39 @@ export function getLocalUnitIds(local) {
       : [];
 }
 
+/** Normaliza nome de sala para deduplicar ("Recepção" ≈ "recepção "). */
+export function normalizeLocalNome(nome) {
+  return String(nome || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function localCreatedMs(local) {
+  const iso = Date.parse(local?.criadoEm || local?.criado_em || "");
+  if (Number.isFinite(iso)) return iso;
+  const id = String(local?.id || local?._id || "");
+  const m = id.match(/^loc_(\d+)/);
+  return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+/** Procura local existente da mesma unidade com o mesmo nome (evita N "Recepção"). Prefere o mais antigo. */
+export function findLocalByNomeAndUnits(locais, nome, unidadeIds = []) {
+  const alvo = normalizeLocalNome(nome);
+  if (!alvo) return null;
+  const units = new Set((unidadeIds || []).filter(Boolean));
+  let best = null;
+  for (const l of locais || []) {
+    if (normalizeLocalNome(l?.nome) !== alvo) continue;
+    const ids = getLocalUnitIds(l);
+    if (units.size && !ids.some((id) => units.has(id))) continue;
+    if (!best || localCreatedMs(l) < localCreatedMs(best)) best = l;
+  }
+  return best;
+}
+
 export function localBelongsToUnits(local, activeUnitIds = []) {
   const unitSet = new Set((activeUnitIds || []).filter(Boolean));
   if (!unitSet.size) return false;

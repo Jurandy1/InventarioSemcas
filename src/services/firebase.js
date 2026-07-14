@@ -33,6 +33,15 @@ export function isFirebaseConfigured() {
   return Boolean(FB.apiKey && FB.projectId && FB.storageBucket);
 }
 
+/** Dados de inventário só no Supabase. Firebase = login + fotos. */
+function assertSupabaseDataBackend() {
+  if (!useSupabaseForData()) {
+    throw new Error(
+      "Supabase não configurado. Dados do inventário só são gravados no Supabase (Firebase fica só para login e fotos)."
+    );
+  }
+}
+
 function assertFirebaseConfigured() {
   if (!isFirebaseConfigured()) {
     const msg = import.meta.env.PROD
@@ -172,308 +181,40 @@ export async function fbRegister(email, password) {
   };
 }
 
-function toFsValue(val) {
-  if (val === null || val === undefined) return { nullValue: null };
-  if (typeof val === "boolean") return { booleanValue: val };
-  if (typeof val === "number") return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
-  if (typeof val === "string") return { stringValue: val };
-  if (Array.isArray(val)) return { arrayValue: { values: val.map(toFsValue) } };
-  if (typeof val === "object") {
-    const fields = {};
-    for (const k in val) fields[k] = toFsValue(val[k]);
-    return { mapValue: { fields } };
-  }
-  return { stringValue: String(val) };
-}
-
-function fromFsValue(v) {
-  if (!v) return null;
-  if ("stringValue" in v) return v.stringValue;
-  if ("integerValue" in v) return parseInt(v.integerValue);
-  if ("doubleValue" in v) return v.doubleValue;
-  if ("booleanValue" in v) return v.booleanValue;
-  if ("nullValue" in v) return null;
-  if ("arrayValue" in v) return (v.arrayValue.values || []).map(fromFsValue);
-  if ("mapValue" in v) {
-    const obj = {};
-    for (const k in v.mapValue.fields) obj[k] = fromFsValue(v.mapValue.fields[k]);
-    return obj;
-  }
-  return null;
-}
-
-function fromFsDoc(doc) {
-  if (!doc?.fields) return null;
-  const obj = {};
-  for (const k in doc.fields) obj[k] = fromFsValue(doc.fields[k]);
-  return obj;
-}
-
 export async function fsGetDocPublic(collection, docId) {
-  if (useSupabaseForData()) return sbGetDocPublic(collection, docId);
-  assertFirebaseConfigured();
-  const id = String(docId || "").trim();
-  const col = String(collection || "").trim();
-  if (!id || !col) return null;
-  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
-  const r = await fetchWithTimeout(`${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB.apiKey}`, {}, 12000);
-  if (r.status === 404) return null;
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    const msg = String(d?.error?.message || d?.error?.status || "");
-    if (r.status === 403 || msg.includes("PERMISSION_DENIED") || msg.toLowerCase().includes("permission")) {
-      throw new Error(
-        "Convite bloqueado pelas regras do Firestore. Confirme que publicou as regras em Firestore → Rules (não são avisos de CSS no console)."
-      );
-    }
-    throw new Error(msg || `Falha ao validar convite (HTTP ${r.status})`);
-  }
-  return { _id: d.name.split("/").pop(), ...fromFsDoc(d) };
+  assertSupabaseDataBackend();
+  return sbGetDocPublic(collection, docId);
 }
 
 export async function fsGetDoc(collection, docId) {
-  if (useSupabaseForData()) return sbGetDoc(collection, docId);
-  assertFirebaseConfigured();
-  if (!authToken) return null;
-  const id = String(docId || "").trim();
-  const col = String(collection || "").trim();
-  if (!id || !col) return null;
-  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
-  const r = await fetchWithTimeout(
-    `${FS_URL}/${col}/${encodeURIComponent(id)}?key=${FB.apiKey}`,
-    { headers: { Authorization: `Bearer ${authToken}` } },
-    12000
-  );
-  if (r.status === 404) return null;
-  if (!r.ok) return null;
-  const d = await r.json().catch(() => ({}));
-  if (!d?.name) return null;
-  return { _id: d.name.split("/").pop(), ...fromFsDoc(d) };
-}
-
-function buildStructuredWhere(where) {
-  if (!Array.isArray(where) || where.length === 0) return null;
-
-  const filters = where
-    .filter(Boolean)
-    .map((w) => ({
-      fieldFilter: {
-        field: { fieldPath: String(w.field || "") },
-        op: String(w.op || "EQUAL"),
-        value: toFsValue(w.value),
-      },
-    }))
-    .filter((f) => f.fieldFilter.field.fieldPath);
-
-  if (filters.length === 0) return null;
-  if (filters.length === 1) return filters[0];
-  return { compositeFilter: { op: "AND", filters } };
-}
-
-function normalizeOrderBy(orderBy) {
-  if (!orderBy) return [];
-  const arr = Array.isArray(orderBy) ? orderBy : [orderBy];
-  return arr
-    .filter(Boolean)
-    .map((o) => {
-      if (typeof o === "string") return { field: o, direction: "ASCENDING" };
-      return { field: String(o.field || ""), direction: String(o.direction || "ASCENDING") };
-    })
-    .filter((o) => o.field);
-}
-
-function ensureNameOrderBy(orderByArr) {
-  const hasName = orderByArr.some((o) => o.field === "__name__");
-  return hasName ? orderByArr : [...orderByArr, { field: "__name__", direction: "ASCENDING" }];
-}
-
-function safeParseJson(val) {
-  if (!val) return null;
-  if (typeof val === "object") return val;
-  try {
-    return JSON.parse(String(val));
-  } catch {
-    return null;
-  }
+  assertSupabaseDataBackend();
+  return sbGetDoc(collection, docId);
 }
 
 export async function fsQueryPage(collection, opts = {}) {
-  if (useSupabaseForData()) return sbQueryPage(collection, opts);
-  assertFirebaseConfigured();
-  if (!authToken) return { docs: [], nextCursor: null, hasMore: false };
-  const col = String(collection || "").trim();
-  if (!col) return { docs: [], nextCursor: null, hasMore: false };
-
-  const pageSize = Math.max(1, Math.min(1000, Number(opts.pageSize || 200) || 200));
-  const limit = Math.max(1, Math.min(1001, pageSize + 1));
-  const where = buildStructuredWhere(opts.where);
-  const orderByInput = ensureNameOrderBy(normalizeOrderBy(opts.orderBy));
-  const cursor = safeParseJson(opts.cursor);
-
-  const structuredQuery = {
-    from: [{ collectionId: col }],
-    limit,
-    orderBy: orderByInput.map((o) => ({
-      field: { fieldPath: o.field },
-      direction: o.direction,
-    })),
-  };
-
-  if (where) structuredQuery.where = where;
-
-  if (cursor?.docName) {
-    structuredQuery.startAt = {
-      before: false,
-      values: orderByInput.map((o) => {
-        if (o.field === "__name__") return { referenceValue: String(cursor.docName) };
-        return toFsValue(cursor.fields?.[o.field]);
-      }),
-    };
-  }
-
-  const RUN_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents:runQuery`;
-  const r = await fetchWithTimeout(
-    `${RUN_URL}?key=${FB.apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ structuredQuery }),
-    },
-    20000
-  );
-
-  if (!r.ok) {
-    const errBody = await r.json().catch(() => ({}));
-    console.warn(`Firestore query failed (${col}):`, errBody?.error?.message || r.status);
-    return { docs: [], nextCursor: null, hasMore: false };
-  }
-  const rows = await r.json().catch(() => []);
-  const docsRaw = (Array.isArray(rows) ? rows : []).map((x) => x?.document).filter(Boolean);
-
-  const mapped = docsRaw.map((doc) => ({ _id: doc.name.split("/").pop(), ...fromFsDoc(doc) }));
-  const hasMore = mapped.length > pageSize;
-  const sliced = hasMore ? mapped.slice(0, pageSize) : mapped;
-
-  let nextCursor = null;
-  if (hasMore && docsRaw.length > 0) {
-    const lastDoc = docsRaw[Math.min(pageSize - 1, docsRaw.length - 1)];
-    const lastData = fromFsDoc(lastDoc) || {};
-    const fields = {};
-    for (const o of orderByInput) {
-      if (o.field === "__name__") continue;
-      fields[o.field] = lastData[o.field];
-    }
-    nextCursor = JSON.stringify({ docName: lastDoc.name, fields });
-  }
-
-  return { docs: sliced, nextCursor, hasMore };
+  assertSupabaseDataBackend();
+  return sbQueryPage(collection, opts);
 }
 
 export async function fsSet(collection, docId, data) {
-  if (useSupabaseForData()) return sbSet(collection, docId, data);
-  assertFirebaseConfigured();
-  if (!authToken) return;
-  const col = String(collection || "").trim();
-  const id = String(docId || "").trim();
-  if (!col || !id) return;
-  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
-  const fields = {};
-  for (const k in data) fields[k] = toFsValue(data[k]);
-  await fetch(`${FS_URL}/${col}/${id}?key=${FB.apiKey}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-    body: JSON.stringify({ fields }),
-  });
+  assertSupabaseDataBackend();
+  return sbSet(collection, docId, data);
 }
 
 export async function fsSetStrict(collection, docId, data) {
-  if (useSupabaseForData()) return sbSetStrict(collection, docId, data);
-  assertFirebaseConfigured();
-  if (!authToken) throw new Error("Usuário não autenticado");
-  const col = String(collection || "").trim();
-  const id = String(docId || "").trim();
-  if (!col || !id) throw new Error("Collection or docId missing");
-  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
-  const fields = {};
-  for (const k in data) fields[k] = toFsValue(data[k]);
-  const r = await fetch(`${FS_URL}/${col}/${id}?key=${FB.apiKey}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-    body: JSON.stringify({ fields }),
-  });
-  if (r.ok) return true;
-  const d = await r.json().catch(() => ({}));
-  const raw = d?.error?.message || `Falha ao salvar em ${col}/${id}`;
-  if (r.status === 403 || String(raw).includes("PERMISSION_DENIED")) {
-    if (col === "convites_inventariantes") {
-      throw new Error(
-        "Sem permissão para criar convite. Publique as regras atualizadas do firestore.rules no Firebase Console (Firestore → Regras → Publicar)."
-      );
-    }
-    throw new Error(`Sem permissão no Firestore (${col}). Verifique se as regras foram publicadas.`);
-  }
-  throw new Error(raw);
+  assertSupabaseDataBackend();
+  return sbSetStrict(collection, docId, data);
 }
 
 export async function fsGetAll(collection) {
   const opts = arguments.length > 1 && typeof arguments[1] === "object" ? arguments[1] : {};
-  if (useSupabaseForData()) return sbGetAll(collection, opts);
-  assertFirebaseConfigured();
-  if (!authToken) return [];
-  const col = String(collection || "").trim();
-  if (!col) return [];
-  const pageSize = Math.max(1, Math.min(1000, Number(opts.pageSize || 250) || 250));
-
-  if (opts.where || opts.orderBy) {
-    const all = [];
-    let cursor = opts.cursor || null;
-    const max = typeof opts.limit === "number" ? Math.max(0, opts.limit) : Infinity;
-    while (all.length < max) {
-      const res = await fsQueryPage(col, { ...opts, pageSize, cursor });
-      all.push(...res.docs);
-      if (!res.hasMore || res.docs.length === 0) break;
-      cursor = res.nextCursor;
-    }
-    return typeof opts.limit === "number" ? all.slice(0, opts.limit) : all;
-  }
-
-  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
-  const out = [];
-  let pageToken = opts.pageToken || null;
-  const max = typeof opts.limit === "number" ? Math.max(0, opts.limit) : Infinity;
-
-  while (out.length < max) {
-    const url = `${FS_URL}/${col}?key=${FB.apiKey}&pageSize=${pageSize}${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ""}`;
-    const r = await fetchWithTimeout(
-      url,
-      {
-        headers: { Authorization: `Bearer ${authToken}` },
-      },
-      20000
-    );
-    if (!r.ok) break;
-    const d = await r.json().catch(() => ({}));
-    const pageDocs = (d.documents || []).map((doc) => ({ _id: doc.name.split("/").pop(), ...fromFsDoc(doc) }));
-    out.push(...pageDocs);
-    if (!d.nextPageToken || pageDocs.length === 0) break;
-    pageToken = d.nextPageToken;
-  }
-
-  return typeof opts.limit === "number" ? out.slice(0, opts.limit) : out;
+  assertSupabaseDataBackend();
+  return sbGetAll(collection, opts);
 }
 
 export async function fsDel(collection, docId) {
-  if (useSupabaseForData()) return sbDel(collection, docId);
-  assertFirebaseConfigured();
-  if (!authToken) return;
-  const col = String(collection || "").trim();
-  const id = String(docId || "").trim();
-  if (!col || !id) return;
-  const FS_URL = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
-  await fetch(`${FS_URL}/${col}/${id}?key=${FB.apiKey}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${authToken}` },
-  });
+  assertSupabaseDataBackend();
+  return sbDel(collection, docId);
 }
 
 // ─── Coordenadores (existing) ─────────────────────────────────────────────────
