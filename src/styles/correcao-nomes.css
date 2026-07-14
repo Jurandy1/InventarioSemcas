@@ -626,6 +626,10 @@
   color: #1e40af;
 }
 
+.correcao-ia-btn {
+  font-weight: 800 !important;
+}
+
 .correcao-empty {
   padding: 24px;
   text-align: center;

@@ -68,6 +68,8 @@ export function CorrecaoNomesPage({
   const [confirmLote, setConfirmLote] = useState(false);
   const [iaBusy, setIaBusy] = useState(false);
   const [nomeInputKey, setNomeInputKey] = useState(0);
+  const [especieIa, setEspecieIa] = useState("");
+  const [loteEspecies, setLoteEspecies] = useState(() => new Map());
   const geminiOk = isGeminiNomeConfigured();
 
   const filtroBase = useMemo(
@@ -194,10 +196,12 @@ export function CorrecaoNomesPage({
   const primeiroSel = [...selecionados][0];
   const itemPreview = primeiroSel ? todosItens.find((i) => i.id === primeiroSel) : null;
   const labelPreview = itemPreview ? getItemLabel(itemPreview, foundMap) : "";
-  const especieInferida =
-    nomeAplicar && inferEspecieFromDesc
+  const especieAplicar =
+    String(especieIa || "").trim() ||
+    (nomeAplicar && inferEspecieFromDesc
       ? inferEspecieFromDesc(nomeAplicar, especies) || itemPreview?.especie || ""
-      : "";
+      : "") ||
+    "";
 
   const aplicarNomeDigitado = async () => {
     if (!nomeAplicar) {
@@ -212,10 +216,11 @@ export function CorrecaoNomesPage({
     await onAplicarCorrecao?.({
       targetIds: ids,
       descricao: nomeAplicar,
-      especie: especieInferida,
+      especie: especieAplicar,
     });
     setSelecionados(new Set());
     setNomePersonalizado("");
+    setEspecieIa("");
   };
 
   const aplicarPadronizacaoItens = async (ids) => {
@@ -253,7 +258,7 @@ export function CorrecaoNomesPage({
   const sugerirComIa = useCallback(
     async (ids) => {
       if (!geminiOk) {
-        showT?.("Configure VITE_GEMINI_API_KEY no .env / secrets do deploy");
+        showT?.("Configure VITE_GEMINI_API_KEY nas Environment Variables da Vercel e faça Redeploy");
         return;
       }
       const alvoIds = ids?.length ? ids : [...selecionados];
@@ -264,37 +269,43 @@ export function CorrecaoNomesPage({
       }
       const fotos = getItemFotos(item.id, foundMap);
       if (!fotos.length) {
-        showT?.("O item precisa ter foto para a IA sugerir o nome");
+        showT?.("O item precisa ter foto para a IA analisar");
         return;
       }
       setIaBusy(true);
       try {
-        const { nome } = await sugerirNomeComGemini({
+        const { nome, especie } = await sugerirNomeComGemini({
           fotoUrls: fotos,
           especie: getItemEspecie(item, foundMap),
           nomeAtual: getItemLabel(item, foundMap),
           marca: getItemMarca(item, foundMap),
+          especies,
         });
         const limpo = formatarNomePadrao(nome);
+        const esp =
+          especie ||
+          inferEspecieFromDesc?.(limpo, especies) ||
+          getItemEspecie(item, foundMap);
         setNomePersonalizado(limpo);
+        setEspecieIa(esp);
         setNomeInputKey((k) => k + 1);
         if (!selecionados.size && alvoIds.length) {
           setSelecionados(new Set(alvoIds));
         }
-        showT?.(`IA sugeriu: ${limpo}`);
+        showT?.(`IA: ${limpo}${esp ? ` · ${esp}` : ""}`);
       } catch (e) {
         showT?.(e?.message || "Falha ao consultar a Gemini");
       } finally {
         setIaBusy(false);
       }
     },
-    [geminiOk, selecionados, pickItemComFoto, foundMap, showT]
+    [geminiOk, selecionados, pickItemComFoto, foundMap, showT, especies, inferEspecieFromDesc]
   );
 
   const sugerirIaNoLote = useCallback(
     async (lote) => {
       if (!geminiOk) {
-        showT?.("Configure VITE_GEMINI_API_KEY no .env / secrets do deploy");
+        showT?.("Configure VITE_GEMINI_API_KEY nas Environment Variables da Vercel e faça Redeploy");
         return;
       }
       const member = (lote.members || []).find((m) => getItemFotos(m.id, foundMap).length) || lote.members?.[0];
@@ -304,31 +315,41 @@ export function CorrecaoNomesPage({
       }
       const fotos = getItemFotos(member.id, foundMap);
       if (!fotos.length) {
-        showT?.("Inclua foto em um item do lote para sugerir com IA");
+        showT?.("Inclua foto em um item do lote para analisar com IA");
         return;
       }
       setIaBusy(true);
       try {
-        const { nome } = await sugerirNomeComGemini({
+        const { nome, especie } = await sugerirNomeComGemini({
           fotoUrls: fotos,
           especie: getItemEspecie(member.item, foundMap),
           nomeAtual: member.labelOriginal || getItemLabel(member.item, foundMap),
           marca: member.marca || getItemMarca(member.item, foundMap),
+          especies,
         });
         const limpo = formatarNomePadrao(nome);
+        const esp =
+          especie ||
+          inferEspecieFromDesc?.(limpo, especies) ||
+          getItemEspecie(member.item, foundMap);
         setLoteNomes((prev) => {
           const next = new Map(prev);
           next.set(lote.key, limpo);
           return next;
         });
-        showT?.(`IA sugeriu no lote: ${limpo}`);
+        setLoteEspecies((prev) => {
+          const next = new Map(prev);
+          next.set(lote.key, esp);
+          return next;
+        });
+        showT?.(`IA no lote: ${limpo}${esp ? ` · ${esp}` : ""}`);
       } catch (e) {
         showT?.(e?.message || "Falha ao consultar a Gemini");
       } finally {
         setIaBusy(false);
       }
     },
-    [geminiOk, foundMap, showT]
+    [geminiOk, foundMap, showT, especies, inferEspecieFromDesc]
   );
 
   const getLoteNome = (lote) =>
@@ -361,10 +382,15 @@ export function CorrecaoNomesPage({
       showT?.("Nenhum item selecionado");
       return;
     }
+    const esp =
+      String(loteEspecies.get(lote.key) || "").trim() ||
+      inferEspecieFromDesc?.(descricao, especies) ||
+      lote.members[0]?.item?.especie ||
+      "";
     await onAplicarCorrecao?.({
       targetIds,
       descricao,
-      especie: inferEspecieFromDesc?.(descricao, especies) || lote.members[0]?.item?.especie || "",
+      especie: esp,
     });
     setLoteChecks((prev) => {
       const next = new Map(prev);
@@ -372,6 +398,11 @@ export function CorrecaoNomesPage({
       return next;
     });
     setLoteNomes((prev) => {
+      const next = new Map(prev);
+      next.delete(lote.key);
+      return next;
+    });
+    setLoteEspecies((prev) => {
       const next = new Map(prev);
       next.delete(lote.key);
       return next;
@@ -385,14 +416,19 @@ export function CorrecaoNomesPage({
       if (!nome) continue;
       const targets = getLoteTargets(lote);
       if (!targets.length) continue;
+      const esp =
+        String(loteEspecies.get(lote.key) || "").trim() ||
+        inferEspecieFromDesc?.(nome, especies) ||
+        lote.members[0]?.item?.especie ||
+        "";
       correcoes.push({
         targetIds: targets,
         descricao: nome,
-        especie: inferEspecieFromDesc?.(nome, especies) || lote.members[0]?.item?.especie || "",
+        especie: esp,
       });
     }
     return correcoes;
-  }, [lotes, loteNomes, loteChecks, inferEspecieFromDesc, especies]);
+  }, [lotes, loteNomes, loteChecks, loteEspecies, inferEspecieFromDesc, especies]);
 
   const lotePreview = useMemo(() => prepararLoteTotal(), [prepararLoteTotal]);
   const totalItensLote = lotePreview.reduce((s, c) => s + c.targetIds.length, 0);
@@ -406,6 +442,7 @@ export function CorrecaoNomesPage({
     await onAplicarCorrecao?.(lotePreview);
     setLoteChecks(new Map());
     setLoteNomes(new Map());
+    setLoteEspecies(new Map());
   };
 
   const handleFiltroStat = (id) => {
@@ -499,18 +536,22 @@ export function CorrecaoNomesPage({
         >
           Auto
         </button>
-        {geminiOk && (
-          <button
-            type="button"
-            className="gov-btn gov-btn--ghost"
-            style={{ ...bs, whiteSpace: "nowrap" }}
-            disabled={busy || iaBusy || !getItemFotos(item.id, foundMap).length}
-            title={getItemFotos(item.id, foundMap).length ? "Sugerir nome pela foto (Gemini)" : "Sem foto"}
-            onClick={() => sugerirComIa([item.id])}
-          >
-            IA
-          </button>
-        )}
+        <button
+          type="button"
+          className="gov-btn gov-btn--primary"
+          style={{ ...bs, whiteSpace: "nowrap" }}
+          disabled={busy || iaBusy || !getItemFotos(item.id, foundMap).length}
+          title={
+            !geminiOk
+              ? "Configure VITE_GEMINI_API_KEY na Vercel"
+              : getItemFotos(item.id, foundMap).length
+                ? "Analisar foto: nome + espécie"
+                : "Sem foto"
+          }
+          onClick={() => sugerirComIa([item.id])}
+        >
+          {iaBusy ? "…" : "IA"}
+        </button>
       </article>
     );
   };
@@ -522,8 +563,8 @@ export function CorrecaoNomesPage({
         <p>
           Foque nos <strong>itens manuais</strong> (sem tombo / digitados). Itens lidos pelo tombo
           já vêm com nome de catálogo e normalmente <strong>não precisam</strong> de padronização.
-          Organize por <strong>espécie</strong>. Com foto, use <strong>Sugerir com IA</strong> (Gemini)
-          para propor o nome padronizado — você revisa e aplica.
+          Organize por <strong>espécie</strong>. Com foto, use <strong>Analisar com IA</strong> —
+          a Gemini sugere nome e espécie corretos para você revisar e aplicar.
         </p>
       </header>
 
@@ -679,10 +720,26 @@ export function CorrecaoNomesPage({
           </section>
 
           <aside className="correcao-panel correcao-panel--sticky" style={cd}>
-            <div className="correcao-panel__title">Nome padrão</div>
+            <div className="correcao-panel__title">Nome e espécie</div>
             <p style={{ fontSize: 12, color: "var(--gov-text-muted)", marginBottom: 10, lineHeight: 1.5 }}>
-              Digite o nome e aplique nos itens selecionados. Só a <strong>descrição</strong> muda — a marca permanece.
+              Selecione itens com foto e clique em <strong>Analisar com IA</strong> — a Gemini sugere
+              descrição e espécie. Revise e aplique. A marca não muda.
             </p>
+            <button
+              type="button"
+              className="gov-btn gov-btn--primary correcao-ia-btn"
+              style={{ ...bs, width: "100%", marginBottom: 12 }}
+              disabled={busy || iaBusy || !selecionados.size}
+              onClick={() => sugerirComIa([...selecionados])}
+              title={geminiOk ? "Analisa a foto: nome + espécie" : "Falta VITE_GEMINI_API_KEY na Vercel"}
+            >
+              {iaBusy ? "Analisando foto…" : "Analisar com IA"}
+            </button>
+            {!geminiOk && (
+              <p style={{ fontSize: 11, color: "#b45309", marginTop: -6, marginBottom: 10, lineHeight: 1.4 }}>
+                Falta <code>VITE_GEMINI_API_KEY</code> na Vercel + Redeploy.
+              </p>
+            )}
             <label className="correcao-label">Nome para os selecionados</label>
             <TInput
               key={`nome-${nomeInputKey}`}
@@ -691,14 +748,23 @@ export function CorrecaoNomesPage({
               placeholder="Ex.: Cadeira de plástico sem braço"
               style={{ ...inp, width: "100%", marginBottom: 10 }}
             />
+            <label className="correcao-label">Espécie</label>
+            <TInput
+              key={`esp-${nomeInputKey}-${especieIa}`}
+              initial={especieIa}
+              onVal={setEspecieIa}
+              suggestions={especies}
+              placeholder="Ex.: CADEIRA"
+              style={{ ...inp, width: "100%", marginBottom: 10 }}
+            />
             <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
               {selecionados.size} item(ns) selecionado(s)
             </p>
             {nomeAplicar && labelPreview && (
               <NomeDiff antes={labelPreview} depois={nomeAplicar} />
             )}
-            {especieInferida && (
-              <div className="correcao-especie">Espécie inferida: <strong>{especieInferida}</strong></div>
+            {especieAplicar && (
+              <div className="correcao-especie">Espécie: <strong>{especieAplicar}</strong></div>
             )}
             <button
               type="button"
@@ -707,23 +773,8 @@ export function CorrecaoNomesPage({
               disabled={busy || !selecionados.size || !nomeAplicar}
               onClick={aplicarNomeDigitado}
             >
-              Aplicar nome nos {selecionados.size || "…"} selecionado(s)
+              Aplicar nome e espécie ({selecionados.size || "…"})
             </button>
-            <button
-              type="button"
-              className="gov-btn gov-btn--secondary"
-              style={{ ...bs, width: "100%", marginTop: 8 }}
-              disabled={busy || iaBusy || !selecionados.size || !geminiOk}
-              onClick={() => sugerirComIa([...selecionados])}
-              title={geminiOk ? "Usa a foto de um item selecionado" : "Defina VITE_GEMINI_API_KEY"}
-            >
-              {iaBusy ? "Consultando IA…" : "Sugerir com IA (foto)"}
-            </button>
-            {!geminiOk && (
-              <p style={{ fontSize: 11, color: "#b45309", marginTop: 8, lineHeight: 1.4 }}>
-                Para ativar a IA, configure a secret <code>VITE_GEMINI_API_KEY</code> no deploy.
-              </p>
-            )}
             <button
               type="button"
               className="gov-btn gov-btn--secondary"
@@ -866,6 +917,15 @@ export function CorrecaoNomesPage({
       {isMob && modo === "revisar" && selecionados.size > 0 && (
         <div className="correcao-floating-bar">
           <span className="correcao-floating-bar__info">{selecionados.size} selecionado(s)</span>
+          <button
+            type="button"
+            className="gov-btn gov-btn--secondary"
+            style={bs}
+            disabled={busy || iaBusy}
+            onClick={() => sugerirComIa([...selecionados])}
+          >
+            {iaBusy ? "…" : "IA"}
+          </button>
           <button type="button" className="gov-btn gov-btn--primary" style={bs} disabled={busy || !nomeAplicar} onClick={aplicarNomeDigitado}>
             Aplicar
           </button>

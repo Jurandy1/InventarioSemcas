@@ -1,5 +1,5 @@
 /**
- * Gemini (visão) para sugerir nome padronizado a partir da foto do item.
+ * Gemini (visão) para sugerir nome + espécie a partir da foto do item.
  * A chave fica em VITE_GEMINI_API_KEY (nunca no código).
  *
  * Atenção: em app estático a chave aparece no bundle do browser.
@@ -31,7 +31,6 @@ async function fetchImageAsInlineData(url) {
   if (!r.ok) throw new Error(`Não foi possível baixar a foto (HTTP ${r.status})`);
   const blob = await r.blob();
   if (!blob || blob.size < 32) throw new Error("Foto inválida ou vazia");
-  // Limita ~4MB para a API
   if (blob.size > 4 * 1024 * 1024) {
     throw new Error("Foto muito grande para a IA (máx. ~4 MB). Use uma foto menor.");
   }
@@ -46,51 +45,118 @@ async function fetchImageAsInlineData(url) {
   return { mime_type: guessMime(src, blob.type), data };
 }
 
-function buildPrompt({ especie, nomeAtual, marca }) {
+function normKey(s) {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+}
+
+/** Alinha espécie da IA à lista oficial (planilha) quando possível. */
+export function matchEspecieCatalogo(sugerida, especies = []) {
+  const raw = String(sugerida || "").trim();
+  if (!raw) return "";
+  const alvo = normKey(raw);
+  if (!alvo) return "";
+  let best = "";
+  for (const sp of especies || []) {
+    const s = String(sp || "").trim();
+    if (!s) continue;
+    if (normKey(s) === alvo) return s;
+    if (alvo.includes(normKey(s)) || normKey(s).includes(alvo)) {
+      if (s.length > best.length) best = s;
+    }
+  }
+  if (best) return best;
+  // Padrão patrimonial: espécie em MAIÚSCULAS
+  return raw.toUpperCase().slice(0, 40);
+}
+
+function buildPrompt({ especie, nomeAtual, marca, especies = [] }) {
   const esp = String(especie || "").trim() || "não informada";
   const atual = String(nomeAtual || "").trim() || "(sem nome)";
   const mk = String(marca || "").trim();
+  const catalogo = [...new Set((especies || []).map((e) => String(e || "").trim()).filter(Boolean))]
+    .slice(0, 80)
+    .join(", ");
   return [
     "Você auxilia inventário patrimonial da SEMCAS (mobiliário e equipamentos de unidades públicas).",
-    "Analise a foto e proponha UMA descrição padronizada em português do Brasil para o bem.",
+    "Analise a foto e diga o nome padronizado E a espécie correta do bem.",
     "",
-    "Regras:",
-    "- Responda SOMENTE com o nome/descrição final, sem aspas, sem markdown, sem explicação.",
-    "- 3 a 12 palavras, clara e objetiva (ex.: Cadeira de plástico sem braço).",
-    "- Inclua atributos visíveis úteis: material, cor, com/sem braço, com/sem rodinha, medidas óbvias.",
-    "- NÃO invente marca, número de patrimônio, local ou estado de conservação.",
-    "- NÃO use abreviações (evite c/, s/, p/).",
-    "- Capitalize como título em português (primeira palavra e nomes; artigos em minúsculas).",
-    `- Espécie sugerida/atual: ${esp}.`,
+    "Responda SOMENTE um JSON válido nesta forma exata (sem markdown, sem texto extra):",
+    '{"nome":"...","especie":"..."}',
+    "",
+    "Regras do campo nome:",
+    "- 3 a 12 palavras em português do Brasil, objetiva.",
+    "- Inclua atributos visíveis: material, cor, com/sem braço, com/sem rodinha etc.",
+    "- NÃO invente marca, tombo, local ou estado.",
+    "- NÃO use abreviações (c/, s/, p/).",
+    "- Capitalize como título (artigos em minúsculas).",
+    "",
+    "Regras do campo especie:",
+    "- Uma palavra-classe do bem em MAIÚSCULAS (ex.: CADEIRA, MESA, ARMARIO, GELADEIRA, NOTEBOOK).",
+    catalogo
+      ? `- Prefira EXATAMENTE uma destas espécies já usadas no inventário: ${catalogo}.`
+      : "- Use o termo patrimonial mais comum para o tipo do objeto.",
+    `- Espécie atual no cadastro: ${esp}.`,
     `- Nome digitado hoje: ${atual}.`,
-    mk ? `- Marca conhecida (não misture a marca na descrição se não for essencial): ${mk}.` : "- Marca: não informada.",
+    mk ? `- Marca conhecida (não coloque a marca na espécie): ${mk}.` : "- Marca: não informada.",
   ].join("\n");
 }
 
 function limparRespostaNome(text) {
   let t = String(text || "").trim();
-  t = t.replace(/^```[\s\S]*?\n/, "").replace(/```$/g, "").trim();
-  t = t.split("\n").map((l) => l.trim()).filter(Boolean)[0] || t;
+  t = t.replace(/^```(?:json)?\s*/i, "").replace(/```$/g, "").trim();
   t = t.replace(/^["'“”]|["'“”]$/g, "").trim();
-  t = t.replace(/^\*{1,2}|\*{1,2}$/g, "").trim();
-  // remove prefixos tipo "Nome:" / "Sugestão:"
   t = t.replace(/^(nome|descri[cç][aã]o|sugest[aã]o)\s*:\s*/i, "").trim();
   return t.slice(0, 160);
 }
 
+function parseNomeEspecie(rawText) {
+  let raw = String(rawText || "").trim();
+  raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/```$/g, "").trim();
+
+  // JSON completo
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (m) {
+    try {
+      const obj = JSON.parse(m[0]);
+      const nome = limparRespostaNome(obj.nome || obj.descricao || obj.name || "");
+      const especie = String(obj.especie || obj.species || obj.tipo || "").trim();
+      if (nome) return { nome, especie };
+    } catch {
+      /* fallback abaixo */
+    }
+  }
+
+  // "nome | especie" ou duas linhas
+  const lines = raw.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  if (lines.length >= 2) {
+    return { nome: limparRespostaNome(lines[0]), especie: lines[1].replace(/^especie\s*:\s*/i, "").trim() };
+  }
+  const pipe = raw.split("|").map((p) => p.trim());
+  if (pipe.length >= 2) {
+    return { nome: limparRespostaNome(pipe[0]), especie: pipe[1] };
+  }
+  return { nome: limparRespostaNome(raw), especie: "" };
+}
+
 /**
- * Sugere nome padronizado olhando a(s) foto(s) do item.
- * @returns {Promise<{ nome: string, model: string }>}
+ * Analisa foto e sugere nome + espécie.
+ * @returns {Promise<{ nome: string, especie: string, model: string }>}
  */
 export async function sugerirNomeComGemini({
   fotoUrls = [],
   especie = "",
   nomeAtual = "",
   marca = "",
+  especies = [],
 } = {}) {
   if (!isGeminiNomeConfigured()) {
     throw new Error(
-      "Gemini não configurado. Defina VITE_GEMINI_API_KEY no .env (local) e no secret do GitHub/Vercel."
+      "Gemini não configurado. Defina VITE_GEMINI_API_KEY no .env e nas Environment Variables da Vercel."
     );
   }
   const urls = (Array.isArray(fotoUrls) ? fotoUrls : []).filter(Boolean).slice(0, 2);
@@ -113,12 +179,13 @@ export async function sugerirNomeComGemini({
     contents: [
       {
         role: "user",
-        parts: [{ text: buildPrompt({ especie, nomeAtual, marca }) }, ...inlineParts],
+        parts: [{ text: buildPrompt({ especie, nomeAtual, marca, especies }) }, ...inlineParts],
       },
     ],
     generationConfig: {
       temperature: 0.2,
-      maxOutputTokens: 128,
+      maxOutputTokens: 256,
+      responseMimeType: "application/json",
     },
   };
 
@@ -140,7 +207,8 @@ export async function sugerirNomeComGemini({
 
   const parts = data?.candidates?.[0]?.content?.parts || [];
   const raw = parts.map((p) => p?.text || "").join(" ").trim();
-  const nome = limparRespostaNome(raw);
-  if (!nome) throw new Error("A IA não retornou um nome utilizável");
-  return { nome, model: MODEL };
+  const parsed = parseNomeEspecie(raw);
+  if (!parsed.nome) throw new Error("A IA não retornou um nome utilizável");
+  const especieFinal = matchEspecieCatalogo(parsed.especie, especies);
+  return { nome: parsed.nome, especie: especieFinal, model: MODEL };
 }
