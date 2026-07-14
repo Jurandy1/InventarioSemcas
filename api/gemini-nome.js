@@ -2,7 +2,8 @@
  * Proxy servidor: baixa foto do Firebase Storage (sem CORS) e chama Gemini.
  * Env: GEMINI_API_KEY ou VITE_GEMINI_API_KEY
  */
-const MODEL = process.env.VITE_GEMINI_MODEL || process.env.GEMINI_MODEL || "gemini-2.0-flash";
+// gemini-2.0-flash costuma ter free_tier limit:0 em várias contas; flash-latest é o mais estável.
+const MODEL = process.env.VITE_GEMINI_MODEL || process.env.GEMINI_MODEL || "gemini-flash-latest";
 
 function getApiKey() {
   return String(process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "").trim();
@@ -218,7 +219,13 @@ export default async function handler(req, res) {
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) {
-      const msg = data?.error?.message || `Gemini HTTP ${r.status}`;
+      let msg = data?.error?.message || `Gemini HTTP ${r.status}`;
+      if (r.status === 429 || /quota|rate.?limit|exceeded/i.test(msg)) {
+        msg =
+          "Cota da Gemini esgotada (plano gratuito). Aguarde ~1 minuto e tente de novo, " +
+          "ou ative faturamento / troque o modelo em VITE_GEMINI_MODEL na Vercel " +
+          "(ex.: gemini-flash-latest, gemini-1.5-flash).";
+      }
       res.status(r.status === 429 ? 429 : 502).json({ error: msg });
       return;
     }

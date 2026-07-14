@@ -4,7 +4,7 @@
  */
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
-const MODEL = import.meta.env.VITE_GEMINI_MODEL || "gemini-2.0-flash";
+const MODEL = import.meta.env.VITE_GEMINI_MODEL || "gemini-flash-latest";
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 export function isGeminiNomeConfigured() {
@@ -201,7 +201,12 @@ async function viaClientDirect({ fotoUrls, especie, nomeAtual, marca, especies }
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
     const msg = data?.error?.message || `Gemini HTTP ${r.status}`;
-    if (r.status === 429) throw new Error("Limite da API Gemini atingido. Tente de novo em instantes.");
+    if (r.status === 429 || /quota|rate.?limit|exceeded/i.test(msg)) {
+      throw new Error(
+        "Cota da Gemini esgotada. Aguarde ~1 minuto ou ative faturamento no Google AI Studio. " +
+          "Opcional: VITE_GEMINI_MODEL=gemini-flash-latest na Vercel."
+      );
+    }
     if (r.status === 403 || r.status === 401) throw new Error("Chave Gemini inválida ou sem permissão.");
     throw new Error(msg);
   }
