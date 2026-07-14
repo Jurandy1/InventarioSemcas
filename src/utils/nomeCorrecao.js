@@ -1,5 +1,5 @@
 import { normalizeMatchText, textSimilarity } from "./ajusteMatch.js";
-import { getFoundEntry, isItemInventariado } from "./patrimonioId.js";
+import { getFoundEntry, isItemInventariado, normalizePatrimonioId } from "./patrimonioId.js";
 
 export function getItemLabel(item, foundMap) {
   const f = getFoundEntry(item?.id, foundMap);
@@ -21,6 +21,46 @@ export function getItemFotos(itemId, foundMap) {
 export function isManualItem(item) {
   const id = String(item?.id || "");
   return Boolean(item?.isManual) || id.startsWith("MAN_") || id.startsWith("ST_");
+}
+
+/**
+ * Inclui inventariados manuais que existem no inventário mas não caíram no catálogo
+ * (ex.: unidade/sessão diferente), para a tela Nomes cobrir TODAS as unidades.
+ */
+export function expandItensComInventariadosOrfaos(todosItens = [], foundMap = {}) {
+  const byId = new Map();
+  const out = [];
+  for (const item of todosItens || []) {
+    const id = String(item?.id || item?._id || "");
+    if (!id) continue;
+    const nid = normalizePatrimonioId(id);
+    byId.set(id, true);
+    if (nid) byId.set(nid, true);
+    out.push(item);
+  }
+
+  const seenFound = new Set();
+  for (const f of Object.values(foundMap || {})) {
+    const raw = f?.patrimonioId || f?._id;
+    if (!raw) continue;
+    const nid = normalizePatrimonioId(raw);
+    const key = nid || String(raw);
+    if (seenFound.has(key)) continue;
+    seenFound.add(key);
+    if (byId.has(String(raw)) || (nid && byId.has(nid))) continue;
+    if (!isManualItem({ id: key, isManual: f?.isManual })) continue;
+    out.push({
+      id: key,
+      descricao: f.descricaoEdit || "",
+      especie: f.especieEdit || "",
+      marca: f.marca || "",
+      unidadeId: f.unidadeId || "",
+      unidadeNome: f.unidadeNome || "",
+      isManual: true,
+    });
+    byId.set(key, true);
+  }
+  return out;
 }
 
 export function getItemEspecie(item, foundMap) {

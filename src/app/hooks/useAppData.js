@@ -224,6 +224,16 @@ export function useAppData({ firebaseOk, state }) {
 
   useEffect(() => {
     if (!auth.logado || unidades.length === 0) return;
+
+    // Nomes / Itens / Dashboard precisam do inventário de TODAS as unidades —
+    // não só da sessão ativa de inventariar.
+    if (tab === "correcao" || tab === "itens" || tab === "dash") {
+      found.loadFoundAndTombos([], { allUnits: true }).catch((e) => {
+        console.warn("Refresh completo do inventário falhou:", e?.message || e);
+      });
+      return;
+    }
+
     const scopeUnits = finalizadoEdit?.units?.length ? finalizadoEdit.units : inventario.unidadesAtivas;
     if (scopeUnits.length === 0) return;
     const ids = scopeUnits.map((u) => u.id).filter(Boolean);
@@ -244,6 +254,7 @@ export function useAppData({ firebaseOk, state }) {
     locais.loadLocais(ids, { localIds });
   }, [
     auth.logado?.uid,
+    tab,
     finalizadoEdit?.fin?.id,
     inventario.unidadesAtivas.map((u) => u.id).join(","),
     unidades.length,

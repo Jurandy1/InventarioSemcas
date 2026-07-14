@@ -73,7 +73,8 @@ function mergeInventarioDocs(...groups) {
 
 /** Carrega TODO o inventário (todas as unidades) — usado para os menus Itens/Dashboard/Correção. */
 export async function fetchInventarioAll() {
-  const rows = await fsGetAll("inventario", { pageSize: 500 });
+  // Pagina até o fim (pageSize alto para menos round-trips).
+  const rows = await fsGetAll("inventario", { pageSize: 1000 });
   return mergeInventarioDocs(rows);
 }
 

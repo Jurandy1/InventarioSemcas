@@ -19,6 +19,7 @@ import {
   getItemMarca,
   getItemFotos,
   groupItemsByEspecie,
+  expandItensComInventariadosOrfaos,
   padronizarNome,
 } from "../utils/nomeCorrecao.js";
 import { getFoundEntry } from "../utils/patrimonioId.js";
@@ -72,52 +73,63 @@ export function CorrecaoNomesPage({
   const [loteEspecies, setLoteEspecies] = useState(() => new Map());
   const geminiOk = isGeminiNomeConfigured();
 
+  const itensBase = useMemo(
+    () => expandItensComInventariadosOrfaos(todosItens, foundMap),
+    [todosItens, foundMap]
+  );
+
   const filtroBase = useMemo(
     () => ({ unidadeId, somenteManuais, especie: especieFiltro }),
     [unidadeId, somenteManuais, especieFiltro]
   );
 
   const lotes = useMemo(
-    () => agruparItensParaPadronizacao(todosItens, foundMap, foundSet, filtroBase),
-    [todosItens, foundMap, foundSet, filtroBase]
+    () => agruparItensParaPadronizacao(itensBase, foundMap, foundSet, filtroBase),
+    [itensBase, foundMap, foundSet, filtroBase]
   );
 
   const stats = useMemo(
-    () => buildCorrecaoDashboard(todosItens, foundMap, foundSet, lotes, { somenteManuais }),
-    [todosItens, foundMap, foundSet, lotes, somenteManuais]
+    () => buildCorrecaoDashboard(itensBase, foundMap, foundSet, lotes, { somenteManuais }),
+    [itensBase, foundMap, foundSet, lotes, somenteManuais]
   );
 
   const itensPendentes = useMemo(
     () =>
-      filterInventariadosItems(todosItens, foundMap, foundSet, {
+      filterInventariadosItems(itensBase, foundMap, foundSet, {
         ...filtroBase,
         query,
         filtroProblema,
         estadoLista: ESTADO_LISTA.PENDENTES,
       }),
-    [todosItens, foundMap, foundSet, filtroBase, query, filtroProblema]
+    [itensBase, foundMap, foundSet, filtroBase, query, filtroProblema]
   );
 
   const itensCorrigidos = useMemo(
     () =>
-      filterInventariadosItems(todosItens, foundMap, foundSet, {
+      filterInventariadosItems(itensBase, foundMap, foundSet, {
         ...filtroBase,
         query,
         filtroProblema: FILTRO_PROBLEMA.TODOS,
         estadoLista: ESTADO_LISTA.CORRIGIDOS,
       }),
-    [todosItens, foundMap, foundSet, filtroBase, query]
+    [itensBase, foundMap, foundSet, filtroBase, query]
   );
 
   const especiesDisponiveis = useMemo(() => {
-    const base = filterInventariadosItems(todosItens, foundMap, foundSet, {
+    const base = filterInventariadosItems(itensBase, foundMap, foundSet, {
       unidadeId,
       somenteManuais,
       especie: "todas",
       estadoLista: ESTADO_LISTA.PENDENTES,
     });
     return groupItemsByEspecie(base, foundMap);
-  }, [todosItens, foundMap, foundSet, unidadeId, somenteManuais]);
+  }, [itensBase, foundMap, foundSet, unidadeId, somenteManuais]);
+
+  const unidadesComPendentes = useMemo(() => {
+    const ids = new Set();
+    for (const i of itensPendentes) if (i.unidadeId) ids.add(i.unidadeId);
+    return ids.size;
+  }, [itensPendentes]);
 
   const gruposPendentes = useMemo(
     () => groupItemsByEspecie(itensPendentes, foundMap),
@@ -194,7 +206,7 @@ export function CorrecaoNomesPage({
 
   const nomeAplicar = formatarNomePadrao(nomePersonalizado.trim());
   const primeiroSel = [...selecionados][0];
-  const itemPreview = primeiroSel ? todosItens.find((i) => i.id === primeiroSel) : null;
+  const itemPreview = primeiroSel ? itensBase.find((i) => i.id === primeiroSel) : null;
   const labelPreview = itemPreview ? getItemLabel(itemPreview, foundMap) : "";
   const especieAplicar =
     String(especieIa || "").trim() ||
@@ -226,7 +238,7 @@ export function CorrecaoNomesPage({
   const aplicarPadronizacaoItens = async (ids) => {
     const correcoes = [];
     for (const id of ids) {
-      const item = todosItens.find((i) => i.id === id);
+      const item = itensBase.find((i) => i.id === id);
       if (!item) continue;
       const original = getItemLabel(item, foundMap);
       const descricao = padronizarNome(original);
@@ -249,10 +261,10 @@ export function CorrecaoNomesPage({
 
   const pickItemComFoto = useCallback(
     (ids) => {
-      const list = (ids || []).map((id) => todosItens.find((i) => i.id === id)).filter(Boolean);
+      const list = (ids || []).map((id) => itensBase.find((i) => i.id === id)).filter(Boolean);
       return list.find((i) => getItemFotos(i.id, foundMap).length > 0) || list[0] || null;
     },
-    [todosItens, foundMap]
+    [itensBase, foundMap]
   );
 
   const sugerirComIa = useCallback(
@@ -561,10 +573,15 @@ export function CorrecaoNomesPage({
       <header className="correcao-hero">
         <h2>Correção de nomes</h2>
         <p>
-          Foque nos <strong>itens manuais</strong> (sem tombo / digitados). Itens lidos pelo tombo
-          já vêm com nome de catálogo e normalmente <strong>não precisam</strong> de padronização.
-          Organize por <strong>espécie</strong>. Com foto, use <strong>Analisar com IA</strong> —
-          a Gemini sugere nome e espécie corretos para você revisar e aplicar.
+          Foque nos <strong>itens manuais</strong> de <strong>todas as unidades</strong> inventariadas.
+          Itens do tombo já vêm com nome de catálogo. Organize por espécie. Com foto, use{" "}
+          <strong>Analisar com IA</strong> — a Gemini sugere nome e espécie para revisar e aplicar.
+          {unidadesComPendentes > 0 ? (
+            <>
+              {" "}
+              Agora: <strong>{unidadesComPendentes}</strong> unidade(s) com pendências.
+            </>
+          ) : null}
         </p>
       </header>
 
