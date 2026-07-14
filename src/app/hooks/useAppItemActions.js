@@ -8,6 +8,8 @@ import { compressPhotoArray, bumpCacheBuster, setCachedData } from "../../utils/
 import { buildDoacaoOrigemExtras, defaultEstadoForItem, inferEspecieFromDesc } from "../../utils/itemHelpers.js";
 import { isSemTomboItem } from "../../utils/semTombo.js";
 import { getFoundEntry, isItemInventariado, normalizePatrimonioId } from "../../utils/patrimonioId.js";
+import { resolveUnitForItem } from "../../utils/inventorySession.js";
+import { getTeamMemberEditingItem } from "../../utils/inventoryPresence.js";
 import { rankTombosForAjuste } from "../../utils/ajusteMatch.js";
 import { buildFinalizacaoStats, criarFinalizacao, atualizarStatsFinalizacao } from "../../services/finalizacoes.js";
 import { buildManualPatrimonio } from "../helpers/appHelpers.js";
@@ -19,6 +21,7 @@ export function useAppItemActions({ state, data }) {
     formRef, finalizadoEdit, setFinalizadoEdit, finalizandoRef,
     busy, setBusy, setModal, setQrCodeUrl, setCoordRegistroLink,
     hideIncorporados, multiRowsPhotosRef, showT, getField, bumpFt,
+    teamOnline,
   } = state;
   const {
     assertPodeEditar, auth, found, inventario, unidadeAtiva, unidades, setUnidades,
@@ -145,6 +148,68 @@ export function useAppItemActions({ state, data }) {
     [unidades, found.foundMap, unidadeAtiva]
   );
 
+  /** Coleta rápida: Local Atual + defaults, sem abrir o formulário completo. */
+  const quickMarkFound = React.useCallback(
+    async (item) => {
+      if (!assertPodeEditar()) return { ok: false, reason: "blocked" };
+      if (!item?.id) return { ok: false, reason: "missing" };
+      if (isItemInventariado(item.id, found.foundSet)) {
+        showT("Item já coletado — toque no card para editar");
+        return { ok: false, reason: "already", item };
+      }
+      const localId = String(inventario.activeLocalId || "").trim();
+      if (!localId) {
+        showT("Fixe o Local Atual antes de usar Encontrei");
+        return { ok: false, reason: "no-local" };
+      }
+      const myUid = auth.logado?.uid || "";
+      const reservedBy = getTeamMemberEditingItem(teamOnline, item.id, myUid);
+      if (reservedBy) {
+        const ok = window.confirm(`${reservedBy.nome} está neste item. Coletar mesmo assim?`);
+        if (!ok) return { ok: false, reason: "reserved" };
+      }
+      const unit = resolveUnitForItem(item, inventario.unidadesAtivas, unidadeAtiva);
+      const estado = defaultEstadoForItem(item);
+      const situacao = item.tipoEntrada === "Permuta" ? "Permuta" : "Em uso";
+      const origem = item.tipoEntrada === "Permuta" ? "Permuta" : item.tipoEntrada || "Próprio";
+      try {
+        await found.markFound({
+          itemId: item.id,
+          estado,
+          situacao,
+          localId,
+          obs: "",
+          marca: item.marca || "",
+          origem,
+          fotoUrls: [],
+          unidadeAtiva: unit,
+          itemUnit: unit,
+          logado: auth.logado,
+          updateQueueStatus,
+        });
+        const localNome = (sessionLocais || []).find((l) => l.id === localId)?.nome || "sala";
+        showT(`Coletado · ${localNome}`);
+        notificationService.notify(EVENTOS.ITEM_ENCONTRADO, { message: "Item coletado", type: "success" });
+        return { ok: true };
+      } catch (e) {
+        showT("Erro ao coletar: " + (e?.message || e));
+        return { ok: false, reason: "error" };
+      }
+    },
+    [
+      assertPodeEditar,
+      found,
+      inventario.activeLocalId,
+      inventario.unidadesAtivas,
+      unidadeAtiva,
+      auth.logado,
+      teamOnline,
+      sessionLocais,
+      updateQueueStatus,
+      showT,
+    ]
+  );
+
   // Quando um finalizado está aberto para edição, itens novos precisam entrar
   // no snapshot finalizadoEdit.units (senão só aparecem ao reabrir) e as
   // estatísticas do registro de finalização precisam ser recalculadas.
@@ -257,10 +322,12 @@ export function useAppItemActions({ state, data }) {
     const manSituacao = getField("manSituacao") || "Em uso";
     const manOrigem = getField("manOrigem") || "Próprio";
     const manMarca = getField("manMarca") || "";
+    const manCor = String(getField("manCor") || "").trim();
 
     const doacaoExtras = {
       ...buildDoacaoOrigemExtras(getField, "man"),
       ...(manImei ? { imei: manImei } : {}),
+      ...(manCor ? { cor: manCor } : {}),
     };
 
     const buildManualInvEntry = (it, urls = []) => {
@@ -416,6 +483,7 @@ export function useAppItemActions({ state, data }) {
 
     const stOrigem = getField("stOrigem") || "Próprio";
     const stImei = String(getField("stImei") || "").trim();
+    const stCor = String(getField("stCor") || "").trim();
     const stExtras = {
       semTombo: true,
       identificadoPorFoto: true,
@@ -423,6 +491,7 @@ export function useAppItemActions({ state, data }) {
       tomboReferencia: String(getField("stTomboRef") || "").trim(),
       marca: String(getField("stMarca") || "").trim(),
       ...(stImei ? { imei: stImei } : {}),
+      ...(stCor ? { cor: stCor } : {}),
       ...buildDoacaoOrigemExtras(getField, "st"),
     };
     const stEstado = getField("stEstado") || "Bom";
@@ -529,8 +598,8 @@ export function useAppItemActions({ state, data }) {
 
   const addMultiItems = async ({ shared, rows }) => {
     if (!assertPodeEditar()) return;
-    const unidadeAtiva = inventario.unidadesAtivas[0]; // Simplificação para pegar a primeira
-    if (!unidadeAtiva) {
+    const unidadeAtivaMulti = inventario.unidadesAtivas[0];
+    if (!unidadeAtivaMulti) {
       showT("Selecione uma unidade");
       return;
     }
@@ -541,7 +610,7 @@ export function useAppItemActions({ state, data }) {
     }
 
     const baseNow = Date.now();
-    const existingIds = new Set((unidadeAtiva?.itens || []).map((i) => i.id));
+    const existingIds = new Set((unidadeAtivaMulti?.itens || []).map((i) => i.id));
     let saved = 0;
 
     const multiOrigem = shared.origem || "Próprio";
@@ -555,6 +624,7 @@ export function useAppItemActions({ state, data }) {
       return uf ? { doacaoOrigem: uf, doacaoOrigemTipo: "uf" } : {};
     })();
 
+    const prepared = [];
     for (let idx = 0; idx < rows.length; idx++) {
       const row = rows[idx];
       const rowPhotos = Array.isArray(row.photos)
@@ -596,42 +666,132 @@ export function useAppItemActions({ state, data }) {
         ...(patrimonioLabel === "S/T" ? { semTombo: true, identificadoPorFoto: rowPhotos.length > 0 } : {}),
       };
 
+      const extras = {
+        ...(patrimonioLabel === "S/T"
+          ? { semTombo: true, identificadoPorFoto: rowPhotos.length > 0, descricaoEdit: desc }
+          : { descricaoEdit: desc }),
+        ...multiDoacaoExtras,
+        ...(String(row.cor || "").trim() ? { cor: String(row.cor).trim() } : {}),
+      };
+
+      const now = new Date();
+      const invContent = {
+        patrimonioId: itemId,
+        unidadeId: unidadeAtivaMulti.id || "",
+        unidadeNome: unidadeAtivaMulti.nome || "",
+        estado: row.estado || "Bom",
+        situacao: "Em uso",
+        localId: shared.localId,
+        obs: String(row.obs || "").trim(),
+        marca: shared.marca || "",
+        origem: multiOrigem,
+        fotoUrls: [],
+        data: now.toLocaleDateString("pt-BR"),
+        hora: now.toLocaleTimeString("pt-BR"),
+        usuario: auth.logado?.nome || "",
+        email: auth.logado?.email || "",
+        ultimaAtualizacao: now.toISOString(),
+        user: auth.logado?.nome || "",
+        isManual: true,
+        ...extras,
+      };
+
+      prepared.push({ item, rowPhotos, extras, invContent, estado: row.estado || "Bom", obs: String(row.obs || "").trim() });
+    }
+
+    if (!prepared.length) {
+      showT("Nenhuma linha válida (informe tombo ou foto)");
+      return;
+    }
+
+    if (!navigator.onLine) {
+      for (const p of prepared) {
+        await queueOfflineWithPhotos({
+          type: "batch",
+          data: {
+            steps: [
+              { collection: "manuais", docId: p.item.id, content: { ...p.item, unidadeId: unidadeAtivaMulti.id } },
+              {
+                collection: "inventario",
+                docId: p.item.id,
+                content: p.invContent,
+                usePhotos: Boolean(p.rowPhotos?.length),
+              },
+            ],
+            uploadPrefix: p.item.id,
+          },
+          photos: p.rowPhotos || [],
+        });
+      }
+      updateQueueStatus();
+      const newItems = prepared.map((p) => p.item);
+      const novaAtiva = { ...unidadeAtivaMulti, itens: [...unidadeAtivaMulti.itens, ...newItems] };
+      inventario.setUnidadesAtivas((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+      setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+      appendItemsToFinalizadoScope(novaAtiva.id, newItems);
+      for (const p of prepared) {
+        await found.markFound({
+          itemId: p.item.id,
+          estado: p.estado,
+          situacao: "Em uso",
+          localId: shared.localId,
+          obs: p.obs,
+          marca: shared.marca || "",
+          origem: multiOrigem,
+          fotoUrls: [],
+          extras: p.extras,
+          unidadeAtiva: unidadeAtivaMulti,
+          logado: auth.logado,
+          localOnly: true,
+          isManual: true,
+        });
+      }
+      multiRowsPhotosRef.current = {};
+      clearUiResume();
+      setModal(null);
+      showT(`${prepared.length} item(s) na fila (offline)`);
+      notificationService.notify(EVENTOS.ITEM_ENCONTRADO, { message: "Itens enfileirados offline", type: "info" });
+      return;
+    }
+
+    for (const p of prepared) {
       let fotoUrls = [];
-      if (rowPhotos.length > 0 && isStorageOk() && navigator.onLine) {
+      if (p.rowPhotos.length > 0 && isStorageOk()) {
         try {
-          const compressed = await compressPhotoArray(rowPhotos);
-          fotoUrls = await uploadPhotos(compressed, itemId);
+          const compressed = await compressPhotoArray(p.rowPhotos);
+          fotoUrls = await uploadPhotos(compressed, p.item.id);
         } catch (e) {
-          console.warn("Falha upload fotos linha", idx, e);
+          console.warn("Falha upload fotos multi", p.item.id, e);
         }
       }
 
       try {
-        await fsSet("manuais", itemId, { ...item, unidadeId: unidadeAtiva.id });
+        await fsSet("manuais", p.item.id, { ...p.item, unidadeId: unidadeAtivaMulti.id });
         await found.markFound({
-          itemId,
-          estado: row.estado || "Bom",
+          itemId: p.item.id,
+          estado: p.estado,
           situacao: "Em uso",
           localId: shared.localId,
-          obs: String(row.obs || "").trim(),
+          obs: p.obs,
           marca: shared.marca || "",
           origem: multiOrigem,
           fotoUrls,
-          extras: {
-            ...(patrimonioLabel === "S/T"
-              ? { semTombo: true, identificadoPorFoto: rowPhotos.length > 0, descricaoEdit: desc }
-              : { descricaoEdit: desc }),
-            ...multiDoacaoExtras,
-          },
-          unidadeAtiva,
+          extras: p.extras,
+          unidadeAtiva: unidadeAtivaMulti,
           logado: auth.logado,
           isManual: true,
         });
         saved++;
       } catch (e) {
-        console.error("Erro salvando linha", idx, e);
+        console.error("Erro salvando linha multi", p.item.id, e);
       }
     }
+
+    const newItems = prepared.map((p) => p.item);
+    const novaAtiva = { ...unidadeAtivaMulti, itens: [...unidadeAtivaMulti.itens, ...newItems] };
+    inventario.setUnidadesAtivas((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+    setUnidades((prev) => prev.map((u) => (u.id === novaAtiva.id ? novaAtiva : u)));
+    appendItemsToFinalizadoScope(novaAtiva.id, newItems);
 
     multiRowsPhotosRef.current = {};
     clearUiResume();
@@ -1219,7 +1379,7 @@ export function useAppItemActions({ state, data }) {
     }
   };
 
-  return { aplicarCorrecaoNomes, lookupTombo, addManual, addSemTomboItem, addMultiItems,
+  return { aplicarCorrecaoNomes, lookupTombo, quickMarkFound, addManual, addSemTomboItem, addMultiItems,
     addSemTomboPendentes, openLinkTomboModal, linkSemTomboToTombo, corrigirParaSemTombo,
     confirmarTomboDivergente, getSemTomboPendentes, toggleStPending,
     gerarRelatorio, fazerBackup, finalizarInv, finalizarComCoordenadora };

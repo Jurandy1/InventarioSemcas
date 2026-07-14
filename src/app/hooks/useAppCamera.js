@@ -10,11 +10,11 @@ export function useAppCamera({ state, data }) {
     tab, modal, setModal, setCameraTarget, setTab, setOverlayBackdropSuppressMs,
     formRef, editingItemRef, resumeRestoredRef, cameraTargetRef, multiRowsPhotosRef,
     multiSharedRef, multiRowsRef,
-    bumpFt, showT, cameraTarget,
+    bumpFt, showT, cameraTarget, teamOnline,
   } = state;
   const {
     auth, found, inventario, unidades, unidadeAtiva, activeUnitIds,
-    sortedFiltered, teamOnline,
+    sortedFiltered,
   } = data;
 
   const saveSessionResume = React.useCallback(
@@ -101,6 +101,7 @@ export function useAppCamera({ state, data }) {
       formRef.current.detLocal = serverEntry.localId || formRef.current.detLocal;
       formRef.current.detObs = serverEntry.obs || "";
       formRef.current.detMarca = serverEntry.marca || item.marca || "";
+      formRef.current.detCor = serverEntry.cor || "";
       formRef.current.detOrigem = serverEntry.origem || formRef.current.detOrigem;
       formRef.current.detExistingUrls = serverEntry.fotoUrls || [];
       formRef.current.detNewBase64 = [];
@@ -145,6 +146,7 @@ export function useAppCamera({ state, data }) {
       detLocal: typeof forceLocalId === "string" ? forceLocalId : f?.localId || inventario.activeLocalId || "",
       detObs: f?.obs || "",
       detMarca: f?.marca || item.marca || "",
+      detCor: f?.cor || "",
       detOrigem: f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
       detOrigemLocked: !item.isManual,
       detExistingUrls: f?.fotoUrls || [],
@@ -174,16 +176,22 @@ export function useAppCamera({ state, data }) {
 
   const openNextPending = React.useCallback(() => {
     const myUid = auth.logado?.uid || "";
+    const activeLocal = String(inventario.activeLocalId || "").trim();
     const next = sortedFiltered.find((i) => {
       if (isItemInventariado(i.id, found.foundSet)) return false;
       return !getTeamMemberEditingItem(teamOnline, i.id, myUid);
     });
     if (!next) {
-      showT("Nenhum item pendente nos filtros atuais (itens em uso por colegas são ignorados)");
+      showT(
+        activeLocal
+          ? "Nenhum pendente (itens em uso por colegas são ignorados)"
+          : "Nenhum item pendente nos filtros atuais (itens em uso por colegas são ignorados)"
+      );
       return;
     }
     openDetModal(next);
-  }, [sortedFiltered, found.foundSet, showT, teamOnline, auth.logado?.uid]);
+    if (activeLocal) showT("Próximo · sala fixada");
+  }, [sortedFiltered, found.foundSet, showT, teamOnline, auth.logado?.uid, inventario.activeLocalId]);
 
   const openCamera = (target) => {
     cameraTargetRef.current = target;
@@ -218,6 +226,7 @@ export function useAppCamera({ state, data }) {
       detLocal: fs.detLocal || f?.localId || inventario.activeLocalId || "",
       detObs: fs.detObs || f?.obs || "",
       detMarca: fs.detMarca || f?.marca || snap.marca || "",
+      detCor: fs.detCor || f?.cor || "",
       detOrigem: fs.detOrigem || f?.origem || (snap.isManual ? "Próprio" : snap.tipoEntrada || "Próprio"),
       detOrigemLocked: fs.detOrigemLocked ?? !snap.isManual,
       detExistingUrls: fs.detExistingUrls?.length ? fs.detExistingUrls : f?.fotoUrls || [],
@@ -327,12 +336,12 @@ export function useAppCamera({ state, data }) {
         if (!multiSharedRef.current) {
           multiSharedRef.current = {
             descricao: "", especie: "", marca: "", fornecedor: "", valor: "",
-            localId: "", origem: "Próprio",
+            localId: "", origem: "Próprio", corPadrao: "",
             multiDoacaoModo: "uf", multiDoacaoUf: "MA", multiDoacaoTexto: "",
           };
         }
         if (!multiRowsRef.current) {
-          multiRowsRef.current = [{ tombamento: "", estado: "Bom", obs: "" }];
+          multiRowsRef.current = [{ tombamento: "", estado: "Bom", obs: "", cor: "" }];
         }
         const rowIdx = camTarget.slice("multi-row-".length);
         if (pendingPh.length) multiRowsPhotosRef.current[rowIdx] = pendingPh;
@@ -362,6 +371,7 @@ export function useAppCamera({ state, data }) {
           manEspecieAuto: fs.manEspecieAuto ?? formRef.current.manEspecieAuto ?? false,
           manImei: fs.manImei ?? formRef.current.manImei ?? "",
           manMarca: fs.manMarca ?? formRef.current.manMarca ?? "",
+          manCor: fs.manCor ?? formRef.current.manCor ?? "",
           manFornecedor: fs.manFornecedor ?? formRef.current.manFornecedor ?? "",
           manValor: fs.manValor ?? formRef.current.manValor ?? "",
           manOrigem: fs.manOrigem ?? formRef.current.manOrigem ?? "Próprio",
@@ -421,6 +431,7 @@ export function useAppCamera({ state, data }) {
         detLocal: fs.detLocal || f?.localId || inventario.activeLocalId || "",
         detObs: fs.detObs || f?.obs || "",
         detMarca: fs.detMarca || f?.marca || item.marca || "",
+        detCor: fs.detCor || f?.cor || "",
         detOrigem: fs.detOrigem || f?.origem || (item.isManual ? "Próprio" : item.tipoEntrada || "Próprio"),
         detOrigemLocked: fs.detOrigemLocked ?? !item.isManual,
         detExistingUrls: fs.detExistingUrls?.length ? fs.detExistingUrls : f?.fotoUrls || [],

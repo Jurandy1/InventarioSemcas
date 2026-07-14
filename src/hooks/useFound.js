@@ -262,6 +262,10 @@ export function useFound({ showT, applyDescOverride } = {}) {
       if (imeiVal || before?.imei) extras.imei = imeiVal;
       extras.plaquetaAusente = !!formRef.current.detPlaquetaAusente;
 
+      const corVal = String(formRef.current.detCor || "").trim();
+      if (corVal) extras.cor = corVal;
+      else if (before?.cor) extras.cor = "";
+
       const situacaoAtual = getField("detSituacao") || "Em uso";
       if (situacaoAtual === "Permuta") {
         extras.permutaDesc = String(getField("detPermutaDesc") || "").trim();

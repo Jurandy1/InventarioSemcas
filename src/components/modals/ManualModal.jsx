@@ -3,6 +3,7 @@ import { Overlay } from "../Overlay.jsx";
 import { TInput } from "../FormFields.jsx";
 import { DoacaoOrigemFields } from "../DoacaoOrigemFields.jsx";
 import { SmartImg } from "../SmartImg.jsx";
+import { CorPicker } from "../CorPicker.jsx";
 import { supportsImei } from "../../utils/itemHelpers.js";
 
 export function ManualModal({
@@ -206,6 +207,16 @@ export function ManualModal({
       )}
       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Marca</label>
       <TInput key="manMarca" initial={getField("manMarca")} onVal={(v) => setField("manMarca", v)} placeholder="Marca..." style={inp} />
+      <div style={{ marginTop: 14 }}>
+        <CorPicker
+          isMob={isMob}
+          value={getField("manCor") || ""}
+          onChange={(v) => {
+            setField("manCor", v);
+            localTick();
+          }}
+        />
+      </div>
       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Fornecedor</label>
       <TInput key="manForn" initial={getField("manFornecedor")} onVal={(v) => setField("manFornecedor", v)} placeholder="Fornecedor..." style={inp} />
       <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 6, marginTop: 14 }}>Valor</label>

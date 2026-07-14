@@ -272,7 +272,7 @@ export function LocaisWorkspace({
                   {l.desc && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#94a3b8" }}>{l.desc}</p>}
                   <p style={{ margin: "6px 0 0", fontSize: 12, color: "#64748b", fontWeight: 700 }}>{c} item(s)</p>
                 </button>
-                {!readOnly && onDeleteLocal && canDeleteLocal(l, sessionId) && (
+                {!readOnly && onDeleteLocal && canDeleteLocal(l, sessionId, [...activeUnitIds]) && (
                   <button
                     type="button"
                     onClick={() => {

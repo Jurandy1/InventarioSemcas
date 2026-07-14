@@ -8,6 +8,7 @@ import { isItemInventariado } from "../utils/patrimonioId.js";
 import { inferEspecieFromDesc, supportsImei } from "../utils/itemHelpers.js";
 import { PhotoThumb } from "./PhotoThumb.jsx";
 import { SmartImg } from "./SmartImg.jsx";
+import { CorPicker } from "./CorPicker.jsx";
 
 export function ItemDetailModal({
   item,
@@ -337,6 +338,17 @@ export function ItemDetailModal({
         placeholder="Ex: Tramontina..."
         style={{ width: "100%", border: "1.5px solid #d1d5db", borderRadius: 9, padding: "10px 13px", fontSize: 14, fontFamily: "inherit", boxSizing: "border-box", outline: "none" }}
       />
+
+      <div style={{ marginTop: 14 }}>
+        <CorPicker
+          isMob={isMobile}
+          value={formRef.current.detCor || ""}
+          onChange={(v) => {
+            formRef.current.detCor = v;
+            bumpFt();
+          }}
+        />
+      </div>
 
       {showImei && (
         <>

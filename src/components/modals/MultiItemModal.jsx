@@ -1,9 +1,9 @@
 import React, { useState } from "react";
 import { Overlay } from "../Overlay.jsx";
 import { TInput, TArea } from "../FormFields.jsx";
-import { Badge } from "../Badge.jsx";
 import { ESTADOS } from "../../constants/inventory.js";
 import { DoacaoOrigemFields } from "../DoacaoOrigemFields.jsx";
+import { CorPicker } from "../CorPicker.jsx";
 
 /**
  * Modal pra cadastrar N itens manuais que compartilham a MESMA descrição
@@ -47,7 +47,10 @@ export function MultiItemModal({
   };
 
   const addRow = () => {
-    rowsRef.current = [...rowsRef.current, { tombamento: "", estado: "Bom", obs: "" }];
+    rowsRef.current = [
+      ...rowsRef.current,
+      { tombamento: "", estado: "Bom", obs: "", cor: sharedRef.current?.corPadrao || "" },
+    ];
     bump();
   };
 
@@ -116,7 +119,7 @@ export function MultiItemModal({
           </h2>
           <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b", lineHeight: 1.4 }}>
             Use isso quando você tem várias unidades do MESMO item (mesma descrição) mas
-            cada uma com tombamento, estado de conservação e foto próprios.
+            cada uma pode ter tombamento, estado, cor e foto próprios.
           </p>
           {unidadeAtiva && (
             <p style={{ margin: "6px 0 0", fontSize: 11, fontWeight: 700, color: "#1351B4" }}>
@@ -186,6 +189,22 @@ export function MultiItemModal({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div style={{ marginTop: 12 }}>
+              <CorPicker
+                isMob={isMob}
+                label="Cor padrão (pode mudar por linha)"
+                value={shared.corPadrao || ""}
+                onChange={(v) => {
+                  updateShared("corPadrao", v);
+                  // Propaga só para linhas ainda sem cor própria
+                  rowsRef.current = rowsRef.current.map((row) =>
+                    row.cor ? row : { ...row, cor: v }
+                  );
+                  bump();
+                }}
+              />
             </div>
 
             <p style={{ margin: "12px 0 6px", fontSize: 12, fontWeight: 700, color: "#1d4ed8" }}>Origem</p>
@@ -306,6 +325,14 @@ export function MultiItemModal({
                       >
                         {nFotos > 0 ? `${nFotos} foto(s)` : "Tirar foto"}
                       </button>
+                    </div>
+                    <div style={{ marginTop: 10 }}>
+                      <CorPicker
+                        isMob={isMob}
+                        label={`Cor do item ${idx + 1}`}
+                        value={row.cor || ""}
+                        onChange={(v) => updateRow(idx, "cor", v)}
+                      />
                     </div>
                     {row.obs !== undefined && (
                       <div style={{ marginTop: 8 }}>

@@ -531,11 +531,20 @@ export async function cancelarConvite(token) {
   await fsSet("convites", found._id, found);
 }
 
+function normalizeCoordStatus(status) {
+  // Migração antiga gravava DEFAULT 'pendente'; o app usa 'pendente_aprovacao'.
+  if (status === "pendente") return "pendente_aprovacao";
+  return status;
+}
+
 export async function obterCoordenadores(status = "pendente_aprovacao") {
   assertFirebaseConfigured();
   if (!authToken) return [];
 
-  const todosCoord = await fsGetAll("coordenadores");
+  const todosCoord = (await fsGetAll("coordenadores")).map((c) => ({
+    ...c,
+    status: normalizeCoordStatus(c.status),
+  }));
 
   if (status === "todos") return todosCoord;
   return todosCoord.filter((c) => c.status === status);
@@ -545,11 +554,12 @@ export async function obterCoordPorUid(uid) {
   assertFirebaseConfigured();
   if (!authToken || !uid) return null;
   const direto = await fsGetDoc("coordenadores", uid);
-  if (direto) return direto;
+  if (direto) return { ...direto, status: normalizeCoordStatus(direto.status) };
   // Fallback: procura na lista completa (registros antigos podem ter uid só no _id)
   try {
     const todos = await fsGetAll("coordenadores");
-    return todos.find((c) => c.uid === uid || c._id === uid) || null;
+    const found = todos.find((c) => c.uid === uid || c._id === uid) || null;
+    return found ? { ...found, status: normalizeCoordStatus(found.status) } : null;
   } catch {
     return null;
   }

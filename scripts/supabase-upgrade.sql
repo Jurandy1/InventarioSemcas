@@ -67,5 +67,9 @@ ALTER TABLE backups ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "backups_auth" ON backups;
 CREATE POLICY "backups_auth" ON backups FOR ALL USING (auth.jwt() IS NOT NULL) WITH CHECK (auth.jwt() IS NOT NULL);
 
+-- Defaults alinhados ao app (evita stubs com status 'pendente' fora do filtro admin)
+ALTER TABLE inventariantes ALTER COLUMN status SET DEFAULT 'pendente_aprovacao';
+ALTER TABLE coordenadores ALTER COLUMN status SET DEFAULT 'pendente_aprovacao';
+
 -- Recarrega o cache de schema do PostgREST (necessário após ALTER TABLE)
 NOTIFY pgrst, 'reload schema';

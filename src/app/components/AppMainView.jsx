@@ -60,7 +60,7 @@ export function AppMainView({ ctx }) {
     linkSemTomboToTombo, corrigirParaSemTombo, confirmarTomboDivergente, getSemTomboPendentes,
     toggleStPending, gerarRelatorio, fazerBackup, finalizarComCoordenadora,
     multiRowsPhotosRef, multiSharedRef, multiRowsRef, manualPatrimonioRef,
-    lookupTombo, persistCameraSession, saveSessionResume, resolveItemUnit,
+    lookupTombo, quickMarkFound, persistCameraSession, saveSessionResume, resolveItemUnit,
     assertPodeEditar, scopeAllItens, updateQueueStatus,
   } = ctx;
 
@@ -161,6 +161,7 @@ export function AppMainView({ ctx }) {
                   valor: "",
                   localId: sessionLocais[0]?.id || "",
                   origem: "Próprio",
+                  corPadrao: "",
                   multiDoacaoModo: "uf",
                   multiDoacaoUf: "MA",
                   multiDoacaoTexto: "",
@@ -168,8 +169,8 @@ export function AppMainView({ ctx }) {
               }
               if (!multiRowsRef.current) {
                 multiRowsRef.current = [
-                  { tombamento: "", estado: "Bom", obs: "" },
-                  { tombamento: "", estado: "Bom", obs: "" },
+                  { tombamento: "", estado: "Bom", obs: "", cor: "" },
+                  { tombamento: "", estado: "Bom", obs: "", cor: "" },
                 ];
               }
               multiRowsPhotosRef.current = {};
@@ -183,6 +184,7 @@ export function AppMainView({ ctx }) {
                 manQtd: 1,
                 manSharePhotos: true,
                 manOrigem: "Próprio",
+                manCor: "",
                 manDoacaoModo: "uf",
                 manDoacaoUf: "MA",
                 manDoacaoTexto: "",
@@ -239,6 +241,8 @@ export function AppMainView({ ctx }) {
             sessionId={inventario.sessionId}
             locais={sessionLocais}
             onOpenNextPending={openNextPending}
+            lookupTombo={lookupTombo}
+            onQuickMarkFound={quickMarkFound}
             campanhaFechada={campanhaState.fechada}
             teamOnline={teamOnline}
             myUid={auth.logado?.uid || ""}
@@ -325,6 +329,7 @@ export function AppMainView({ ctx }) {
                 manLocal: String(localId || sessionLocais[0]?.id || ""),
                 manQtd: 1,
                 manSharePhotos: true,
+                manCor: "",
               };
               bumpFt();
               setModal("manual");
@@ -650,6 +655,7 @@ export function AppMainView({ ctx }) {
               manQtd: 1,
               manSharePhotos: true,
               manOrigem: "Próprio",
+              manCor: "",
             };
             bumpFt();
             setModal("manual");

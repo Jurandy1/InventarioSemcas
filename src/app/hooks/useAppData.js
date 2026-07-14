@@ -109,14 +109,14 @@ export function useAppData({ firebaseOk, state }) {
 
   const handleDeleteLocal = React.useCallback(
     async (l) => {
-      if (!canDeleteLocal(l, editScopeSessionId)) {
-        showT("Local de outra sessão — não pode remover");
+      if (!canDeleteLocal(l, editScopeSessionId, activeUnitIdList)) {
+        showT("Local de outra unidade — não pode remover");
         return;
       }
       await locais.deleteLocal(l, { updateQueueStatus });
       showT("Local removido");
     },
-    [editScopeSessionId, locais.deleteLocal, showT, updateQueueStatus]
+    [editScopeSessionId, activeUnitIdList, locais.deleteLocal, showT, updateQueueStatus]
   );
 
   const createSessionLocal = React.useCallback(

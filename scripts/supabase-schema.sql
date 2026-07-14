@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS inventariantes (
   matricula     TEXT,
   unidade_id    TEXT,
   unidade_ids   JSONB DEFAULT '[]',
-  status        TEXT DEFAULT 'pendente',
+  status        TEXT DEFAULT 'pendente_aprovacao',
   criado_em     TIMESTAMPTZ DEFAULT now()
 );
 
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS coordenadores (
   matricula     TEXT,
   unidade_id    TEXT,
   unidade_ids   JSONB DEFAULT '[]',
-  status        TEXT DEFAULT 'pendente',
+  status        TEXT DEFAULT 'pendente_aprovacao',
   criado_em     TIMESTAMPTZ DEFAULT now()
 );
 

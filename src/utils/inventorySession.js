@@ -61,8 +61,8 @@ export function collectReferencedLocalIds(foundMap, activeUnitIds = []) {
 
 /**
  * Locais visíveis na sessão atual.
- * - Inventário ativo: só locais criados nesta sessão (sessionId) da unidade.
- * - Finalizado: locais desta finalização + locais já usados por itens (somente leitura).
+ * - Inventário ativo: catálogo da unidade (reaproveita salas entre sessões).
+ * - Finalizado: locais da finalização + locais já usados por itens.
  * - includeReferenced: inclui locais antigos referenciados por itens (dropdown ao editar).
  */
 export function filterLocaisForSession(locais, sessionId, activeUnitIds = [], foundMap = null, options = {}) {
@@ -79,23 +79,27 @@ export function filterLocaisForSession(locais, sessionId, activeUnitIds = [], fo
 
     if (!localBelongsToUnits(l, activeUnitIds)) return false;
 
+    // Inventário ativo: todo o catálogo da unidade (não só sessionId atual).
+    if (!finalizedMode) return true;
+
     const localSid = String(l.sessionId || "").trim();
     const isCurrentSession = sid && localSid === sid;
-
-    if (finalizedMode) {
-      return isCurrentSession;
-    }
-
-    if (isCurrentSession) return true;
-    return false;
+    return isCurrentSession;
   });
 }
 
-/** Só locais criados na sessão atual podem ser removidos (não mexe em histórico). */
-export function canDeleteLocal(local, sessionId) {
+/**
+ * Pode remover local da sessão atual, ou qualquer local do catálogo da unidade
+ * ativa (salas reaproveitadas entre dias).
+ */
+export function canDeleteLocal(local, sessionId, activeUnitIds = []) {
   const sid = String(sessionId || "").trim();
   const localSid = String(local?.sessionId || "").trim();
-  return Boolean(sid && localSid && sid === localSid);
+  if (sid && localSid && sid === localSid) return true;
+  if (Array.isArray(activeUnitIds) && activeUnitIds.length && localBelongsToUnits(local, activeUnitIds)) {
+    return true;
+  }
+  return false;
 }
 
 export function loadSessoesPausadas() {

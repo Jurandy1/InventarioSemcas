@@ -12,6 +12,7 @@ import { isAjustePendente, isSemTomboItem, SEM_TOMBO_BADGE, showFotoManualBadge 
 import { PhotoThumb } from "../components/PhotoThumb.jsx";
 import { AjusteWorkbench, buildOrigemLine, getDisplayDesc, getItemCode, TIPO_ENTRADA_BADGE } from "../components/AjusteWorkbench.jsx";
 import { getListLimits } from "../utils/mobilePerf.js";
+import { labelCorItem, corItemById } from "../constants/cores.js";
 
 function formatBRL(v) {
   const n = Number(v || 0) || 0;
@@ -96,6 +97,8 @@ export function InventarioPage({
   onOpenConvidarColega,
   onOpenLinkTombo,
   onOpenNextPending,
+  lookupTombo,
+  onQuickMarkFound,
   campanhaFechada,
   teamOnline,
   myUid = "",
@@ -139,6 +142,9 @@ export function InventarioPage({
   const [localSelecionadoId, setLocalSelecionadoId] = useState("");
   const [localAddSearch, setLocalAddSearch] = useState("");
   const [localItemsLimit, setLocalItemsLimit] = useState(() => listLimits.localItemsStep);
+  const [tomboQuery, setTomboQuery] = useState("");
+  const [showMoreViews, setShowMoreViews] = useState(false);
+  const [quickBusyId, setQuickBusyId] = useState("");
   const LOCAL_ITEMS_STEP = listLimits.localItemsStep;
 
   useEffect(() => {
@@ -434,7 +440,10 @@ export function InventarioPage({
           )}
 
           <div style={{ ...cd, marginBottom: 12, padding: "12px 16px" }}>
-            <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" }}>Local Atual (Auto-preenchimento)</p>
+            <p style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 700, color: "#374151" }}>Local Atual (opcional ao iniciar)</p>
+            <p style={{ margin: "0 0 8px", fontSize: 11, color: "#64748b" }}>
+              Você também fixa a sala em <strong>Em Andamento</strong> — lá fica o fluxo de caminhada.
+            </p>
             <select
               value={activeLocalId || ""}
               onChange={(e) => setActiveLocalId?.(e.target.value)}
@@ -513,6 +522,161 @@ export function InventarioPage({
 
       {invSubTab === "andamento" && unidadesAtivas.length > 0 && (
         <div>
+          {/* Barra sticky: digitar tombo */}
+          <div
+            style={{
+              position: "sticky",
+              top: isMob ? 56 : 8,
+              zIndex: 80,
+              ...cd,
+              marginBottom: 12,
+              border: "2px solid #1351B4",
+              background: "#fff",
+              padding: "12px 14px",
+              boxShadow: "0 8px 24px rgba(19,81,180,.18)",
+            }}
+          >
+            <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 800, color: "#1351B4", letterSpacing: ".02em" }}>
+              DIGITAR TOMBO
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <input
+                value={tomboQuery}
+                onChange={(e) => setTomboQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const raw = String(tomboQuery || "").trim();
+                    if (!raw) return;
+                    const hit = typeof lookupTombo === "function" ? lookupTombo(raw) : null;
+                    if (!hit?.item) {
+                      showT?.(`Tombo "${raw}" não encontrado na planilha`);
+                      return;
+                    }
+                    openDetModal(hit.item);
+                    setTomboQuery("");
+                    if (hit.inventariado) showT?.("Item já coletado — abrindo para editar");
+                  }
+                }}
+                inputMode="numeric"
+                enterKeyHint="search"
+                autoComplete="off"
+                placeholder="Nº da plaqueta → Enter"
+                style={{
+                  ...inp,
+                  flex: "1 1 160px",
+                  fontSize: isMob ? 18 : 15,
+                  fontWeight: 700,
+                  letterSpacing: "0.04em",
+                  minHeight: isMob ? 48 : undefined,
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const raw = String(tomboQuery || "").trim();
+                  if (!raw) {
+                    showT?.("Digite o número do tombo");
+                    return;
+                  }
+                  const hit = typeof lookupTombo === "function" ? lookupTombo(raw) : null;
+                  if (!hit?.item) {
+                    showT?.(`Tombo "${raw}" não encontrado na planilha`);
+                    return;
+                  }
+                  openDetModal(hit.item);
+                  setTomboQuery("");
+                  if (hit.inventariado) showT?.("Item já coletado — abrindo para editar");
+                }}
+                style={{ ...bp, padding: isMob ? "12px 16px" : "10px 14px", fontSize: 13, minHeight: isMob ? 48 : undefined }}
+              >
+                Abrir
+              </button>
+              {!campanhaFechada && onQuickMarkFound && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const raw = String(tomboQuery || "").trim();
+                    if (!raw) {
+                      showT?.("Digite o número do tombo");
+                      return;
+                    }
+                    const hit = typeof lookupTombo === "function" ? lookupTombo(raw) : null;
+                    if (!hit?.item) {
+                      showT?.(`Tombo "${raw}" não encontrado na planilha`);
+                      return;
+                    }
+                    if (hit.inventariado) {
+                      openDetModal(hit.item);
+                      showT?.("Já coletado — abrindo para editar");
+                      return;
+                    }
+                    setQuickBusyId(hit.item.id);
+                    try {
+                      const res = await onQuickMarkFound(hit.item);
+                      if (res?.ok) setTomboQuery("");
+                    } finally {
+                      setQuickBusyId("");
+                    }
+                  }}
+                  disabled={!!quickBusyId}
+                  style={{
+                    ...bp,
+                    background: "#0f766e",
+                    padding: isMob ? "12px 16px" : "10px 14px",
+                    fontSize: 13,
+                    minHeight: isMob ? 48 : undefined,
+                  }}
+                >
+                  Encontrei
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Local Atual em destaque (modo sala) */}
+          <div
+            style={{
+              ...cd,
+              marginBottom: 12,
+              border: activeLocalId ? "2px solid #0f766e" : "1.5px solid #fcd34d",
+              background: activeLocalId ? "#ecfdf5" : "#fffbeb",
+              padding: "12px 14px",
+            }}
+          >
+            <p style={{ margin: "0 0 6px", fontSize: 13, fontWeight: 800, color: activeLocalId ? "#0f766e" : "#92400e" }}>
+              {activeLocalId ? "Sala fixada (Local Atual)" : "Fixe a sala para coletar rápido"}
+            </p>
+            <select
+              value={activeLocalId || ""}
+              onChange={(e) => setActiveLocalId?.(e.target.value)}
+              style={{
+                width: "100%",
+                border: `1.5px solid ${activeLocalId ? "#6ee7b7" : "#fcd34d"}`,
+                borderRadius: 9,
+                padding: isMob ? "12px 13px" : "10px 13px",
+                fontSize: isMob ? 16 : 14,
+                fontWeight: 700,
+                fontFamily: "inherit",
+                outline: "none",
+                background: "#fff",
+                minHeight: isMob ? 48 : undefined,
+              }}
+            >
+              <option value="">— Selecione a sala —</option>
+              {locaisOrdenados.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.nome}
+                </option>
+              ))}
+            </select>
+            <p style={{ margin: "8px 0 0", fontSize: 11, color: activeLocalId ? "#047857" : "#a16207", lineHeight: 1.4 }}>
+              {activeLocalId
+                ? "Encontrei e Próximo pendente usam esta sala automaticamente."
+                : "Sem sala fixada, o botão Encontrei pede para escolher um local."}
+            </p>
+          </div>
+
           <div style={{ ...cd, marginBottom: 12, border: "1.5px solid #bfdbfe", background: "#eff6ff", padding: "12px 16px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
               <div>
@@ -534,7 +698,7 @@ export function InventarioPage({
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", width: isMob ? "100%" : undefined }}>
                     {!campanhaFechada && onOpenNextPending && (
                       <button onClick={onOpenNextPending} style={{ ...bp, ...act, background: "#0f766e" }}>
-                        Próximo pendente
+                        {activeLocalId ? "Próximo (sala)" : "Próximo pendente"}
                       </button>
                     )}
                     {!campanhaFechada && (
@@ -651,9 +815,9 @@ export function InventarioPage({
           </div>
 
           <div style={{ ...cd, marginBottom: 12, border: "1px solid #e2e8f0" }}>
-            <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Locais da unidade</p>
+            <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "#334155" }}>Salas da unidade</p>
             <p style={{ margin: "0 0 10px", fontSize: 11, color: "#64748b", lineHeight: 1.4 }}>
-              Cada unidade cadastra os locais desta sessão. Só aparecem salas criadas agora — locais de outras unidades ou sessões anteriores não são listados.
+              Toque numa sala para fixá-la como Local Atual. O catálogo permanece entre sessões — só crie se a sala ainda não existir.
             </p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: locais.length > 0 ? 10 : 0 }}>
               <input
@@ -665,7 +829,7 @@ export function InventarioPage({
                     setLocalNomeRapido("");
                   }
                 }}
-                placeholder="Nome da sala ou local... (Enter para salvar)"
+                placeholder="Nova sala... (Enter para salvar)"
                 style={{ ...inp, flex: 1 }}
               />
               <button
@@ -684,27 +848,58 @@ export function InventarioPage({
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {locaisOrdenados.map((l) => {
                   const countLocal = countFoundInLocal(foundMap, l.id, [...activeUnitIds]);
+                  const isActive = activeLocalId === l.id;
                   return (
-                    <button
-                      key={l.id}
-                      onClick={() => {
-                        if (onOpenLocalDetail) {
-                          onOpenLocalDetail(l);
-                        } else {
-                          setLocalSelecionadoId(l.id);
-                          setInvSubTab("locais");
-                        }
-                      }}
-                      style={{ background: "#f1f5f9", color: "#334155", borderRadius: 99, padding: isMob ? "9px 14px" : "4px 10px", fontSize: isMob ? 13 : 11, minHeight: isMob ? 40 : undefined, fontWeight: 700, border: "1px solid #e2e8f0", cursor: "pointer", touchAction: "manipulation" }}
-                      title="Abrir local"
-                    >
-                      {l.nome} {countLocal ? `(${countLocal})` : ""}
-                    </button>
+                    <div key={l.id} style={{ display: "inline-flex", alignItems: "stretch", gap: 0 }}>
+                      <button
+                        onClick={() => setActiveLocalId?.(l.id)}
+                        style={{
+                          background: isActive ? "#0f766e" : "#f1f5f9",
+                          color: isActive ? "#fff" : "#334155",
+                          borderRadius: "99px 0 0 99px",
+                          padding: isMob ? "9px 12px" : "4px 10px",
+                          fontSize: isMob ? 13 : 11,
+                          minHeight: isMob ? 40 : undefined,
+                          fontWeight: 700,
+                          border: `1px solid ${isActive ? "#0f766e" : "#e2e8f0"}`,
+                          borderRight: "none",
+                          cursor: "pointer",
+                          touchAction: "manipulation",
+                        }}
+                        title="Fixar como Local Atual"
+                      >
+                        {isActive ? "● " : ""}
+                        {l.nome} {countLocal ? `(${countLocal})` : ""}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (onOpenLocalDetail) onOpenLocalDetail(l);
+                          else {
+                            setLocalSelecionadoId(l.id);
+                            setInvSubTab("locais");
+                          }
+                        }}
+                        style={{
+                          background: isActive ? "#115e59" : "#e2e8f0",
+                          color: isActive ? "#fff" : "#64748b",
+                          borderRadius: "0 99px 99px 0",
+                          padding: isMob ? "9px 10px" : "4px 8px",
+                          fontSize: 11,
+                          fontWeight: 800,
+                          border: `1px solid ${isActive ? "#0f766e" : "#e2e8f0"}`,
+                          cursor: "pointer",
+                          touchAction: "manipulation",
+                        }}
+                        title="Abrir detalhes do local"
+                      >
+                        ▸
+                      </button>
+                    </div>
                   );
                 })}
               </div>
             ) : (
-              <p style={{ margin: 0, fontSize: 11, color: "#94a3b8" }}>Nenhum local criado nesta unidade ainda.</p>
+              <p style={{ margin: 0, fontSize: 11, color: "#94a3b8" }}>Nenhuma sala nesta unidade ainda.</p>
             )}
           </div>
 
@@ -740,18 +935,31 @@ export function InventarioPage({
             Ocultar itens Incorporados
           </label>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-            <button onClick={() => setViewMode("padrao")} style={{ ...bp, background: viewMode === "padrao" ? "#0f172a" : "#fff", color: viewMode === "padrao" ? "#fff" : "#0f172a", borderColor: "#0f172a", padding: isMob ? "10px 14px" : "6px 12px", fontSize: 12 }}>Visualização Padrão</button>
-            <button onClick={() => setViewMode("categorias")} style={{ ...bp, background: viewMode === "categorias" ? "#0f172a" : "#fff", color: viewMode === "categorias" ? "#fff" : "#0f172a", borderColor: "#0f172a", padding: isMob ? "10px 14px" : "6px 12px", fontSize: 12 }}>Agrupar por Categoria</button>
-            <button
-              onClick={() => {
-                setViewMode("coletados");
-                setColetadosLimit(listLimits.coletadosLimit);
-              }}
-              style={{ ...bp, background: viewMode === "coletados" ? "#0f766e" : "#fff", color: viewMode === "coletados" ? "#fff" : "#0f766e", borderColor: "#0f766e", padding: isMob ? "10px 14px" : "6px 12px", fontSize: 12 }}
-            >
-              Últimos coletados ({totalFound})
-            </button>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+            {(!isMob || showMoreViews || !activeLocalId) && (
+              <>
+                <button onClick={() => setViewMode("padrao")} style={{ ...bp, background: viewMode === "padrao" ? "#0f172a" : "#fff", color: viewMode === "padrao" ? "#fff" : "#0f172a", borderColor: "#0f172a", padding: isMob ? "10px 14px" : "6px 12px", fontSize: 12 }}>Visualização Padrão</button>
+                <button onClick={() => setViewMode("categorias")} style={{ ...bp, background: viewMode === "categorias" ? "#0f172a" : "#fff", color: viewMode === "categorias" ? "#fff" : "#0f172a", borderColor: "#0f172a", padding: isMob ? "10px 14px" : "6px 12px", fontSize: 12 }}>Agrupar por Categoria</button>
+                <button
+                  onClick={() => {
+                    setViewMode("coletados");
+                    setColetadosLimit(listLimits.coletadosLimit);
+                  }}
+                  style={{ ...bp, background: viewMode === "coletados" ? "#0f766e" : "#fff", color: viewMode === "coletados" ? "#fff" : "#0f766e", borderColor: "#0f766e", padding: isMob ? "10px 14px" : "6px 12px", fontSize: 12 }}
+                >
+                  Últimos coletados ({totalFound})
+                </button>
+              </>
+            )}
+            {isMob && activeLocalId && (
+              <button
+                type="button"
+                onClick={() => setShowMoreViews((v) => !v)}
+                style={{ ...bs, padding: "10px 14px", fontSize: 12 }}
+              >
+                {showMoreViews ? "Ocultar vistas" : "Mais vistas"}
+              </button>
+            )}
           </div>
 
           {(() => {
@@ -813,7 +1021,7 @@ export function InventarioPage({
                         </p>
                       </div>
                     )}
-                    <p style={{ margin: "2px 0", fontSize: 11, color: "#64748b" }}>
+                    <p style={{ margin: "2px 0", fontSize: isMob ? 15 : 11, color: "#0f172a", fontWeight: isMob ? 800 : 400, letterSpacing: isMob ? "0.02em" : undefined }}>
                       Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
                     </p>
                     {unidadesAtivas.length > 1 && (
@@ -838,6 +1046,15 @@ export function InventarioPage({
                         <Badge label="Pendente" c={{ bg: "#fff7ed", tx: "#c2410c" }} />
                       )}
                       {f?.plaquetaAusente && <Badge label="Sem plaqueta" c={{ bg: "#ffedd5", tx: "#9a3412" }} />}
+                      {f?.cor && (
+                        <Badge
+                          label={labelCorItem(f.cor)}
+                          c={{
+                            bg: corItemById(f.cor) ? "#f1f5f9" : "#eef2ff",
+                            tx: "#334155",
+                          }}
+                        />
+                      )}
                       {reservedBy && <Badge label={`Em uso — ${reservedBy.nome}`} c={{ bg: "#fef3c7", tx: "#92400e" }} />}
                       {(item?.isManual || f?.isManual || String(item?.id || "").startsWith("MAN_")) && <Badge label="Inserido Manualmente" c={{ bg: "#fef08a", tx: "#854d0e" }} />}
                       {item?.unidadeId && f?.unidadeId && item.unidadeId !== f.unidadeId && <Badge label="De Outra Unidade" c={{ bg: "#fecaca", tx: "#991b1b" }} />}
@@ -852,6 +1069,33 @@ export function InventarioPage({
                           style={{ ...bp, padding: "6px 12px", fontSize: 11, background: "#0f766e", borderColor: "#0f766e" }}
                         >
                           Reconciliar Tombo
+                        </button>
+                      </div>
+                    )}
+                    {!isF && !campanhaFechada && onQuickMarkFound && (
+                      <div style={{ marginTop: 10 }}>
+                        <button
+                          type="button"
+                          disabled={quickBusyId === item.id}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            setQuickBusyId(item.id);
+                            try {
+                              await onQuickMarkFound(item);
+                            } finally {
+                              setQuickBusyId("");
+                            }
+                          }}
+                          style={{
+                            ...bp,
+                            background: "#0f766e",
+                            fontSize: isMob ? 13 : 11,
+                            padding: isMob ? "10px 14px" : "6px 12px",
+                            minHeight: isMob ? 44 : undefined,
+                            width: "100%",
+                          }}
+                        >
+                          {quickBusyId === item.id ? "Salvando…" : "Encontrei"}
                         </button>
                       </div>
                     )}
@@ -1311,7 +1555,7 @@ export function InventarioPage({
                           {l.desc && <p style={{ margin: "2px 0 0", fontSize: 12, color: "#94a3b8" }}>{l.desc}</p>}
                           <p style={{ margin: "6px 0 0", fontSize: 12, color: "#64748b", fontWeight: 700 }}>{c} item(s)</p>
                         </button>
-                        {canDeleteLocal(l, sessionId) && (
+                        {canDeleteLocal(l, sessionId, [...activeUnitIds]) && (
                           <button
                             onClick={() => {
                               if (c > 0) {
