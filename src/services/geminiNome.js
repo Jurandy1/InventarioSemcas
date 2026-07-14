@@ -1,9 +1,6 @@
 /**
- * Gemini (visão) para sugerir nome + espécie a partir da foto do item.
- * A chave fica em VITE_GEMINI_API_KEY (nunca no código).
- *
- * Atenção: em app estático a chave aparece no bundle do browser.
- * Restrinja a chave por HTTP referrer no Google AI Studio / Cloud Console.
+ * Gemini (visão) — nome + espécie a partir da foto.
+ * Em produção chama /api/gemini-nome (proxy Vercel) para evitar CORS do Firebase Storage.
  */
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
@@ -11,6 +8,8 @@ const MODEL = import.meta.env.VITE_GEMINI_MODEL || "gemini-flash-latest";
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 export function isGeminiNomeConfigured() {
+  // Em produção a chave pode estar só no servidor (Vercel).
+  if (import.meta.env.PROD) return true;
   return Boolean(String(API_KEY || "").trim());
 }
 
@@ -41,8 +40,7 @@ async function fetchImageAsInlineData(url) {
   for (let i = 0; i < bytes.length; i += chunk) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
-  const data = btoa(binary);
-  return { mime_type: guessMime(src, blob.type), data };
+  return { mime_type: guessMime(src, blob.type), data: btoa(binary) };
 }
 
 function normKey(s) {
@@ -54,7 +52,6 @@ function normKey(s) {
     .replace(/\s+/g, " ");
 }
 
-/** Alinha espécie da IA à lista oficial (planilha) quando possível. */
 export function matchEspecieCatalogo(sugerida, especies = []) {
   const raw = String(sugerida || "").trim();
   if (!raw) return "";
@@ -70,7 +67,6 @@ export function matchEspecieCatalogo(sugerida, especies = []) {
     }
   }
   if (best) return best;
-  // Padrão patrimonial: espécie em MAIÚSCULAS
   return raw.toUpperCase().slice(0, 40);
 }
 
@@ -85,8 +81,7 @@ function buildPrompt({ especie, nomeAtual, marca, especies = [] }) {
     "Você auxilia inventário patrimonial da SEMCAS (mobiliário e equipamentos de unidades públicas).",
     "Analise a foto e diga o nome padronizado E a espécie correta do bem.",
     "",
-    "Responda SOMENTE um JSON válido nesta forma exata (sem markdown, sem texto extra):",
-    '{"nome":"...","especie":"..."}',
+    'Responda SOMENTE um JSON válido nesta forma: {"nome":"...","especie":"..."}',
     "",
     "Regras do campo nome:",
     "- 3 a 12 palavras em português do Brasil, objetiva.",
@@ -117,8 +112,6 @@ function limparRespostaNome(text) {
 function parseNomeEspecie(rawText) {
   let raw = String(rawText || "").trim();
   raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/```$/g, "").trim();
-
-  // JSON completo
   const m = raw.match(/\{[\s\S]*\}/);
   if (m) {
     try {
@@ -127,11 +120,9 @@ function parseNomeEspecie(rawText) {
       const especie = String(obj.especie || obj.species || obj.tipo || "").trim();
       if (nome) return { nome, especie };
     } catch {
-      /* fallback abaixo */
+      /* fallback */
     }
   }
-
-  // "nome | especie" ou duas linhas
   const lines = raw.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   if (lines.length >= 2) {
     return { nome: limparRespostaNome(lines[0]), especie: lines[1].replace(/^especie\s*:\s*/i, "").trim() };
@@ -143,21 +134,27 @@ function parseNomeEspecie(rawText) {
   return { nome: limparRespostaNome(raw), especie: "" };
 }
 
-/**
- * Analisa foto e sugere nome + espécie.
- * @returns {Promise<{ nome: string, especie: string, model: string }>}
- */
-export async function sugerirNomeComGemini({
-  fotoUrls = [],
-  especie = "",
-  nomeAtual = "",
-  marca = "",
-  especies = [],
-} = {}) {
-  if (!isGeminiNomeConfigured()) {
-    throw new Error(
-      "Gemini não configurado. Defina VITE_GEMINI_API_KEY no .env e nas Environment Variables da Vercel."
-    );
+async function viaServerProxy(payload) {
+  const r = await fetch("/api/gemini-nome", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    throw new Error(data?.error || `Falha no proxy IA (HTTP ${r.status})`);
+  }
+  if (!data?.nome) throw new Error("A IA não retornou um nome utilizável");
+  return {
+    nome: String(data.nome),
+    especie: matchEspecieCatalogo(data.especie || "", payload.especies || []),
+    model: data.model || MODEL,
+  };
+}
+
+async function viaClientDirect({ fotoUrls, especie, nomeAtual, marca, especies }) {
+  if (!API_KEY) {
+    throw new Error("Gemini não configurado (VITE_GEMINI_API_KEY).");
   }
   const urls = (Array.isArray(fotoUrls) ? fotoUrls : []).filter(Boolean).slice(0, 2);
   if (!urls.length) throw new Error("Selecione itens que tenham foto");
@@ -172,7 +169,13 @@ export async function sugerirNomeComGemini({
     }
   }
   if (!inlineParts.length) {
-    throw new Error(lastErr?.message || "Não foi possível ler a foto (CORS ou URL inválida)");
+    const msg = String(lastErr?.message || "");
+    if (/failed to fetch|networkerror|cors|access-control/i.test(msg) || lastErr?.name === "TypeError") {
+      throw new Error(
+        "CORS bloqueou a foto no navegador. Use o app na Vercel (proxy /api/gemini-nome) ou configure CORS no Firebase Storage."
+      );
+    }
+    throw new Error(lastErr?.message || "Não foi possível ler a foto");
   }
 
   const body = {
@@ -209,6 +212,38 @@ export async function sugerirNomeComGemini({
   const raw = parts.map((p) => p?.text || "").join(" ").trim();
   const parsed = parseNomeEspecie(raw);
   if (!parsed.nome) throw new Error("A IA não retornou um nome utilizável");
-  const especieFinal = matchEspecieCatalogo(parsed.especie, especies);
-  return { nome: parsed.nome, especie: especieFinal, model: MODEL };
+  return {
+    nome: parsed.nome,
+    especie: matchEspecieCatalogo(parsed.especie, especies),
+    model: MODEL,
+  };
+}
+
+/**
+ * Analisa foto e sugere nome + espécie.
+ * Prefere o proxy Vercel (sem CORS); fallback no browser só em dev.
+ */
+export async function sugerirNomeComGemini({
+  fotoUrls = [],
+  especie = "",
+  nomeAtual = "",
+  marca = "",
+  especies = [],
+} = {}) {
+  const payload = { fotoUrls, especie, nomeAtual, marca, especies };
+
+  // Sempre tenta o proxy primeiro (produção Vercel).
+  try {
+    return await viaServerProxy(payload);
+  } catch (proxyErr) {
+    // Em produção não faz fallback (CORS falha de qualquer forma).
+    if (import.meta.env.PROD) throw proxyErr;
+    try {
+      return await viaClientDirect(payload);
+    } catch (clientErr) {
+      throw new Error(
+        `${proxyErr?.message || "Proxy IA indisponível"}. Fallback local: ${clientErr?.message || clientErr}`
+      );
+    }
+  }
 }
