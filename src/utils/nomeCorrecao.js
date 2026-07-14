@@ -23,6 +23,30 @@ export function isManualItem(item) {
   return Boolean(item?.isManual) || id.startsWith("MAN_") || id.startsWith("ST_");
 }
 
+export function getItemEspecie(item, foundMap) {
+  const f = getFoundEntry(item?.id, foundMap);
+  const esp = String(f?.especieEdit || item?.especie || "").trim();
+  return esp || "Sem espécie";
+}
+
+/** Agrupa itens por espécie (ordenado por quantidade, depois nome). */
+export function groupItemsByEspecie(items, foundMap) {
+  const map = new Map();
+  for (const item of items || []) {
+    const esp = getItemEspecie(item, foundMap);
+    if (!map.has(esp)) map.set(esp, []);
+    map.get(esp).push(item);
+  }
+  return [...map.entries()]
+    .map(([especie, members]) => ({ especie, members, count: members.length }))
+    .sort((a, b) => {
+      if (a.especie === "Sem espécie") return 1;
+      if (b.especie === "Sem espécie") return -1;
+      if (b.count !== a.count) return b.count - a.count;
+      return a.especie.localeCompare(b.especie, "pt-BR");
+    });
+}
+
 // ─── Atributos: cores, materiais, medidas e "com/sem" ────────────────────────
 
 const CORES = new Set([
@@ -470,10 +494,14 @@ export function clusterSimilarManualItems(items, foundMap, { minScore = 0.68 } =
  * Agrupa itens que serão padronizados para o MESMO nome final.
  * Vários itens com o mesmo nome padronizado é normal (ex.: 20 cadeiras iguais).
  */
-export function agruparItensParaPadronizacao(items, foundMap, foundSet, { unidadeId } = {}) {
+export function agruparItensParaPadronizacao(items, foundMap, foundSet, { unidadeId, somenteManuais = true, especie } = {}) {
   let list = (items || []).filter((i) => isItemInventariado(i.id, foundSet));
+  if (somenteManuais) list = list.filter(isManualItem);
   if (unidadeId && unidadeId !== "todas") {
     list = list.filter((i) => i.unidadeId === unidadeId);
+  }
+  if (especie && especie !== "todas") {
+    list = list.filter((i) => getItemEspecie(i, foundMap) === especie);
   }
 
   const map = new Map();
@@ -560,15 +588,17 @@ export function computeNomeQualityScore(item, foundMap) {
   return Math.max(0, Math.min(100, score));
 }
 
-/** KPIs do painel de padronização. */
-export function buildCorrecaoDashboard(items, foundMap, foundSet, lotes = []) {
-  const inventariados = (items || []).filter((i) => isItemInventariado(i.id, foundSet));
+/** KPIs do painel de padronização (por padrão só manuais — tombo já vem padronizado). */
+export function buildCorrecaoDashboard(items, foundMap, foundSet, lotes = [], { somenteManuais = true } = {}) {
+  let inventariados = (items || []).filter((i) => isItemInventariado(i.id, foundSet));
+  if (somenteManuais) inventariados = inventariados.filter(isManualItem);
   let comProblema = 0;
   let semFoto = 0;
   let comAbrev = 0;
   let baixaQualidade = 0;
   let precisaPadronizar = 0;
   let jaPadronizados = 0;
+  const especiesPendentes = new Set();
   for (const item of inventariados) {
     const label = getItemLabel(item, foundMap);
     const probs = detectProblemasNome(item, foundMap);
@@ -576,8 +606,12 @@ export function buildCorrecaoDashboard(items, foundMap, foundSet, lotes = []) {
     if (!getItemFotos(item.id, foundMap).length) semFoto++;
     if (probs.some((p) => p.id === "abreviacao")) comAbrev++;
     if (computeNomeQualityScore(item, foundMap) < 55) baixaQualidade++;
-    if (precisaPadronizacao(label)) precisaPadronizar++;
-    else jaPadronizados++;
+    if (precisaPadronizacao(label)) {
+      precisaPadronizar++;
+      especiesPendentes.add(getItemEspecie(item, foundMap));
+    } else {
+      jaPadronizados++;
+    }
   }
   const itensPadronizaveis = (lotes || []).reduce((acc, g) => acc + g.members.length, 0);
   return {
@@ -590,6 +624,8 @@ export function buildCorrecaoDashboard(items, foundMap, foundSet, lotes = []) {
     semFoto,
     comAbrev,
     baixaQualidade,
+    especiesPendentes: especiesPendentes.size,
+    somenteManuais,
   };
 }
 
@@ -641,17 +677,28 @@ function matchesFiltroProblema(item, foundMap, filtro) {
   return probs.some((p) => p.id === filtro);
 }
 
-export function filterInventariadosItems(items, foundMap, foundSet, { unidadeId, query, filtroProblema, estadoLista } = {}) {
+export function filterInventariadosItems(
+  items,
+  foundMap,
+  foundSet,
+  { unidadeId, query, filtroProblema, estadoLista, somenteManuais = true, especie } = {}
+) {
   let list = (items || []).filter((i) => isItemInventariado(i.id, foundSet));
+  // Itens do tombo/planilha já vêm com nome de catálogo — correção é para manuais.
+  if (somenteManuais) list = list.filter(isManualItem);
   if (unidadeId && unidadeId !== "todas") {
     list = list.filter((i) => i.unidadeId === unidadeId);
+  }
+  if (especie && especie !== "todas") {
+    list = list.filter((i) => getItemEspecie(i, foundMap) === especie);
   }
   const q = String(query || "").trim().toLowerCase();
   if (q) {
     list = list.filter((i) => {
       const label = getItemLabel(i, foundMap).toLowerCase();
       const marca = getItemMarca(i, foundMap).toLowerCase();
-      return label.includes(q) || marca.includes(q) || String(i.id).toLowerCase().includes(q);
+      const esp = getItemEspecie(i, foundMap).toLowerCase();
+      return label.includes(q) || marca.includes(q) || esp.includes(q) || String(i.id).toLowerCase().includes(q);
     });
   }
   // Filtros de problema físico (ex.: sem foto) mostram TODOS os itens com o
@@ -667,11 +714,15 @@ export function filterInventariadosItems(items, foundMap, foundSet, { unidadeId,
     list = list.filter((i) => matchesFiltroProblema(i, foundMap, filtroProblema));
   }
   if (estadoLista === ESTADO_LISTA.CORRIGIDOS) {
-    return list.sort((a, b) =>
-      getItemLabel(a, foundMap).localeCompare(getItemLabel(b, foundMap), "pt-BR")
-    );
+    return list.sort((a, b) => {
+      const ea = getItemEspecie(a, foundMap).localeCompare(getItemEspecie(b, foundMap), "pt-BR");
+      if (ea !== 0) return ea;
+      return getItemLabel(a, foundMap).localeCompare(getItemLabel(b, foundMap), "pt-BR");
+    });
   }
   return list.sort((a, b) => {
+    const ea = getItemEspecie(a, foundMap).localeCompare(getItemEspecie(b, foundMap), "pt-BR");
+    if (ea !== 0) return ea;
     const qa = computeNomeQualityScore(a, foundMap);
     const qb = computeNomeQualityScore(b, foundMap);
     if (qa !== qb) return qa - qb;

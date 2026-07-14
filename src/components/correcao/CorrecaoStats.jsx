@@ -2,12 +2,12 @@ import React from "react";
 
 export function CorrecaoStats({ stats, onFiltro, filtroAtivo }) {
   const cards = [
-    { id: "todos", label: "Inventariados", value: stats.total, hint: "Itens já inventariados" },
-    { id: "precisa_padronizar", label: "Precisam padronizar", value: stats.precisaPadronizar, hint: "Grafia fora do padrão", warn: stats.precisaPadronizar > 0 },
+    { id: "todos", label: stats.somenteManuais === false ? "Inventariados" : "Manuais", value: stats.total, hint: stats.somenteManuais === false ? "Itens já inventariados" : "Itens manuais / sem tombo" },
+    { id: "precisa_padronizar", label: "Precisam padronizar", value: stats.precisaPadronizar, hint: "Grafia fora do padrão (manuais)", warn: stats.precisaPadronizar > 0 },
     { id: "abreviacao", label: "Com abreviação", value: stats.comAbrev, hint: "c/, s/, p/ etc.", warn: stats.comAbrev > 0 },
     { id: "baixa_qualidade", label: "Baixa qualidade", value: stats.baixaQualidade, hint: "Nomes com vários problemas", warn: stats.baixaQualidade > 0 },
     { id: "sem_foto", label: "Sem foto", value: stats.semFoto, hint: "Itens inventariados sem foto — clique para adicionar", warn: stats.semFoto > 0 },
-    { id: "corrigidos", label: "Já padronizados", value: stats.jaPadronizados, hint: "Nomes corrigidos", accent: true },
+    { id: "corrigidos", label: "Já padronizados", value: stats.jaPadronizados, hint: "Manuais com nome ok", accent: true },
   ];
 
   return (

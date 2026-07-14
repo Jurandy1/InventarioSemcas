@@ -14,8 +14,11 @@ export function PadronizacaoLoteCard({
   targets,
   onToggleMember,
   onAplicar,
+  onSugerirIa,
   onViewImage,
   busy,
+  iaBusy,
+  geminiOk,
   bs,
   inp,
   expanded,
@@ -31,15 +34,29 @@ export function PadronizacaoLoteCard({
           <strong className="correcao-grupo__title">{nomeFinal || lote.nomePadronizado}</strong>
           <span className="correcao-grupo__meta">Padronização de grafia (não é duplicata)</span>
         </button>
-        <button
-          type="button"
-          className="gov-btn gov-btn--primary"
-          style={bs}
-          disabled={busy || !targets.length || !nomeFinal}
-          onClick={onAplicar}
-        >
-          Padronizar {targets.length}
-        </button>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {geminiOk && (
+            <button
+              type="button"
+              className="gov-btn gov-btn--secondary"
+              style={bs}
+              disabled={busy || iaBusy}
+              onClick={onSugerirIa}
+              title="Sugerir nome olhando a foto"
+            >
+              {iaBusy ? "IA…" : "IA foto"}
+            </button>
+          )}
+          <button
+            type="button"
+            className="gov-btn gov-btn--primary"
+            style={bs}
+            disabled={busy || !targets.length || !nomeFinal}
+            onClick={onAplicar}
+          >
+            Padronizar {targets.length}
+          </button>
+        </div>
       </header>
 
       {expanded && (

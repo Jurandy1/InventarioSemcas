@@ -98,6 +98,111 @@
   flex-wrap: wrap;
 }
 
+.correcao-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gov-text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.correcao-especie-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.correcao-especie-chip {
+  border: 1px solid var(--gov-border-light);
+  background: var(--gov-surface);
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gov-text);
+  cursor: pointer;
+}
+
+.correcao-especie-chip strong {
+  margin-left: 4px;
+  color: var(--gov-primary);
+}
+
+.correcao-especie-chip--on,
+.correcao-especie-chip:hover {
+  border-color: var(--gov-primary);
+  background: var(--gov-primary-light);
+}
+
+.correcao-especie-group {
+  margin-bottom: 10px;
+  border: 1px solid var(--gov-border-light);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--gov-surface);
+}
+
+.correcao-especie-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--gov-primary-light) 55%, white);
+  border-bottom: 1px solid var(--gov-border-light);
+  flex-wrap: wrap;
+}
+
+.correcao-especie-group__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  color: var(--gov-primary-dark);
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.correcao-especie-group__title {
+  text-align: left;
+}
+
+.correcao-especie-group__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--gov-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.correcao-especie-group__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.correcao-especie-group .correcao-item {
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+}
+
 .correcao-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;

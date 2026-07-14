@@ -14,12 +14,15 @@ import {
   detectProblemasNome,
   filterInventariadosItems,
   formatarNomePadrao,
+  getItemEspecie,
   getItemLabel,
   getItemMarca,
+  getItemFotos,
+  groupItemsByEspecie,
   padronizarNome,
-  precisaPadronizacao,
 } from "../utils/nomeCorrecao.js";
 import { getFoundEntry } from "../utils/patrimonioId.js";
+import { isGeminiNomeConfigured, sugerirNomeComGemini } from "../services/geminiNome.js";
 import "../styles/correcao-nomes.css";
 
 const PER_PAGE_DESK = 30;
@@ -50,6 +53,8 @@ export function CorrecaoNomesPage({
 }) {
   const [modo, setModo] = useState("revisar");
   const [unidadeId, setUnidadeId] = useState("todas");
+  const [especieFiltro, setEspecieFiltro] = useState("todas");
+  const [somenteManuais, setSomenteManuais] = useState(true);
   const [query, setQuery] = useState("");
   const [filtroProblema, setFiltroProblema] = useState(FILTRO_PROBLEMA.TODOS);
   const [nomePersonalizado, setNomePersonalizado] = useState("");
@@ -57,40 +62,64 @@ export function CorrecaoNomesPage({
   const [loteChecks, setLoteChecks] = useState(() => new Map());
   const [loteNomes, setLoteNomes] = useState(() => new Map());
   const [lotesAbertos, setLotesAbertos] = useState(() => new Set());
+  const [especiesAbertas, setEspeciesAbertas] = useState(() => new Set());
   const [page, setPage] = useState(1);
   const [pageCorrigidos, setPageCorrigidos] = useState(1);
   const [confirmLote, setConfirmLote] = useState(false);
+  const [iaBusy, setIaBusy] = useState(false);
+  const [nomeInputKey, setNomeInputKey] = useState(0);
+  const geminiOk = isGeminiNomeConfigured();
+
+  const filtroBase = useMemo(
+    () => ({ unidadeId, somenteManuais, especie: especieFiltro }),
+    [unidadeId, somenteManuais, especieFiltro]
+  );
 
   const lotes = useMemo(
-    () => agruparItensParaPadronizacao(todosItens, foundMap, foundSet, { unidadeId }),
-    [todosItens, foundMap, foundSet, unidadeId]
+    () => agruparItensParaPadronizacao(todosItens, foundMap, foundSet, filtroBase),
+    [todosItens, foundMap, foundSet, filtroBase]
   );
 
   const stats = useMemo(
-    () => buildCorrecaoDashboard(todosItens, foundMap, foundSet, lotes),
-    [todosItens, foundMap, foundSet, lotes]
+    () => buildCorrecaoDashboard(todosItens, foundMap, foundSet, lotes, { somenteManuais }),
+    [todosItens, foundMap, foundSet, lotes, somenteManuais]
   );
 
   const itensPendentes = useMemo(
     () =>
       filterInventariadosItems(todosItens, foundMap, foundSet, {
-        unidadeId,
+        ...filtroBase,
         query,
         filtroProblema,
         estadoLista: ESTADO_LISTA.PENDENTES,
       }),
-    [todosItens, foundMap, foundSet, unidadeId, query, filtroProblema]
+    [todosItens, foundMap, foundSet, filtroBase, query, filtroProblema]
   );
 
   const itensCorrigidos = useMemo(
     () =>
       filterInventariadosItems(todosItens, foundMap, foundSet, {
-        unidadeId,
+        ...filtroBase,
         query,
         filtroProblema: FILTRO_PROBLEMA.TODOS,
         estadoLista: ESTADO_LISTA.CORRIGIDOS,
       }),
-    [todosItens, foundMap, foundSet, unidadeId, query]
+    [todosItens, foundMap, foundSet, filtroBase, query]
+  );
+
+  const especiesDisponiveis = useMemo(() => {
+    const base = filterInventariadosItems(todosItens, foundMap, foundSet, {
+      unidadeId,
+      somenteManuais,
+      especie: "todas",
+      estadoLista: ESTADO_LISTA.PENDENTES,
+    });
+    return groupItemsByEspecie(base, foundMap);
+  }, [todosItens, foundMap, foundSet, unidadeId, somenteManuais]);
+
+  const gruposPendentes = useMemo(
+    () => groupItemsByEspecie(itensPendentes, foundMap),
+    [itensPendentes, foundMap]
   );
 
   const itensLista = modo === "corrigidos" ? itensCorrigidos : itensPendentes;
@@ -98,14 +127,24 @@ export function CorrecaoNomesPage({
   const perPage = isMob ? PER_PAGE_MOB : PER_PAGE_DESK;
   const pageAtiva = modo === "corrigidos" ? pageCorrigidos : page;
   const setPageAtiva = modo === "corrigidos" ? setPageCorrigidos : setPage;
-  const totalPages = Math.max(1, Math.ceil(itensLista.length / perPage));
+  // Agrupado por espécie: sem paginação flat (facilita corrigir uma espécie de cada vez).
+  const agruparPorEspecie = modo === "revisar" && especieFiltro === "todas";
+  const totalPages = agruparPorEspecie ? 1 : Math.max(1, Math.ceil(itensLista.length / perPage));
   const pageSafe = Math.min(pageAtiva, totalPages);
-  const itensPage = itensLista.slice((pageSafe - 1) * perPage, pageSafe * perPage);
+  const itensPage = agruparPorEspecie
+    ? itensLista
+    : itensLista.slice((pageSafe - 1) * perPage, pageSafe * perPage);
 
   useEffect(() => {
     setPage(1);
     setPageCorrigidos(1);
-  }, [unidadeId, query, filtroProblema, modo]);
+  }, [unidadeId, query, filtroProblema, modo, especieFiltro, somenteManuais]);
+
+  useEffect(() => {
+    if (gruposPendentes.length && !especiesAbertas.size) {
+      setEspeciesAbertas(new Set(gruposPendentes.slice(0, 2).map((g) => g.especie)));
+    }
+  }, [gruposPendentes, especiesAbertas.size]);
 
   const toggleSel = (id) => {
     setSelecionados((prev) => {
@@ -132,6 +171,24 @@ export function CorrecaoNomesPage({
   };
 
   const limparSelecao = () => setSelecionados(new Set());
+
+  const selecionarEspecie = (members) => {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      for (const item of members || []) next.add(item.id);
+      return next;
+    });
+    showT?.(`${(members || []).length} item(ns) da espécie selecionado(s)`);
+  };
+
+  const toggleEspecieOpen = (esp) => {
+    setEspeciesAbertas((prev) => {
+      const next = new Set(prev);
+      if (next.has(esp)) next.delete(esp);
+      else next.add(esp);
+      return next;
+    });
+  };
 
   const nomeAplicar = formatarNomePadrao(nomePersonalizado.trim());
   const primeiroSel = [...selecionados][0];
@@ -184,6 +241,95 @@ export function CorrecaoNomesPage({
   };
 
   const aplicarSelecionados = () => aplicarPadronizacaoItens([...selecionados]);
+
+  const pickItemComFoto = useCallback(
+    (ids) => {
+      const list = (ids || []).map((id) => todosItens.find((i) => i.id === id)).filter(Boolean);
+      return list.find((i) => getItemFotos(i.id, foundMap).length > 0) || list[0] || null;
+    },
+    [todosItens, foundMap]
+  );
+
+  const sugerirComIa = useCallback(
+    async (ids) => {
+      if (!geminiOk) {
+        showT?.("Configure VITE_GEMINI_API_KEY no .env / secrets do deploy");
+        return;
+      }
+      const alvoIds = ids?.length ? ids : [...selecionados];
+      const item = pickItemComFoto(alvoIds);
+      if (!item) {
+        showT?.("Selecione ao menos um item");
+        return;
+      }
+      const fotos = getItemFotos(item.id, foundMap);
+      if (!fotos.length) {
+        showT?.("O item precisa ter foto para a IA sugerir o nome");
+        return;
+      }
+      setIaBusy(true);
+      try {
+        const { nome } = await sugerirNomeComGemini({
+          fotoUrls: fotos,
+          especie: getItemEspecie(item, foundMap),
+          nomeAtual: getItemLabel(item, foundMap),
+          marca: getItemMarca(item, foundMap),
+        });
+        const limpo = formatarNomePadrao(nome);
+        setNomePersonalizado(limpo);
+        setNomeInputKey((k) => k + 1);
+        if (!selecionados.size && alvoIds.length) {
+          setSelecionados(new Set(alvoIds));
+        }
+        showT?.(`IA sugeriu: ${limpo}`);
+      } catch (e) {
+        showT?.(e?.message || "Falha ao consultar a Gemini");
+      } finally {
+        setIaBusy(false);
+      }
+    },
+    [geminiOk, selecionados, pickItemComFoto, foundMap, showT]
+  );
+
+  const sugerirIaNoLote = useCallback(
+    async (lote) => {
+      if (!geminiOk) {
+        showT?.("Configure VITE_GEMINI_API_KEY no .env / secrets do deploy");
+        return;
+      }
+      const member = (lote.members || []).find((m) => getItemFotos(m.id, foundMap).length) || lote.members?.[0];
+      if (!member) {
+        showT?.("Lote sem itens");
+        return;
+      }
+      const fotos = getItemFotos(member.id, foundMap);
+      if (!fotos.length) {
+        showT?.("Inclua foto em um item do lote para sugerir com IA");
+        return;
+      }
+      setIaBusy(true);
+      try {
+        const { nome } = await sugerirNomeComGemini({
+          fotoUrls: fotos,
+          especie: getItemEspecie(member.item, foundMap),
+          nomeAtual: member.labelOriginal || getItemLabel(member.item, foundMap),
+          marca: member.marca || getItemMarca(member.item, foundMap),
+        });
+        const limpo = formatarNomePadrao(nome);
+        setLoteNomes((prev) => {
+          const next = new Map(prev);
+          next.set(lote.key, limpo);
+          return next;
+        });
+        showT?.(`IA sugeriu no lote: ${limpo}`);
+      } catch (e) {
+        showT?.(e?.message || "Falha ao consultar a Gemini");
+      } finally {
+        setIaBusy(false);
+      }
+    },
+    [geminiOk, foundMap, showT]
+  );
 
   const getLoteNome = (lote) =>
     String(loteNomes.get(lote.key) ?? lote.nomePadronizado ?? "").trim();
@@ -292,13 +438,92 @@ export function CorrecaoNomesPage({
     }
   }, [modo, lotes, lotesAbertos.size]);
 
+  const renderItemCard = (item) => {
+    const label = getItemLabel(item, foundMap);
+    const nomePadraoAuto = padronizarNome(label);
+    const marca = getItemMarca(item, foundMap);
+    const found = getFoundEntry(item.id, foundMap);
+    const checked = selecionados.has(item.id);
+    const score = computeNomeQualityScore(item, foundMap);
+    const problemas = detectProblemasNome(item, foundMap);
+    const nomeDestino = nomeAplicar || nomePadraoAuto;
+    const especie = getItemEspecie(item, foundMap);
+    return (
+      <article
+        key={item.id}
+        className={`correcao-item${checked ? " correcao-item--sel" : ""} correcao-item--low`}
+      >
+        <span className={scoreClass(score)} title="Qualidade do nome">{score}</span>
+        <input
+          type="checkbox"
+          className="correcao-check"
+          checked={checked}
+          onChange={() => toggleSel(item.id)}
+          aria-label={`Selecionar ${label}`}
+        />
+        <CorrecaoItemPhoto foundMap={foundMap} itemId={item.id} onViewImage={onViewImage} onAddPhoto={onOpenItem ? () => onOpenItem(item) : undefined} />
+        <div className="correcao-item__main">
+          <div className="correcao-item__title">{label}</div>
+          {marca && (
+            <div style={{ fontSize: 11, color: "var(--gov-primary)", fontWeight: 700, marginTop: 4 }}>
+              Marca: {marca} <span style={{ fontWeight: 400, color: "var(--gov-text-muted)" }}>(mantida)</span>
+            </div>
+          )}
+          {checked && nomeDestino && nomeDestino !== label && (
+            <NomeDiff antes={label} depois={nomeDestino} compact />
+          )}
+          {!checked && <NomeDiff antes={label} depois={nomePadraoAuto} compact />}
+          <AtributoChips nome={nomeDestino} marca={marca} />
+          <div className="correcao-item__meta">
+            {especie} · {item.unidadeNome || item.unidadeId} · {item.id}
+          </div>
+          {problemas.length > 0 && (
+            <div className="correcao-item__probs">
+              {problemas.slice(0, 3).map((p) => (
+                <span key={p.id} className={`correcao-prob${p.severidade === "alta" ? " correcao-prob--alta" : ""}`}>
+                  {p.label}
+                </span>
+              ))}
+            </div>
+          )}
+          {found?.descricaoEdit && found.descricaoEdit !== item.descricao && (
+            <div style={{ fontSize: 11, color: "#b45309", marginTop: 4 }}>Catálogo: {item.descricao || "—"}</div>
+          )}
+        </div>
+        <button
+          type="button"
+          className="gov-btn gov-btn--secondary"
+          style={{ ...bs, whiteSpace: "nowrap" }}
+          disabled={busy || iaBusy}
+          onClick={() => aplicarPadronizacaoItens([item.id])}
+        >
+          Auto
+        </button>
+        {geminiOk && (
+          <button
+            type="button"
+            className="gov-btn gov-btn--ghost"
+            style={{ ...bs, whiteSpace: "nowrap" }}
+            disabled={busy || iaBusy || !getItemFotos(item.id, foundMap).length}
+            title={getItemFotos(item.id, foundMap).length ? "Sugerir nome pela foto (Gemini)" : "Sem foto"}
+            onClick={() => sugerirComIa([item.id])}
+          >
+            IA
+          </button>
+        )}
+      </article>
+    );
+  };
+
   return (
     <div className={`correcao-page${isMob ? " correcao-page--mob" : ""}`}>
       <header className="correcao-hero">
         <h2>Correção de nomes</h2>
         <p>
-          Padronize a <strong>descrição</strong> dos itens inventariados. A <strong>marca não é alterada</strong>.
-          Selecione os itens, digite o nome padrão e aplique — ou use a padronização automática de grafia.
+          Foque nos <strong>itens manuais</strong> (sem tombo / digitados). Itens lidos pelo tombo
+          já vêm com nome de catálogo e normalmente <strong>não precisam</strong> de padronização.
+          Organize por <strong>espécie</strong>. Com foto, use <strong>Sugerir com IA</strong> (Gemini)
+          para propor o nome padronizado — você revisa e aplica.
         </p>
       </header>
 
@@ -315,7 +540,20 @@ export function CorrecaoNomesPage({
             <option key={u.id} value={u.id}>{u.nome}</option>
           ))}
         </select>
-        <TInput initial={query} onVal={setQuery} placeholder="Buscar nome, marca ou ID…" style={{ ...inp, flex: 1, minWidth: 160 }} />
+        <select
+          value={especieFiltro}
+          onChange={(e) => setEspecieFiltro(e.target.value)}
+          style={{ ...inp, minWidth: isMob ? "100%" : 200 }}
+          title="Filtrar por espécie"
+        >
+          <option value="todas">Todas as espécies ({especiesDisponiveis.reduce((s, g) => s + g.count, 0)})</option>
+          {especiesDisponiveis.map((g) => (
+            <option key={g.especie} value={g.especie}>
+              {g.especie} ({g.count})
+            </option>
+          ))}
+        </select>
+        <TInput initial={query} onVal={setQuery} placeholder="Buscar nome, marca, espécie ou ID…" style={{ ...inp, flex: 1, minWidth: 160 }} />
         {modo !== "corrigidos" && (
           <select
             value={filtroProblema}
@@ -330,6 +568,14 @@ export function CorrecaoNomesPage({
             <option value={FILTRO_PROBLEMA.BAIXA_QUALIDADE}>Baixa qualidade</option>
           </select>
         )}
+        <label className="correcao-toggle" title="Itens do tombo já vêm padronizados na planilha">
+          <input
+            type="checkbox"
+            checked={!somenteManuais}
+            onChange={(e) => setSomenteManuais(!e.target.checked)}
+          />
+          Incluir itens do tombo
+        </label>
         <div className="correcao-tabs">
           <button type="button" className={`gov-btn ${modo === "revisar" ? "gov-btn--primary" : "gov-btn--secondary"}`} style={bs} onClick={() => setModo("revisar")}>
             Padronizar ({stats.precisaPadronizar})
@@ -349,98 +595,82 @@ export function CorrecaoNomesPage({
             <div className="correcao-panel" style={{ ...cd, marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                 <div>
-                  <div className="correcao-panel__title">Aguardando padronização ({itensPendentes.length})</div>
+                  <div className="correcao-panel__title">
+                    Manuais pendentes ({itensPendentes.length})
+                    {agruparPorEspecie ? ` · ${gruposPendentes.length} espécie(s)` : ""}
+                  </div>
                   <div style={{ fontSize: 12, color: "var(--gov-text-muted)" }}>
-                    Antes → depois da padronização · página {pageSafe}/{totalPages}
+                    {somenteManuais
+                      ? "Só itens manuais / sem tombo — nomes digitados na coleta."
+                      : "Incluindo itens do tombo (catálogo)."}
+                    {agruparPorEspecie ? " Agrupado por espécie." : ` · página ${pageSafe}/${totalPages}`}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <button type="button" className="gov-btn gov-btn--secondary" style={bs} onClick={selecionarTudo}>
                     Selecionar tudo ({itensPendentes.length})
                   </button>
-                  <button type="button" className="gov-btn gov-btn--secondary" style={bs} onClick={selecionarTodosVisiveis}>
-                    Marcar página
-                  </button>
+                  {!agruparPorEspecie && (
+                    <button type="button" className="gov-btn gov-btn--secondary" style={bs} onClick={selecionarTodosVisiveis}>
+                      Marcar página
+                    </button>
+                  )}
                   <button type="button" className="gov-btn gov-btn--ghost" style={bs} onClick={limparSelecao}>Limpar</button>
                 </div>
               </div>
             </div>
 
+            {agruparPorEspecie && gruposPendentes.length > 0 && (
+              <div className="correcao-especie-chips" role="tablist" aria-label="Espécies pendentes">
+                {gruposPendentes.map((g) => (
+                  <button
+                    key={g.especie}
+                    type="button"
+                    className={`correcao-especie-chip${especieFiltro === g.especie ? " correcao-especie-chip--on" : ""}`}
+                    onClick={() => setEspecieFiltro(g.especie)}
+                  >
+                    {g.especie} <strong>{g.count}</strong>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="correcao-list">
               {itensPendentes.length === 0 && (
                 <div className="correcao-empty">
-                  Nenhum item pendente neste filtro. Veja a aba <strong>Corrigidos</strong>.
+                  Nenhum item manual pendente neste filtro. Veja a aba <strong>Corrigidos</strong>
+                  {!somenteManuais ? "" : " ou ative “Incluir itens do tombo” se precisar."}
                 </div>
               )}
-              {itensPage.map((item) => {
-                const label = getItemLabel(item, foundMap);
-                const nomePadraoAuto = padronizarNome(label);
-                const marca = getItemMarca(item, foundMap);
-                const found = getFoundEntry(item.id, foundMap);
-                const checked = selecionados.has(item.id);
-                const score = computeNomeQualityScore(item, foundMap);
-                const problemas = detectProblemasNome(item, foundMap);
-                const mudou = true;
-                const nomeDestino = nomeAplicar || nomePadraoAuto;
-                return (
-                  <article
-                    key={item.id}
-                    className={`correcao-item${checked ? " correcao-item--sel" : ""}${mudou ? " correcao-item--low" : ""}`}
-                  >
-                    <span className={scoreClass(score)} title="Qualidade do nome">{score}</span>
-                    <input
-                      type="checkbox"
-                      className="correcao-check"
-                      checked={checked}
-                      onChange={() => toggleSel(item.id)}
-                      aria-label={`Selecionar ${label}`}
-                    />
-                    <CorrecaoItemPhoto foundMap={foundMap} itemId={item.id} onViewImage={onViewImage} onAddPhoto={onOpenItem ? () => onOpenItem(item) : undefined} />
-                    <div className="correcao-item__main">
-                      <div className="correcao-item__title">{label}</div>
-                      {marca && (
-                        <div style={{ fontSize: 11, color: "var(--gov-primary)", fontWeight: 700, marginTop: 4 }}>
-                          Marca: {marca} <span style={{ fontWeight: 400, color: "var(--gov-text-muted)" }}>(mantida)</span>
-                        </div>
-                      )}
-                      {checked && nomeDestino && nomeDestino !== label && (
-                        <NomeDiff antes={label} depois={nomeDestino} compact />
-                      )}
-                      {!checked && <NomeDiff antes={label} depois={nomePadraoAuto} compact />}
-                      <AtributoChips nome={nomeDestino} marca={marca} />
-                      <div className="correcao-item__meta">
-                        {item.especie || found?.especieEdit || "—"} · {item.unidadeNome || item.unidadeId} · {item.id}
-                      </div>
-                      {problemas.length > 0 && (
-                        <div className="correcao-item__probs">
-                          {problemas.slice(0, 3).map((p) => (
-                            <span key={p.id} className={`correcao-prob${p.severidade === "alta" ? " correcao-prob--alta" : ""}`}>
-                              {p.label}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {found?.descricaoEdit && found.descricaoEdit !== item.descricao && (
-                        <div style={{ fontSize: 11, color: "#b45309", marginTop: 4 }}>Catálogo: {item.descricao || "—"}</div>
-                      )}
-                    </div>
-                    {mudou && (
-                      <button
-                        type="button"
-                        className="gov-btn gov-btn--secondary"
-                        style={{ ...bs, whiteSpace: "nowrap" }}
-                        disabled={busy}
-                        onClick={() => aplicarPadronizacaoItens([item.id])}
-                      >
-                        Auto
-                      </button>
-                    )}
-                  </article>
-                );
-              })}
+
+              {agruparPorEspecie
+                ? gruposPendentes.map((grupo) => {
+                    const aberto = especiesAbertas.has(grupo.especie);
+                    return (
+                      <section key={grupo.especie} className="correcao-especie-group">
+                        <header className="correcao-especie-group__head">
+                          <button type="button" className="correcao-especie-group__toggle" onClick={() => toggleEspecieOpen(grupo.especie)}>
+                            <span aria-hidden="true">{aberto ? "▾" : "▸"}</span>
+                            <span className="correcao-especie-group__title">{grupo.especie}</span>
+                            <span className="correcao-especie-group__count">{grupo.count}</span>
+                          </button>
+                          <div className="correcao-especie-group__actions">
+                            <button type="button" className="gov-btn gov-btn--ghost" style={bs} onClick={() => setEspecieFiltro(grupo.especie)}>
+                              Só esta
+                            </button>
+                            <button type="button" className="gov-btn gov-btn--secondary" style={bs} onClick={() => selecionarEspecie(grupo.members)}>
+                              Selecionar
+                            </button>
+                          </div>
+                        </header>
+                        {aberto && grupo.members.map((item) => renderItemCard(item))}
+                      </section>
+                    );
+                  })
+                : itensPage.map((item) => renderItemCard(item))}
             </div>
 
-            {totalPages > 1 && (
+            {totalPages > 1 && !agruparPorEspecie && (
               <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 14 }}>
                 <button type="button" className="gov-btn gov-btn--secondary" style={bs} disabled={pageSafe <= 1} onClick={() => setPageAtiva((p) => Math.max(1, p - 1))}>Anterior</button>
                 <button type="button" className="gov-btn gov-btn--secondary" style={bs} disabled={pageSafe >= totalPages} onClick={() => setPageAtiva((p) => Math.min(totalPages, p + 1))}>Próxima</button>
@@ -455,7 +685,7 @@ export function CorrecaoNomesPage({
             </p>
             <label className="correcao-label">Nome para os selecionados</label>
             <TInput
-              key={nomePersonalizado ? "nome-edit" : "nome-vazio"}
+              key={`nome-${nomeInputKey}`}
               initial={nomePersonalizado}
               onVal={setNomePersonalizado}
               placeholder="Ex.: Cadeira de plástico sem braço"
@@ -483,6 +713,21 @@ export function CorrecaoNomesPage({
               type="button"
               className="gov-btn gov-btn--secondary"
               style={{ ...bs, width: "100%", marginTop: 8 }}
+              disabled={busy || iaBusy || !selecionados.size || !geminiOk}
+              onClick={() => sugerirComIa([...selecionados])}
+              title={geminiOk ? "Usa a foto de um item selecionado" : "Defina VITE_GEMINI_API_KEY"}
+            >
+              {iaBusy ? "Consultando IA…" : "Sugerir com IA (foto)"}
+            </button>
+            {!geminiOk && (
+              <p style={{ fontSize: 11, color: "#b45309", marginTop: 8, lineHeight: 1.4 }}>
+                Para ativar a IA, configure a secret <code>VITE_GEMINI_API_KEY</code> no deploy.
+              </p>
+            )}
+            <button
+              type="button"
+              className="gov-btn gov-btn--secondary"
+              style={{ ...bs, width: "100%", marginTop: 8 }}
               disabled={busy || !selecionados.size}
               onClick={aplicarSelecionados}
             >
@@ -497,7 +742,7 @@ export function CorrecaoNomesPage({
           <div className="correcao-panel" style={{ ...cd, marginBottom: 12 }}>
             <div className="correcao-panel__title">Nomes corrigidos ({itensCorrigidos.length})</div>
             <p style={{ fontSize: 12, color: "var(--gov-text-muted)", margin: "6px 0 0", lineHeight: 1.5 }}>
-              Itens com grafia já padronizada. Eles saem da aba <strong>Padronizar</strong> automaticamente após a correção.
+              {somenteManuais ? "Itens manuais" : "Itens"} com grafia ok. Saem da aba <strong>Padronizar</strong> após a correção.
             </p>
           </div>
 
@@ -587,8 +832,11 @@ export function CorrecaoNomesPage({
                   targets={targets}
                   onToggleMember={(id) => toggleLoteMember(lote.key, id, lote)}
                   onAplicar={() => aplicarLote(lote, targets)}
+                  onSugerirIa={() => sugerirIaNoLote(lote)}
                   onViewImage={onViewImage}
                   busy={busy}
+                  iaBusy={iaBusy}
+                  geminiOk={geminiOk}
                   bs={bs}
                   inp={inp}
                   expanded={lotesAbertos.has(lote.key)}
