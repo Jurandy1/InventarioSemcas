@@ -4,11 +4,10 @@
  */
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
-const MODEL = import.meta.env.VITE_GEMINI_MODEL || "gemini-flash-latest";
+const MODEL = import.meta.env.VITE_GEMINI_MODEL || "gemini-2.0-flash";
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
 export function isGeminiNomeConfigured() {
-  // Em produção a chave pode estar só no servidor (Vercel).
   if (import.meta.env.PROD) return true;
   return Boolean(String(API_KEY || "").trim());
 }
@@ -40,7 +39,8 @@ async function fetchImageAsInlineData(url) {
   for (let i = 0; i < bytes.length; i += chunk) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
-  return { mime_type: guessMime(src, blob.type), data: btoa(binary) };
+  // REST Gemini: camelCase (inlineData / mimeType)
+  return { mimeType: guessMime(src, blob.type), data: btoa(binary) };
 }
 
 function normKey(s) {
@@ -52,9 +52,21 @@ function normKey(s) {
     .replace(/\s+/g, " ");
 }
 
+function isNomeLixo(nome) {
+  const t = String(nome || "").trim().toLowerCase();
+  if (!t || t.length < 4) return true;
+  if (/here is|json requested|the json|as requested|sure[,!]|i'?m (sorry|unable)|cannot (help|analyze)/i.test(t)) {
+    return true;
+  }
+  if (/^\s*\{/.test(t) || t.includes('"nome"')) return true;
+  const en = (t.match(/\b(the|is|json|requested|here|please|following|response)\b/g) || []).length;
+  return en >= 2;
+}
+
 export function matchEspecieCatalogo(sugerida, especies = []) {
   const raw = String(sugerida || "").trim();
   if (!raw) return "";
+  if (isNomeLixo(raw) || /^(here|json|requested)$/i.test(raw)) return "";
   const alvo = normKey(raw);
   if (!alvo) return "";
   let best = "";
@@ -78,27 +90,18 @@ function buildPrompt({ especie, nomeAtual, marca, especies = [] }) {
     .slice(0, 80)
     .join(", ");
   return [
-    "Você auxilia inventário patrimonial da SEMCAS (mobiliário e equipamentos de unidades públicas).",
-    "Analise a foto e diga o nome padronizado E a espécie correta do bem.",
+    "Analise a imagem do bem patrimonial. Responda APENAS JSON puro, sem markdown e sem texto fora do JSON.",
+    'Formato obrigatório: {"nome":"Descrição em português","especie":"ESPÉCIE"}',
     "",
-    'Responda SOMENTE um JSON válido nesta forma: {"nome":"...","especie":"..."}',
-    "",
-    "Regras do campo nome:",
-    "- 3 a 12 palavras em português do Brasil, objetiva.",
-    "- Inclua atributos visíveis: material, cor, com/sem braço, com/sem rodinha etc.",
-    "- NÃO invente marca, tombo, local ou estado.",
-    "- NÃO use abreviações (c/, s/, p/).",
-    "- Capitalize como título (artigos em minúsculas).",
-    "",
-    "Regras do campo especie:",
-    "- Uma palavra-classe do bem em MAIÚSCULAS (ex.: CADEIRA, MESA, ARMARIO, GELADEIRA, NOTEBOOK).",
-    catalogo
-      ? `- Prefira EXATAMENTE uma destas espécies já usadas no inventário: ${catalogo}.`
-      : "- Use o termo patrimonial mais comum para o tipo do objeto.",
-    `- Espécie atual no cadastro: ${esp}.`,
-    `- Nome digitado hoje: ${atual}.`,
-    mk ? `- Marca conhecida (não coloque a marca na espécie): ${mk}.` : "- Marca: não informada.",
-  ].join("\n");
+    "nome: 3 a 12 palavras em português do Brasil (ex.: Cadeira de plástico com braço).",
+    "Inclua material/cor/atributos visíveis. Sem abreviações (c/, s/). Sem marca, tombo ou local.",
+    "especie: UMA palavra em MAIÚSCULAS (CADEIRA, MESA, ARMARIO…).",
+    catalogo ? `Prefira espécie desta lista: ${catalogo}.` : "",
+    `Espécie atual: ${esp}. Nome atual: ${atual}.${mk ? ` Marca: ${mk}.` : ""}`,
+    "PROIBIDO responder em inglês ou frases como 'here is the json'.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function limparRespostaNome(text) {
@@ -106,6 +109,7 @@ function limparRespostaNome(text) {
   t = t.replace(/^```(?:json)?\s*/i, "").replace(/```$/g, "").trim();
   t = t.replace(/^["'“”]|["'“”]$/g, "").trim();
   t = t.replace(/^(nome|descri[cç][aã]o|sugest[aã]o)\s*:\s*/i, "").trim();
+  t = t.replace(/:\s*$/, "").trim();
   return t.slice(0, 160);
 }
 
@@ -118,20 +122,14 @@ function parseNomeEspecie(rawText) {
       const obj = JSON.parse(m[0]);
       const nome = limparRespostaNome(obj.nome || obj.descricao || obj.name || "");
       const especie = String(obj.especie || obj.species || obj.tipo || "").trim();
-      if (nome) return { nome, especie };
+      if (nome && !isNomeLixo(nome)) return { nome, especie };
     } catch {
       /* fallback */
     }
   }
-  const lines = raw.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-  if (lines.length >= 2) {
-    return { nome: limparRespostaNome(lines[0]), especie: lines[1].replace(/^especie\s*:\s*/i, "").trim() };
-  }
-  const pipe = raw.split("|").map((p) => p.trim());
-  if (pipe.length >= 2) {
-    return { nome: limparRespostaNome(pipe[0]), especie: pipe[1] };
-  }
-  return { nome: limparRespostaNome(raw), especie: "" };
+  const nome = limparRespostaNome(raw);
+  if (isNomeLixo(nome)) return { nome: "", especie: "" };
+  return { nome, especie: "" };
 }
 
 async function viaServerProxy(payload) {
@@ -144,7 +142,9 @@ async function viaServerProxy(payload) {
   if (!r.ok) {
     throw new Error(data?.error || `Falha no proxy IA (HTTP ${r.status})`);
   }
-  if (!data?.nome) throw new Error("A IA não retornou um nome utilizável");
+  if (!data?.nome || isNomeLixo(data.nome)) {
+    throw new Error(data?.error || "A IA não analisou a foto corretamente. Tente novamente.");
+  }
   return {
     nome: String(data.nome),
     especie: matchEspecieCatalogo(data.especie || "", payload.especies || []),
@@ -163,7 +163,7 @@ async function viaClientDirect({ fotoUrls, especie, nomeAtual, marca, especies }
   let lastErr = null;
   for (const url of urls) {
     try {
-      inlineParts.push({ inline_data: await fetchImageAsInlineData(url) });
+      inlineParts.push({ inlineData: await fetchImageAsInlineData(url) });
     } catch (e) {
       lastErr = e;
     }
@@ -171,9 +171,7 @@ async function viaClientDirect({ fotoUrls, especie, nomeAtual, marca, especies }
   if (!inlineParts.length) {
     const msg = String(lastErr?.message || "");
     if (/failed to fetch|networkerror|cors|access-control/i.test(msg) || lastErr?.name === "TypeError") {
-      throw new Error(
-        "CORS bloqueou a foto no navegador. Use o app na Vercel (proxy /api/gemini-nome) ou configure CORS no Firebase Storage."
-      );
+      throw new Error("CORS bloqueou a foto no navegador. Use o app na Vercel (proxy /api/gemini-nome).");
     }
     throw new Error(lastErr?.message || "Não foi possível ler a foto");
   }
@@ -186,7 +184,7 @@ async function viaClientDirect({ fotoUrls, especie, nomeAtual, marca, especies }
       },
     ],
     generationConfig: {
-      temperature: 0.2,
+      temperature: 0.1,
       maxOutputTokens: 256,
       responseMimeType: "application/json",
     },
@@ -211,7 +209,9 @@ async function viaClientDirect({ fotoUrls, especie, nomeAtual, marca, especies }
   const parts = data?.candidates?.[0]?.content?.parts || [];
   const raw = parts.map((p) => p?.text || "").join(" ").trim();
   const parsed = parseNomeEspecie(raw);
-  if (!parsed.nome) throw new Error("A IA não retornou um nome utilizável");
+  if (!parsed.nome || isNomeLixo(parsed.nome)) {
+    throw new Error("A IA não analisou a foto corretamente. Tente novamente.");
+  }
   return {
     nome: parsed.nome,
     especie: matchEspecieCatalogo(parsed.especie, especies),
@@ -219,10 +219,6 @@ async function viaClientDirect({ fotoUrls, especie, nomeAtual, marca, especies }
   };
 }
 
-/**
- * Analisa foto e sugere nome + espécie.
- * Prefere o proxy Vercel (sem CORS); fallback no browser só em dev.
- */
 export async function sugerirNomeComGemini({
   fotoUrls = [],
   especie = "",
@@ -232,11 +228,9 @@ export async function sugerirNomeComGemini({
 } = {}) {
   const payload = { fotoUrls, especie, nomeAtual, marca, especies };
 
-  // Sempre tenta o proxy primeiro (produção Vercel).
   try {
     return await viaServerProxy(payload);
   } catch (proxyErr) {
-    // Em produção não faz fallback (CORS falha de qualquer forma).
     if (import.meta.env.PROD) throw proxyErr;
     try {
       return await viaClientDirect(payload);
