@@ -116,6 +116,104 @@ export async function getDisplayPhotoUrl(src, { forceRefresh = false } = {}) {
   }
 }
 
+/**
+ * Baixa a foto como Blob (com auth Firebase quando necessário).
+ * Se o navegador bloquear CORS do Firebase Storage, usa /api/foto-proxy
+ * (Vercel em produção; middleware Vite em dev/preview).
+ *
+ * Nota: o arquivo da foto fica no Firebase Storage. O Supabase só guarda
+ * as URLs em inventario.foto_urls — não há Storage de imagens no Supabase.
+ */
+export async function fetchPhotoBlob(src) {
+  const mediaUrl = toMediaUrl(src);
+  if (!mediaUrl) return null;
+
+  if (mediaUrl.startsWith("data:")) {
+    try {
+      return dataURLtoBlob(mediaUrl);
+    } catch {
+      return null;
+    }
+  }
+
+  if (mediaUrl.startsWith("blob:")) {
+    try {
+      const r = await fetch(mediaUrl);
+      if (!r.ok) return null;
+      return await r.blob();
+    } catch {
+      return null;
+    }
+  }
+
+  const { token } = getFirebaseSession();
+  const tryFetch = async (url, headers) => {
+    const r = await fetch(url, headers ? { headers } : undefined);
+    if (!r.ok) return null;
+    const blob = await r.blob();
+    if (!blob || blob.size === 0) return null;
+    // Proxy JSON { mimeType, data } — não é imagem
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
+    if (ct.includes("application/json")) return null;
+    return blob;
+  };
+
+  // 1) Auth direto no Firebase
+  if (token) {
+    try {
+      const withAuth = await tryFetch(mediaUrl, { Authorization: `Bearer ${token}` });
+      if (withAuth) return withAuth;
+    } catch {}
+  }
+
+  // 2) Público (URL com download token)
+  try {
+    const pub = await tryFetch(mediaUrl, null);
+    if (pub) return pub;
+  } catch {}
+
+  // 3) Cache de exibição (blob já resolvido)
+  try {
+    const display = await getDisplayPhotoUrl(mediaUrl);
+    if (display && display.startsWith("blob:")) {
+      const r = await fetch(display);
+      if (r.ok) return await r.blob();
+    }
+    if (display && display.startsWith("data:")) {
+      return dataURLtoBlob(display);
+    }
+  } catch {}
+
+  // 4) Proxy servidor (evita CORS) — GET bytes
+  try {
+    const proxyUrl = `/api/foto-proxy?url=${encodeURIComponent(mediaUrl)}`;
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    const viaProxy = await tryFetch(proxyUrl, headers);
+    if (viaProxy) return viaProxy;
+  } catch {}
+
+  // 5) Proxy POST → base64
+  try {
+    const r = await fetch("/api/foto-proxy", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ url: mediaUrl }),
+    });
+    if (r.ok) {
+      const json = await r.json();
+      if (json?.data) {
+        const mime = json.mimeType || "image/jpeg";
+        return dataURLtoBlob(`data:${mime};base64,${json.data}`);
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
 export async function uploadPhoto(base64, path) {
   if (!isStorageOk()) throw new Error("Firebase Storage não configurado");
 

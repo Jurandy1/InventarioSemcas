@@ -1,10 +1,110 @@
 import { fsDel, fsGetAll, fsGetDoc, fsSet, fsSetStrict } from "./firebase.js";
-import { isStorageOk, uploadPhotos } from "./storage.js";
-import { compressPhotoArray } from "../utils/performance.js";
+import { fetchPhotoBlob, isStorageOk, uploadPhotos } from "./storage.js";
+import { compressPhoto, compressPhotoArray } from "../utils/performance.js";
 import { deleteOfflinePhotos, loadOfflinePhotos, saveOfflinePhotos } from "../utils/offlineStore.js";
 import { createVisibilityAwarePoller, isLikelySlowDevice, isPageHidden } from "../utils/mobilePerf.js";
+import { getCategoryGroup } from "../constants/categories.js";
+import { fetchLocaisForUnits } from "./locaisLoad.js";
 
 import { get, set } from "idb-keyval";
+
+async function blobToJpegDataUrl(blob, maxW = 420, maxH = 320, quality = 0.72) {
+  if (!blob) return "";
+
+  if (typeof createImageBitmap === "function") {
+    try {
+      const bitmap = await createImageBitmap(blob);
+      let w = bitmap.width || 1;
+      let h = bitmap.height || 1;
+      if (w > maxW) {
+        h = Math.max(1, Math.round((h * maxW) / w));
+        w = maxW;
+      }
+      if (h > maxH) {
+        w = Math.max(1, Math.round((w * maxH) / h));
+        h = maxH;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        bitmap.close?.();
+        return "";
+      }
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(bitmap, 0, 0, w, h);
+      bitmap.close?.();
+      return canvas.toDataURL("image/jpeg", quality);
+    } catch (e) {
+      console.warn("createImageBitmap falhou, tentando Image:", e);
+    }
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    return await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          let w = img.naturalWidth || img.width || 1;
+          let h = img.naturalHeight || img.height || 1;
+          if (w > maxW) {
+            h = Math.max(1, Math.round((h * maxW) / w));
+            w = maxW;
+          }
+          if (h > maxH) {
+            w = Math.max(1, Math.round((w * maxH) / h));
+            h = maxH;
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve("");
+            return;
+          }
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        } catch {
+          resolve("");
+        }
+      };
+      img.onerror = () => resolve("");
+      img.src = objectUrl;
+    });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+async function photoSrcToJpegDataUrl(src, maxW = 420, maxH = 320, quality = 0.72) {
+  const raw = String(src || "");
+  if (!raw) return "";
+  try {
+    if (raw.startsWith("data:image/jpeg") || raw.startsWith("data:image/jpg")) {
+      return (await compressPhoto(raw, maxW, maxH, quality)) || raw;
+    }
+    if (raw.startsWith("data:")) {
+      const compressed = await compressPhoto(raw, maxW, maxH, quality);
+      if (compressed && compressed.startsWith("data:image/jpeg")) return compressed;
+      const blob = await (await fetch(raw)).blob();
+      return (await blobToJpegDataUrl(blob, maxW, maxH, quality)) || compressed || "";
+    }
+
+    const blob = await fetchPhotoBlob(raw);
+    if (!blob) {
+      console.warn("Foto indisponível: não foi possível baixar", String(raw).slice(0, 80));
+      return "";
+    }
+    return await blobToJpegDataUrl(blob, maxW, maxH, quality);
+  } catch (e) {
+    console.warn("Erro ao preparar foto para PDF:", e);
+    return "";
+  }
+}
 
 export class OfflineManager {
   constructor() {
@@ -305,11 +405,16 @@ export const EVENTOS = {
   AUDITORIA_ANOMALIA: "auditoria_anomalia",
 };
 
+async function loadJsPDF() {
+  const mod = await import("jspdf");
+  const jsPDF = mod.jsPDF || mod.default?.jsPDF || mod.default;
+  if (!jsPDF) throw new Error("Não foi possível carregar jsPDF");
+  return jsPDF;
+}
+
 export async function gerarRelatorioPDF(unidadeId, unidades, found) {
   try {
-    const mod = await import("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js");
-    const jsPDF = mod.jsPDF || mod.default?.jsPDF;
-    if (!jsPDF) throw new Error("Não foi possível carregar jsPDF");
+    const jsPDF = await loadJsPDF();
 
     const unidade = unidades.find((u) => u.id === unidadeId);
     if (!unidade) throw new Error("Unidade não encontrada");
@@ -356,6 +461,210 @@ export async function gerarRelatorioPDF(unidadeId, unidades, found) {
     console.error("Erro ao gerar PDF:", e);
     throw e;
   }
+}
+
+/**
+ * PDF com fotos dos itens inventariados nas categorias escolhidas.
+ * @param {object} opts
+ * @param {Array} opts.itens - itens do catálogo (com unidadeNome/unidadeId)
+ * @param {object} opts.foundMap - mapa patrimonioId → registro inventário
+ * @param {string[]} opts.categorias - nomes de CATEGORY_TREE (vazio = todas)
+ * @param {boolean} [opts.somenteComFoto=true]
+ * @param {string[]} [opts.itemIds] - se informado, só estes patrimônios entram no PDF
+ * @param {Array} [opts.locais] - lista de locais {id,nome} para resolver nomes
+ * @param {(p:{done:number,total:number,label?:string})=>void} [opts.onProgress]
+ */
+export async function gerarRelatorioFotosCategorias({
+  itens = [],
+  foundMap = {},
+  categorias = [],
+  itemIds = null,
+  somenteComFoto = true,
+  locais = [],
+  onProgress,
+} = {}) {
+  const jsPDF = await loadJsPDF();
+
+  const catSet = categorias.length ? new Set(categorias) : null;
+  const idSet = Array.isArray(itemIds) && itemIds.length > 0 ? new Set(itemIds.map(String)) : null;
+  const rows = [];
+  for (const item of itens) {
+    const f = foundMap[item.id];
+    if (!f) continue;
+    if (idSet && !idSet.has(String(item.id))) continue;
+    const cat = getCategoryGroup(f.especieEdit || item.especie);
+    if (!idSet && catSet && !catSet.has(cat)) continue;
+    const fotos = Array.isArray(f.fotoUrls) ? f.fotoUrls.filter(Boolean) : [];
+    if (somenteComFoto && fotos.length === 0) continue;
+    const unidade =
+      (f.unidadeNome || item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "") || "—";
+    rows.push({
+      item,
+      f,
+      cat,
+      fotos,
+      desc: f.descricaoEdit || item.descricao || item.especie || "—",
+      codigo: item.patrimonioLabel || item.id || "—",
+      unidade,
+      localId: f.localId || "",
+      unidadeId: f.unidadeId || item.unidadeId || "",
+    });
+  }
+
+  rows.sort((a, b) => {
+    const c = String(a.cat).localeCompare(String(b.cat), "pt-BR");
+    if (c !== 0) return c;
+    const u = String(a.unidade).localeCompare(String(b.unidade), "pt-BR");
+    if (u !== 0) return u;
+    return String(a.codigo).localeCompare(String(b.codigo), "pt-BR", { numeric: true });
+  });
+
+  if (rows.length === 0) {
+    throw new Error(
+      somenteComFoto
+        ? "Nenhum item inventariado com foto nas categorias selecionadas."
+        : "Nenhum item inventariado nas categorias selecionadas."
+    );
+  }
+
+  const localMap = new Map();
+  for (const l of locais || []) {
+    const id = l?.id || l?._id;
+    if (id) localMap.set(id, l.nome || id);
+  }
+  const missingLocalIds = [
+    ...new Set(rows.map((r) => r.localId).filter((id) => id && id !== "sem-local" && !localMap.has(id))),
+  ];
+  if (missingLocalIds.length) {
+    try {
+      const unitIds = [...new Set(rows.map((r) => r.unidadeId).filter(Boolean))];
+      const fetched = await fetchLocaisForUnits(unitIds, { localIds: missingLocalIds });
+      for (const l of fetched || []) {
+        const id = l?.id || l?._id;
+        if (id && l.nome) localMap.set(id, l.nome);
+      }
+    } catch {}
+  }
+
+  const resolveLocal = (localId) => {
+    if (!localId || localId === "sem-local") return "Sem local";
+    return localMap.get(localId) || localId;
+  };
+
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 12;
+  const usableW = pageW - margin * 2;
+  let y = margin;
+
+  const ensureSpace = (need) => {
+    if (y + need > pageH - margin) {
+      doc.addPage();
+      y = margin;
+    }
+  };
+
+  const catsLabel = catSet ? [...catSet].join(", ") : "Todas";
+  doc.setFontSize(16);
+  doc.setFont(undefined, "bold");
+  doc.text("Relatorio fotografico por categoria", margin, y);
+  y += 8;
+  doc.setFontSize(10);
+  doc.setFont(undefined, "normal");
+  doc.text(`Categorias: ${catsLabel}`, margin, y);
+  y += 5;
+  doc.text(`Data: ${new Date().toLocaleString("pt-BR")}`, margin, y);
+  y += 5;
+  doc.text(`Itens: ${rows.length}${somenteComFoto ? " (somente com foto)" : ""}`, margin, y);
+  y += 10;
+
+  const photoH = 42;
+  const photoW = 56;
+  const gap = 4;
+  const maxFotos = 2;
+  const blockH = 24 + photoH + 4;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const localNome = resolveLocal(row.localId);
+    onProgress?.({ done: i, total: rows.length, label: row.codigo });
+    ensureSpace(blockH);
+
+    doc.setDrawColor(220);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(margin, y - 2, usableW, blockH - 2, 2, 2, "FD");
+
+    doc.setFontSize(10);
+    doc.setFont(undefined, "bold");
+    doc.text(`Nº ${row.codigo}`, margin + 3, y + 4);
+    doc.setFont(undefined, "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(100);
+    doc.text(row.cat, margin + usableW - 3, y + 4, { align: "right" });
+    doc.setTextColor(0);
+
+    const descLines = doc.splitTextToSize(String(row.desc).slice(0, 140), usableW - 6);
+    doc.setFontSize(9);
+    doc.text(descLines.slice(0, 1), margin + 3, y + 9);
+
+    doc.setFontSize(8);
+    doc.setTextColor(30);
+    doc.setFont(undefined, "bold");
+    const unidadeLine = `Unidade: ${String(row.unidade).slice(0, 70)}`;
+    doc.text(unidadeLine, margin + 3, y + 14);
+    doc.setFont(undefined, "normal");
+    const localLine = `Local: ${String(localNome).slice(0, 70)}`;
+    doc.text(localLine, margin + 3, y + 18.5);
+
+    const meta = [row.f.estado ? `Estado: ${row.f.estado}` : "", row.f.situacao ? `Sit.: ${row.f.situacao}` : ""]
+      .filter(Boolean)
+      .join("  ·  ");
+    if (meta) {
+      doc.setFontSize(7.5);
+      doc.setTextColor(80);
+      doc.text(meta.slice(0, 110), margin + 3, y + 22.5);
+      doc.setTextColor(0);
+    } else {
+      doc.setTextColor(0);
+    }
+
+    const fotosToLoad = row.fotos.slice(0, maxFotos);
+    let x = margin + 3;
+    const imgY = y + 24;
+    for (const src of fotosToLoad) {
+      const dataUrl = await photoSrcToJpegDataUrl(src);
+      if (dataUrl && dataUrl.startsWith("data:image")) {
+        try {
+          const fmt = /data:image\/png/i.test(dataUrl) ? "PNG" : "JPEG";
+          doc.addImage(dataUrl, fmt, x, imgY, photoW, photoH);
+        } catch (e) {
+          console.warn("addImage falhou:", e);
+          doc.setFontSize(8);
+          doc.setTextColor(150);
+          doc.text("Foto indisponivel", x + 2, imgY + photoH / 2);
+          doc.setTextColor(0);
+        }
+      } else {
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text("Foto indisponivel", x + 2, imgY + photoH / 2);
+        doc.setTextColor(0);
+      }
+      x += photoW + gap;
+    }
+    if (fotosToLoad.length === 0) {
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text("Sem foto", margin + 3, imgY + photoH / 2);
+      doc.setTextColor(0);
+    }
+
+    y += blockH;
+  }
+
+  onProgress?.({ done: rows.length, total: rows.length, label: "Concluído" });
+  return doc;
 }
 
 export async function gerarRelatorioExcelCoord(itens, foundMap, unidadeNome = "") {

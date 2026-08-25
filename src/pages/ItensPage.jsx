@@ -5,6 +5,7 @@ import { TInput } from "../components/FormFields.jsx";
 import { ESTADOS, EC } from "../constants/inventory.js";
 import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "../constants/categories.js";
 import { SmartImg } from "../components/SmartImg.jsx";
+import { RelatorioFotosModal } from "../components/modals/RelatorioFotosModal.jsx";
 import { getListLimits } from "../utils/mobilePerf.js";
 
 function getItemCode(item) {
@@ -15,7 +16,7 @@ function getDisplayDesc(item, foundEntry) {
   return foundEntry?.descricaoEdit || item.descricao || item.especie || "—";
 }
 
-export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva, formRef, bumpFt, setModal, isMob, inp, cd, bs, onViewImage }) {
+export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [], saveAtiva, formRef, bumpFt, setModal, isMob, inp, cd, bs, bp, showT, onViewImage }) {
   const listLimits = React.useMemo(() => getListLimits(isMob), [isMob]);
   const [localCat, setLocalCat] = useState("Todas");
   const [localSub, setLocalSub] = useState(null);
@@ -37,10 +38,23 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
   const [hideIncorporados, setHideIncorporados] = useState(() => {
     try { return localStorage.getItem("inv-hide-incorporados") === "1"; } catch { return false; }
   });
+  const [showRelatorioFotos, setShowRelatorioFotos] = useState(false);
+  const [relatorioInitialView, setRelatorioInitialView] = useState("preview");
+
+  const openRelatorio = (view = "preview") => {
+    setRelatorioInitialView(view);
+    setShowRelatorioFotos(true);
+  };
 
   const toggleHideInc = (next) => {
     setHideIncorporados(next);
     try { localStorage.setItem("inv-hide-incorporados", next ? "1" : "0"); } catch {}
+  };
+
+  const soEncontrados = localStat === "Inventariados";
+  const toggleSoEncontrados = (next) => {
+    setLocalStat(next ? "Inventariados" : "Todos");
+    resetPage();
   };
 
   const catCounts = React.useMemo(() => {
@@ -193,6 +207,20 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
     );
   };
 
+  const localNomeById = React.useMemo(() => {
+    const m = new Map();
+    for (const l of locais || []) {
+      const id = l?.id || l?._id;
+      if (id) m.set(id, l.nome || id);
+    }
+    return m;
+  }, [locais]);
+
+  const resolveLocalNome = (localId) => {
+    if (!localId || localId === "sem-local") return "Sem local";
+    return localNomeById.get(localId) || localId;
+  };
+
   const ItemCard = ({ item }) => {
     const f = foundMap[item.id];
     const foto = f?.fotoUrls?.[0];
@@ -200,6 +228,8 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
     const catDef = CATEGORY_TREE.find((c) => getCategoryGroup(item.especie) === c.name) || CATEGORY_TREE[CATEGORY_TREE.length - 1];
     const displayDesc = getDisplayDesc(item, f);
     const isPermuta = f?.situacao === "Permuta";
+    const unidadeLabel = ((f?.unidadeNome || item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "") || "—").slice(0, 40);
+    const localLabel = isF ? resolveLocalNome(f?.localId) : "";
 
     return (
       <div
@@ -297,9 +327,14 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
             </p>
           )}
           <p style={{ margin: 0, fontSize: 9, color: "#64748b", fontWeight: 600 }}>Nº {getItemCode(item)}</p>
-          <p style={{ margin: "1px 0 0", fontSize: 9, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {(item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 36)}
+          <p style={{ margin: "1px 0 0", fontSize: 9, color: "#475569", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            Unidade: {unidadeLabel}
           </p>
+          {isF && (
+            <p style={{ margin: "1px 0 0", fontSize: 9, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              Local: {localLabel}
+            </p>
+          )}
           <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginTop: 3 }}>
             {isF ? (
               <>
@@ -437,7 +472,7 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
           <p style={{ margin: "0 0 6px", fontSize: 10, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", padding: "0 4px" }}>Status</p>
           {[
             { key: "Todos", label: "Todos" },
-            { key: "Inventariados", label: "Inventariados" },
+            { key: "Inventariados", label: "Só encontrados" },
             { key: "Pendentes", label: "Pendentes" },
           ].map((s) => (
             <button
@@ -468,14 +503,44 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ marginBottom: 10 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Itens</h2>
-            {localCat !== "Todas" && (
-              <span style={{ fontSize: 13, color: "#1351B4", fontWeight: 700 }}>
-                {localCat}
-                {localSub && <span style={{ color: "#64748b", fontWeight: 500 }}> › {localSub}</span>}
-              </span>
-            )}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Itens</h2>
+              {localCat !== "Todas" && (
+                <span style={{ fontSize: 13, color: "#1351B4", fontWeight: 700 }}>
+                  {localCat}
+                  {localSub && <span style={{ color: "#64748b", fontWeight: 500 }}> › {localSub}</span>}
+                </span>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => openRelatorio("preview")}
+                style={{
+                  ...(bs || { background: "#fff", color: "#1351B4", border: "1.5px solid #1351B4", borderRadius: 9, fontWeight: 700, cursor: "pointer" }),
+                  fontSize: 12,
+                  padding: "8px 14px",
+                  whiteSpace: "nowrap",
+                  borderColor: "#1351B4",
+                  color: "#1351B4",
+                }}
+              >
+                Preview
+              </button>
+              <button
+                type="button"
+                onClick={() => openRelatorio("categorias")}
+                style={{
+                  ...(bp || { background: "#1351B4", color: "#fff", border: "none", borderRadius: 9, padding: "8px 14px", fontWeight: 700, cursor: "pointer" }),
+                  fontSize: 12,
+                  padding: "8px 14px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Relatório PDF
+              </button>
+            </div>
           </div>
           <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>{filtered.length.toLocaleString("pt-BR")} item(s)</p>
         </div>
@@ -492,17 +557,21 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
               />
             )}
             <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              {["Todos", "Inventariados", "Pendentes"].map((s) => (
+              {[
+                { key: "Todos", label: "Todos" },
+                { key: "Inventariados", label: "Só encontrados" },
+                { key: "Pendentes", label: "Pendentes" },
+              ].map((s) => (
                 <button
-                  key={s}
+                  key={s.key}
                   onClick={() => {
-                    setLocalStat(s);
+                    setLocalStat(s.key);
                     resetPage();
                   }}
                   style={{
                     flex: 1,
-                    background: localStat === s ? "#1351B4" : "#f1f5f9",
-                    color: localStat === s ? "#fff" : "#374151",
+                    background: localStat === s.key ? "#1351B4" : "#f1f5f9",
+                    color: localStat === s.key ? "#fff" : "#374151",
                     border: "none",
                     borderRadius: 8,
                     padding: "7px 4px",
@@ -511,7 +580,7 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
                     cursor: "pointer",
                   }}
                 >
-                  {s}
+                  {s.label}
                 </button>
               ))}
             </div>
@@ -555,14 +624,41 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, saveAtiva,
           </select>
         </div>
 
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 12, cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={!!hideIncorporados}
-            onChange={(e) => toggleHideInc(e.target.checked)}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={soEncontrados}
+              onChange={(e) => toggleSoEncontrados(e.target.checked)}
+            />
+            Só mostrar o que foi encontrado no inventário
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={!!hideIncorporados}
+              onChange={(e) => toggleHideInc(e.target.checked)}
+            />
+            Ocultar itens Incorporados
+          </label>
+        </div>
+
+        {showRelatorioFotos && (
+          <RelatorioFotosModal
+            isMob={isMob}
+            onClose={() => setShowRelatorioFotos(false)}
+            todosItens={todosItens}
+            foundMap={foundMap}
+            foundSet={foundSet}
+            locais={locais}
+            initialCategorias={localCat !== "Todas" ? [localCat] : []}
+            initialView={relatorioInitialView}
+            bp={bp || { background: "#1351B4", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+            bs={bs}
+            showT={showT}
+            onViewImage={onViewImage}
           />
-          Ocultar itens Incorporados
-        </label>
+        )}
 
         {filtered.length === 0 ? (
           <div style={{ ...cd, textAlign: "center", padding: 48 }}>

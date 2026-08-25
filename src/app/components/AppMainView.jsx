@@ -47,7 +47,7 @@ export function AppMainView({ ctx }) {
     ft, imgViewSrc, setImgViewSrc, overlayBackdropSuppressMs,
     teamOnline, saveConflict, setSaveConflict, finalizadoEdit, setFinalizadoEdit,
     formRef, bumpFt, setField, getField, revokeBlobUrls, showT, onViewImage,
-    unidades, loadingXlsx, loadXlsx, found, inventario, unidadeAtiva,
+    unidades, loadingXlsx, loadXlsx, found, locais, inventario, unidadeAtiva,
     editScopeUnits, editScopeSessionId, sessionLocais, pickLocais,
     handleDeleteLocal, handleDeleteInventariado, createSessionLocal, campanhaState, finalizacoesState,
     abrirConvidarColega, renderOfflineStatus, todosItens, sugestoes,
@@ -377,6 +377,7 @@ export function AppMainView({ ctx }) {
             unidades={unidades}
             foundMap={found.foundMap}
             foundSet={found.foundSet}
+            locais={locais.locais}
             saveAtiva={inventario.saveAtiva}
             formRef={formRef}
             bumpFt={bumpFt}
@@ -385,6 +386,8 @@ export function AppMainView({ ctx }) {
             inp={inp}
             cd={cd}
             bs={bs}
+            bp={bp}
+            showT={showT}
             onViewImage={onViewImage}
           />
           </Suspense>
