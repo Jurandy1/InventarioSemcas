@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Overlay } from "../Overlay.jsx";
 import {
   buildRelatorioCompletoRows,
+  enrichRelatorioCompletoRowsWithLocais,
   gerarRelatorioCompletoExcel,
   gerarRelatorioCompletoPDF,
   listUnidadesFinalizadas,
@@ -20,6 +21,7 @@ export function RelatorioCompletoModal({
   foundMap,
   finalizacoes = [],
   unidades = [],
+  locais = [],
   bp,
   bs,
   showT,
@@ -43,13 +45,26 @@ export function RelatorioCompletoModal({
     [todosItens, foundMap, finalizacoes, unidadeId]
   );
 
+  const [rowsPreview, setRowsPreview] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const enriched = await enrichRelatorioCompletoRowsWithLocais(rows, locais);
+      if (!cancelled) setRowsPreview(enriched);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rows, locais]);
+
   const tituloUnidades = useMemo(() => {
     if (unidadeId === "todas") return "Todas as unidades finalizadas";
     const u = unidadesOpts.find((x) => x.id === unidadeId);
     return u?.nome || u?.label || unidadeId;
   }, [unidadeId, unidadesOpts]);
 
-  const previewRows = rows.slice(0, 10);
+  const previewRows = rowsPreview.slice(0, 10);
   const pct = progress?.total ? Math.round((progress.done / progress.total) * 100) : 0;
 
   const gerar = async () => {
@@ -69,12 +84,13 @@ export function RelatorioCompletoModal({
 
     try {
       if (formato === "excel") {
-        const { workbook, XLSX } = await gerarRelatorioCompletoExcel(rows, { tituloUnidades });
+        const { workbook, XLSX } = await gerarRelatorioCompletoExcel(rows, { tituloUnidades, locais });
         XLSX.writeFile(workbook, `relatorio_completo_${slug}_${stamp}.xlsx`);
       } else {
         const doc = await gerarRelatorioCompletoPDF(rows, {
           comFoto: formato === "pdf_foto",
           tituloUnidades,
+          locais,
           onProgress: setProgress,
         });
         const suffix = formato === "pdf_foto" ? "com_fotos" : "sem_fotos";
@@ -96,7 +112,7 @@ export function RelatorioCompletoModal({
       <div>
         <h2 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 700 }}>Relatório completo</h2>
         <p style={{ margin: "0 0 14px", fontSize: 13, color: "#64748b", lineHeight: 1.45 }}>
-          Exporta itens <strong>inventariados</strong> das unidades finalizadas: unidade, tombo, descrição, NF, valor e estado.
+          Exporta itens <strong>inventariados</strong> das unidades finalizadas: unidade, tombo, local, descrição, NF, valor e estado.
         </p>
 
         <label style={{ display: "block", marginBottom: 12 }}>
@@ -167,7 +183,7 @@ export function RelatorioCompletoModal({
             <p style={{ margin: "0 0 6px", fontWeight: 700, color: "#64748b" }}>Prévia (primeiros {previewRows.length})</p>
             {previewRows.map((r) => (
               <p key={`${r.unidadeId}_${r.itemId}`} style={{ margin: "0 0 4px", color: "#334155" }}>
-                {r.unidade} · {r.tombo} · {String(r.descricao).slice(0, 40)} · R$ {r.valorFmt} · {r.estado}
+                {r.unidade} · {r.tombo} · {r.local || "Sem local"} · {String(r.descricao).slice(0, 40)} · R$ {r.valorFmt} · {r.estado}
               </p>
             ))}
             {rows.length > previewRows.length && (

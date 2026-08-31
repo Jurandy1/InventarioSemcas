@@ -14,6 +14,7 @@ export function DashboardPage({
   foundMap,
   finalizacoes = [],
   todosItens = [],
+  locais = [],
   xlsxCorrompidos,
   unidades,
   saveAtiva,
@@ -111,6 +112,7 @@ export function DashboardPage({
           foundMap={foundMap}
           finalizacoes={finalizacoes}
           unidades={unidades}
+          locais={locais}
           bp={bp}
           bs={bs}
           showT={showT}

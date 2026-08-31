@@ -44,6 +44,7 @@ export function FinalizadosPage({
   foundSet,
   foundMap,
   locais = [],
+  todosLocais = [],
   isMob,
   cd,
   inp,
@@ -635,6 +636,7 @@ export function FinalizadosPage({
           foundMap={foundMap}
           finalizacoes={finalizacoes}
           unidades={unidades}
+          locais={todosLocais}
           bp={bp}
           bs={bs}
           showT={showT}

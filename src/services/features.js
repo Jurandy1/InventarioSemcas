@@ -694,6 +694,33 @@ export function listUnidadesFinalizadas(finalizacoes = [], unidades = []) {
   return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
 }
 
+/** Resolve nomes de locais para linhas do relatório completo. */
+export async function enrichRelatorioCompletoRowsWithLocais(rows = [], locais = []) {
+  const localMap = new Map();
+  for (const l of locais || []) {
+    const id = l?.id || l?._id;
+    if (id) localMap.set(id, l.nome || id);
+  }
+  const missingLocalIds = [
+    ...new Set(rows.map((r) => r.localId).filter((id) => id && id !== "sem-local" && !localMap.has(id))),
+  ];
+  if (missingLocalIds.length) {
+    try {
+      const unitIds = [...new Set(rows.map((r) => r.unidadeId).filter(Boolean))];
+      const fetched = await fetchLocaisForUnits(unitIds, { localIds: missingLocalIds });
+      for (const l of fetched || []) {
+        const id = l?.id || l?._id;
+        if (id && l.nome) localMap.set(id, l.nome);
+      }
+    } catch {}
+  }
+  const resolveLocal = (localId) => {
+    if (!localId || localId === "sem-local") return "Sem local";
+    return localMap.get(localId) || localId;
+  };
+  return rows.map((r) => ({ ...r, local: resolveLocal(r.localId) }));
+}
+
 /** Monta linhas do relatório completo (somente inventariados em unidades finalizadas). */
 export function buildRelatorioCompletoRows({
   todosItens = [],
@@ -735,6 +762,7 @@ export function buildRelatorioCompletoRows({
       unidadeFull,
       tombo: formatTomboRelatorio(item),
       descricao: f.descricaoEdit || item.descricao || item.especie || "—",
+      localId: f.localId || "",
       nf: item.nf || "",
       valor,
       valorFmt: valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
@@ -754,19 +782,20 @@ export function buildRelatorioCompletoRows({
   return rows;
 }
 
-export async function gerarRelatorioCompletoExcel(rows, { tituloUnidades = "Todas as unidades finalizadas" } = {}) {
+export async function gerarRelatorioCompletoExcel(rows, { tituloUnidades = "Todas as unidades finalizadas", locais = [] } = {}) {
+  const enriched = await enrichRelatorioCompletoRowsWithLocais(rows, locais);
   const XLSX = await import("xlsx/xlsx.mjs");
   const worksheetData = [
     ["RELATORIO COMPLETO DE INVENTARIO"],
     [`Unidade(s): ${tituloUnidades}`],
     [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
-    [`Total de itens: ${rows.length}`],
+    [`Total de itens: ${enriched.length}`],
     [],
-    ["Unidade", "Tombo", "Descricao", "NF", "Valor", "Estado"],
+    ["Unidade", "Tombo", "Local", "Descricao", "NF", "Valor", "Estado"],
   ];
 
-  for (const row of rows) {
-    worksheetData.push([row.unidade, row.tombo, row.descricao, row.nf, row.valor, row.estado]);
+  for (const row of enriched) {
+    worksheetData.push([row.unidade, row.tombo, row.local, row.descricao, row.nf, row.valor, row.estado]);
   }
 
   const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
@@ -775,10 +804,11 @@ export async function gerarRelatorioCompletoExcel(rows, { tituloUnidades = "Toda
   return { workbook, XLSX };
 }
 
-export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloUnidades = "Todas as unidades finalizadas", onProgress } = {}) {
+export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloUnidades = "Todas as unidades finalizadas", onProgress, locais = [] } = {}) {
+  const enriched = await enrichRelatorioCompletoRowsWithLocais(rows, locais);
   const jsPDF = await loadJsPDF();
 
-  if (rows.length === 0) {
+  if (enriched.length === 0) {
     throw new Error("Nenhum item inventariado para o relatório.");
   }
 
@@ -810,17 +840,18 @@ export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloU
   y += 5;
   doc.text(`Data: ${new Date().toLocaleString("pt-BR")}`, margin, y);
   y += 5;
-  doc.text(`Itens: ${rows.length}${comFoto ? " (com fotos)" : ""}`, margin, y);
+  doc.text(`Itens: ${enriched.length}${comFoto ? " (com fotos)" : ""}`, margin, y);
   y += 10;
 
   if (!comFoto) {
     const cols = [
-      { label: "Unidade", w: 38 },
-      { label: "Tombo", w: 22 },
-      { label: "Descricao", w: 68 },
-      { label: "NF", w: 22 },
-      { label: "Valor", w: 22 },
-      { label: "Estado", w: 22 },
+      { label: "Unidade", w: 32 },
+      { label: "Tombo", w: 18 },
+      { label: "Local", w: 32 },
+      { label: "Descricao", w: 48 },
+      { label: "NF", w: 18 },
+      { label: "Valor", w: 18 },
+      { label: "Estado", w: 18 },
     ];
     const rowH = 6;
     let currentUnit = "";
@@ -842,9 +873,9 @@ export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloU
 
     drawHeader();
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      onProgress?.({ done: i, total: rows.length, label: row.tombo });
+    for (let i = 0; i < enriched.length; i++) {
+      const row = enriched[i];
+      onProgress?.({ done: i, total: enriched.length, label: row.tombo });
 
       if (row.unidade !== currentUnit) {
         currentUnit = row.unidade;
@@ -861,12 +892,13 @@ export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloU
       ensureSpace(rowH + 2);
       let x = margin;
       const cells = [
-        row.unidade.slice(0, 22),
-        String(row.tombo).slice(0, 14),
-        String(row.descricao).slice(0, 42),
-        String(row.nf).slice(0, 14),
+        row.unidade.slice(0, 18),
+        String(row.tombo).slice(0, 12),
+        String(row.local || "Sem local").slice(0, 18),
+        String(row.descricao).slice(0, 30),
+        String(row.nf).slice(0, 12),
         row.valorFmt,
-        String(row.estado).slice(0, 14),
+        String(row.estado).slice(0, 12),
       ];
       doc.setFontSize(7.5);
       for (let c = 0; c < cols.length; c++) {
@@ -883,11 +915,11 @@ export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloU
   } else {
     const photoH = 40;
     const photoW = 54;
-    const blockH = 28 + photoH + 4;
+    const blockH = 32 + photoH + 4;
 
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      onProgress?.({ done: i, total: rows.length, label: row.tombo });
+    for (let i = 0; i < enriched.length; i++) {
+      const row = enriched[i];
+      onProgress?.({ done: i, total: enriched.length, label: row.tombo });
       ensureSpace(blockH);
 
       doc.setDrawColor(220);
@@ -907,10 +939,11 @@ export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloU
       doc.text(String(row.descricao).slice(0, 90), margin + 3, y + 9);
 
       doc.setFontSize(8);
-      doc.text(`NF: ${row.nf || "—"}  ·  Valor: R$ ${row.valorFmt}  ·  Estado: ${row.estado}`, margin + 3, y + 14);
+      doc.text(`Local: ${String(row.local || "Sem local").slice(0, 60)}`, margin + 3, y + 14);
+      doc.text(`NF: ${row.nf || "—"}  ·  Valor: R$ ${row.valorFmt}  ·  Estado: ${row.estado}`, margin + 3, y + 18.5);
 
       const foto = row.fotoUrls[0];
-      const imgY = y + 18;
+      const imgY = y + 22.5;
       if (foto) {
         const dataUrl = await photoSrcToJpegDataUrl(foto);
         if (dataUrl && dataUrl.startsWith("data:image")) {
@@ -940,7 +973,7 @@ export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloU
     }
   }
 
-  onProgress?.({ done: rows.length, total: rows.length, label: "Concluído" });
+  onProgress?.({ done: enriched.length, total: enriched.length, label: "Concluído" });
   return doc;
 }
 

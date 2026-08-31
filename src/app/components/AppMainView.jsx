@@ -264,6 +264,7 @@ export function AppMainView({ ctx }) {
             finalizacoes={finalizacoesState.finalizacoes}
             todosItens={todosItens}
             unidades={unidades}
+            todosLocais={locais.locais}
             loading={finalizacoesState.loading}
             onRefresh={finalizacoesState.refresh}
             editFin={finalizadoEdit?.fin || null}
@@ -438,6 +439,7 @@ export function AppMainView({ ctx }) {
               foundMap={found.foundMap}
               finalizacoes={finalizacoesState.finalizacoes}
               todosItens={todosItens}
+              locais={locais.locais}
               xlsxCorrompidos={xlsxCorrompidos}
               unidades={unidades}
               saveAtiva={inventario.saveAtiva}
