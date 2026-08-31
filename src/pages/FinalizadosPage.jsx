@@ -3,6 +3,8 @@ import { Badge } from "../components/Badge.jsx";
 import { TInput } from "../components/FormFields.jsx";
 import { AjusteWorkbench, TIPO_ENTRADA_BADGE, getDisplayDesc, getItemCode, buildOrigemLine, formatNfLabel } from "../components/AjusteWorkbench.jsx";
 import { LocaisWorkspace } from "../components/LocaisWorkspace.jsx";
+import { RelatorioCompletoModal } from "../components/modals/RelatorioCompletoModal.jsx";
+import { logAuditoria } from "../services/audit.js";
 import { getTombosDivergentes, TOMBO_DIVERGENTE_BADGE } from "../utils/tomboEstrangeiro.js";
 
 import { isTomboPendente, showFotoManualBadge } from "../utils/semTombo.js";
@@ -31,6 +33,8 @@ function formatDataFin(v) {
 
 export function FinalizadosPage({
   finalizacoes = [],
+  todosItens = [],
+  unidades = [],
   loading,
   onRefresh,
   onEdit,
@@ -80,6 +84,7 @@ export function FinalizadosPage({
   const [hideIncorporados, setHideIncorporados] = useState(() => {
     try { return localStorage.getItem("inv-hide-incorporados") === "1"; } catch { return false; }
   });
+  const [showRelatorioCompleto, setShowRelatorioCompleto] = useState(false);
 
   const toggleHideInc = (next) => {
     setHideIncorporados(next);
@@ -606,11 +611,38 @@ export function FinalizadosPage({
               Finalizar encerra a sessão ativa, mas os dados continuam editáveis aqui. Corrija itens, locais e ligue mobiliário aos tombos com ferramentas avançadas de match.
             </p>
           </div>
-          <button type="button" onClick={onRefresh} disabled={loading} style={{ ...bs, fontSize: 12, padding: "8px 14px" }}>
-            {loading ? "Atualizando…" : "Atualizar"}
-          </button>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => setShowRelatorioCompleto(true)}
+              disabled={!finalizacoes?.length}
+              style={{ ...bp, fontSize: 12, padding: "8px 14px", opacity: finalizacoes?.length ? 1 : 0.5 }}
+            >
+              Relatório completo
+            </button>
+            <button type="button" onClick={onRefresh} disabled={loading} style={{ ...bs, fontSize: 12, padding: "8px 14px" }}>
+              {loading ? "Atualizando…" : "Atualizar"}
+            </button>
+          </div>
         </div>
       </div>
+
+      {showRelatorioCompleto && (
+        <RelatorioCompletoModal
+          isMob={isMob}
+          onClose={() => setShowRelatorioCompleto(false)}
+          todosItens={todosItens}
+          foundMap={foundMap}
+          finalizacoes={finalizacoes}
+          unidades={unidades}
+          bp={bp}
+          bs={bs}
+          showT={showT}
+          onExported={async ({ formato, unidadeId, count }) => {
+            await logAuditoria("export", "relatorio_completo", unidadeId || "todas", null, { formato, count }).catch(() => {});
+          }}
+        />
+      )}
 
       <TInput initial={buscaLista} onVal={setBuscaLista} placeholder="Buscar unidade ou coordenadora..." style={{ ...inp, marginBottom: 12 }} />
 

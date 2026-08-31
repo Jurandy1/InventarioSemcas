@@ -667,6 +667,283 @@ export async function gerarRelatorioFotosCategorias({
   return doc;
 }
 
+function cleanUnidadeRelatorio(nome) {
+  return String(nome || "").replace(/^\d+[\d.]*\s*-\s*/, "").trim() || "—";
+}
+
+function formatTomboRelatorio(item) {
+  const label = item?.patrimonioLabel;
+  if (label) return label;
+  if (item?.semTombo || String(item?.id || "").startsWith("MAN_")) return "S/T";
+  return item?.id || "";
+}
+
+/** Lista unidades únicas presentes em finalizações. */
+export function listUnidadesFinalizadas(finalizacoes = [], unidades = []) {
+  const map = new Map();
+  for (const fin of finalizacoes || []) {
+    const ids = fin.unidadeIds || [];
+    const names = fin.unidadeNomes || [];
+    ids.forEach((id, i) => {
+      if (!id || map.has(id)) return;
+      const u = unidades.find((x) => x.id === id);
+      const nome = names[i] || u?.nome || id;
+      map.set(id, { id, nome, label: cleanUnidadeRelatorio(nome) });
+    });
+  }
+  return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+}
+
+/** Monta linhas do relatório completo (somente inventariados em unidades finalizadas). */
+export function buildRelatorioCompletoRows({
+  todosItens = [],
+  foundMap = {},
+  finalizacoes = [],
+  unidadeId = null,
+}) {
+  const finalizedIds = new Set();
+  const unitNames = new Map();
+  for (const fin of finalizacoes || []) {
+    const ids = fin.unidadeIds || [];
+    const names = fin.unidadeNomes || [];
+    ids.forEach((id, i) => {
+      if (!id) return;
+      finalizedIds.add(id);
+      if (!unitNames.has(id) && names[i]) unitNames.set(id, names[i]);
+    });
+  }
+
+  if (finalizedIds.size === 0) return [];
+
+  let targetIds = finalizedIds;
+  if (unidadeId) {
+    if (!finalizedIds.has(unidadeId)) return [];
+    targetIds = new Set([unidadeId]);
+  }
+
+  const rows = [];
+  for (const item of todosItens || []) {
+    if (!targetIds.has(item.unidadeId)) continue;
+    const f = foundMap[item.id];
+    if (!f) continue;
+    const unidadeFull = item.unidadeNome || unitNames.get(item.unidadeId) || "—";
+    const valor = Number(item.valor) || 0;
+    rows.push({
+      itemId: item.id,
+      unidadeId: item.unidadeId,
+      unidade: cleanUnidadeRelatorio(unidadeFull),
+      unidadeFull,
+      tombo: formatTomboRelatorio(item),
+      descricao: f.descricaoEdit || item.descricao || item.especie || "—",
+      nf: item.nf || "",
+      valor,
+      valorFmt: valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
+      estado: f.estado || "—",
+      fotoUrls: Array.isArray(f.fotoUrls) ? f.fotoUrls.filter(Boolean) : [],
+      f,
+      item,
+    });
+  }
+
+  rows.sort((a, b) => {
+    const u = a.unidade.localeCompare(b.unidade, "pt-BR");
+    if (u !== 0) return u;
+    return String(a.tombo).localeCompare(String(b.tombo), "pt-BR", { numeric: true });
+  });
+
+  return rows;
+}
+
+export async function gerarRelatorioCompletoExcel(rows, { tituloUnidades = "Todas as unidades finalizadas" } = {}) {
+  const XLSX = await import("xlsx/xlsx.mjs");
+  const worksheetData = [
+    ["RELATORIO COMPLETO DE INVENTARIO"],
+    [`Unidade(s): ${tituloUnidades}`],
+    [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
+    [`Total de itens: ${rows.length}`],
+    [],
+    ["Unidade", "Tombo", "Descricao", "NF", "Valor", "Estado"],
+  ];
+
+  for (const row of rows) {
+    worksheetData.push([row.unidade, row.tombo, row.descricao, row.nf, row.valor, row.estado]);
+  }
+
+  const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Inventario");
+  return { workbook, XLSX };
+}
+
+export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloUnidades = "Todas as unidades finalizadas", onProgress } = {}) {
+  const jsPDF = await loadJsPDF();
+
+  if (rows.length === 0) {
+    throw new Error("Nenhum item inventariado para o relatório.");
+  }
+
+  const doc = new jsPDF({
+    orientation: comFoto ? "portrait" : "landscape",
+    unit: "mm",
+    format: "a4",
+  });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 12;
+  const usableW = pageW - margin * 2;
+  let y = margin;
+
+  const ensureSpace = (need) => {
+    if (y + need > pageH - margin) {
+      doc.addPage();
+      y = margin;
+    }
+  };
+
+  doc.setFontSize(16);
+  doc.setFont(undefined, "bold");
+  doc.text("Relatorio completo de inventario", margin, y);
+  y += 8;
+  doc.setFontSize(10);
+  doc.setFont(undefined, "normal");
+  doc.text(`Unidade(s): ${tituloUnidades}`, margin, y);
+  y += 5;
+  doc.text(`Data: ${new Date().toLocaleString("pt-BR")}`, margin, y);
+  y += 5;
+  doc.text(`Itens: ${rows.length}${comFoto ? " (com fotos)" : ""}`, margin, y);
+  y += 10;
+
+  if (!comFoto) {
+    const cols = [
+      { label: "Unidade", w: 38 },
+      { label: "Tombo", w: 22 },
+      { label: "Descricao", w: 68 },
+      { label: "NF", w: 22 },
+      { label: "Valor", w: 22 },
+      { label: "Estado", w: 22 },
+    ];
+    const rowH = 6;
+    let currentUnit = "";
+
+    const drawHeader = () => {
+      ensureSpace(rowH + 2);
+      let x = margin;
+      doc.setFontSize(8);
+      doc.setFont(undefined, "bold");
+      doc.setFillColor(241, 245, 249);
+      doc.rect(margin, y - 4, usableW, rowH, "F");
+      for (const col of cols) {
+        doc.text(col.label, x + 1, y);
+        x += col.w;
+      }
+      y += rowH;
+      doc.setFont(undefined, "normal");
+    };
+
+    drawHeader();
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      onProgress?.({ done: i, total: rows.length, label: row.tombo });
+
+      if (row.unidade !== currentUnit) {
+        currentUnit = row.unidade;
+        ensureSpace(rowH + 2);
+        doc.setFontSize(9);
+        doc.setFont(undefined, "bold");
+        doc.setTextColor(19, 81, 180);
+        doc.text(row.unidade, margin, y);
+        doc.setTextColor(0);
+        doc.setFont(undefined, "normal");
+        y += 5;
+      }
+
+      ensureSpace(rowH + 2);
+      let x = margin;
+      const cells = [
+        row.unidade.slice(0, 22),
+        String(row.tombo).slice(0, 14),
+        String(row.descricao).slice(0, 42),
+        String(row.nf).slice(0, 14),
+        row.valorFmt,
+        String(row.estado).slice(0, 14),
+      ];
+      doc.setFontSize(7.5);
+      for (let c = 0; c < cols.length; c++) {
+        doc.text(cells[c], x + 1, y);
+        x += cols[c].w;
+      }
+      y += rowH;
+      if (y > pageH - margin - rowH) {
+        doc.addPage();
+        y = margin;
+        drawHeader();
+      }
+    }
+  } else {
+    const photoH = 40;
+    const photoW = 54;
+    const blockH = 28 + photoH + 4;
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      onProgress?.({ done: i, total: rows.length, label: row.tombo });
+      ensureSpace(blockH);
+
+      doc.setDrawColor(220);
+      doc.setFillColor(248, 250, 252);
+      doc.roundedRect(margin, y - 2, usableW, blockH - 2, 2, 2, "FD");
+
+      doc.setFontSize(10);
+      doc.setFont(undefined, "bold");
+      doc.text(`Nº ${row.tombo}`, margin + 3, y + 4);
+      doc.setFont(undefined, "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(100);
+      doc.text(row.unidade, margin + usableW - 3, y + 4, { align: "right" });
+      doc.setTextColor(0);
+
+      doc.setFontSize(9);
+      doc.text(String(row.descricao).slice(0, 90), margin + 3, y + 9);
+
+      doc.setFontSize(8);
+      doc.text(`NF: ${row.nf || "—"}  ·  Valor: R$ ${row.valorFmt}  ·  Estado: ${row.estado}`, margin + 3, y + 14);
+
+      const foto = row.fotoUrls[0];
+      const imgY = y + 18;
+      if (foto) {
+        const dataUrl = await photoSrcToJpegDataUrl(foto);
+        if (dataUrl && dataUrl.startsWith("data:image")) {
+          try {
+            const fmt = /data:image\/png/i.test(dataUrl) ? "PNG" : "JPEG";
+            doc.addImage(dataUrl, fmt, margin + 3, imgY, photoW, photoH);
+          } catch {
+            doc.setFontSize(8);
+            doc.setTextColor(150);
+            doc.text("Foto indisponivel", margin + 6, imgY + photoH / 2);
+            doc.setTextColor(0);
+          }
+        } else {
+          doc.setFontSize(8);
+          doc.setTextColor(150);
+          doc.text("Foto indisponivel", margin + 6, imgY + photoH / 2);
+          doc.setTextColor(0);
+        }
+      } else {
+        doc.setFontSize(8);
+        doc.setTextColor(150);
+        doc.text("Sem foto", margin + 6, imgY + photoH / 2);
+        doc.setTextColor(0);
+      }
+
+      y += blockH;
+    }
+  }
+
+  onProgress?.({ done: rows.length, total: rows.length, label: "Concluído" });
+  return doc;
+}
+
 export async function gerarRelatorioExcelCoord(itens, foundMap, unidadeNome = "") {
   try {
     const XLSX = await import("xlsx/xlsx.mjs");

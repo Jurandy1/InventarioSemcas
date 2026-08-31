@@ -1,6 +1,8 @@
-import React from "react";
+import React, { useState } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { EC } from "../constants/inventory.js";
+import { RelatorioCompletoModal } from "../components/modals/RelatorioCompletoModal.jsx";
+import { logAuditoria } from "../services/audit.js";
 
 export function DashboardPage({
   totalBens,
@@ -9,6 +11,9 @@ export function DashboardPage({
   gerarRelatorio,
   fazerBackup,
   found,
+  foundMap,
+  finalizacoes = [],
+  todosItens = [],
   xlsxCorrompidos,
   unidades,
   saveAtiva,
@@ -24,6 +29,8 @@ export function DashboardPage({
   onReabrirCampanha,
   isAdmin,
 }) {
+  const [showRelatorioCompleto, setShowRelatorioCompleto] = useState(false);
+
   return (
     <div>
       <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700 }}>Dashboard</h2>
@@ -84,10 +91,34 @@ export function DashboardPage({
         <button onClick={() => gerarRelatorio("excel")} style={{ ...bp, fontSize: 12, background: "#0f766e" }}>
           Excel
         </button>
+        <button
+          onClick={() => setShowRelatorioCompleto(true)}
+          disabled={!finalizacoes?.length}
+          style={{ ...bp, fontSize: 12, background: "#7c3aed", opacity: finalizacoes?.length ? 1 : 0.5 }}
+        >
+          Relatório completo
+        </button>
         <button onClick={fazerBackup} style={{ ...bs, fontSize: 12 }}>
           Backup
         </button>
       </div>
+
+      {showRelatorioCompleto && (
+        <RelatorioCompletoModal
+          isMob={isMob}
+          onClose={() => setShowRelatorioCompleto(false)}
+          todosItens={todosItens}
+          foundMap={foundMap}
+          finalizacoes={finalizacoes}
+          unidades={unidades}
+          bp={bp}
+          bs={bs}
+          showT={showT}
+          onExported={async ({ formato, unidadeId, count }) => {
+            await logAuditoria("export", "relatorio_completo", unidadeId || "todas", null, { formato, count }).catch(() => {});
+          }}
+        />
+      )}
 
       <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, marginTop: 20 }}>Últimos a inventariar</h3>
       <div style={{ ...cd, marginBottom: 16 }}>

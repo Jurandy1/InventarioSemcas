@@ -262,6 +262,8 @@ export function AppMainView({ ctx }) {
           <Suspense fallback={tabFallback}>
           <LazyFinalizadosPage
             finalizacoes={finalizacoesState.finalizacoes}
+            todosItens={todosItens}
+            unidades={unidades}
             loading={finalizacoesState.loading}
             onRefresh={finalizacoesState.refresh}
             editFin={finalizadoEdit?.fin || null}
@@ -433,6 +435,9 @@ export function AppMainView({ ctx }) {
               gerarRelatorio={gerarRelatorio}
               fazerBackup={fazerBackup}
               found={found.found}
+              foundMap={found.foundMap}
+              finalizacoes={finalizacoesState.finalizacoes}
+              todosItens={todosItens}
               xlsxCorrompidos={xlsxCorrompidos}
               unidades={unidades}
               saveAtiva={inventario.saveAtiva}
