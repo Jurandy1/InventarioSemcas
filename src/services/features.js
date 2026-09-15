@@ -5,6 +5,7 @@ import { deleteOfflinePhotos, loadOfflinePhotos, saveOfflinePhotos } from "../ut
 import { createVisibilityAwarePoller, isLikelySlowDevice, isPageHidden } from "../utils/mobilePerf.js";
 import { getCategoryGroup } from "../constants/categories.js";
 import { fetchLocaisForUnits } from "./locaisLoad.js";
+import { getItemIdInterno } from "../app/helpers/appHelpers.js";
 
 import { get, set } from "idb-keyval";
 
@@ -80,7 +81,7 @@ async function blobToJpegDataUrl(blob, maxW = 420, maxH = 320, quality = 0.72) {
   }
 }
 
-async function photoSrcToJpegDataUrl(src, maxW = 420, maxH = 320, quality = 0.72) {
+export async function photoSrcToJpegDataUrl(src, maxW = 420, maxH = 320, quality = 0.72) {
   const raw = String(src || "");
   if (!raw) return "";
   try {
@@ -405,7 +406,7 @@ export const EVENTOS = {
   AUDITORIA_ANOMALIA: "auditoria_anomalia",
 };
 
-async function loadJsPDF() {
+export async function loadJsPDF() {
   const mod = await import("jspdf");
   const jsPDF = mod.jsPDF || mod.default?.jsPDF || mod.default;
   if (!jsPDF) throw new Error("Não foi possível carregar jsPDF");
@@ -678,6 +679,17 @@ function formatTomboRelatorio(item) {
   return item?.id || "";
 }
 
+function formatMarcaRelatorio(item, f) {
+  const marca = String(f?.marca || item?.marca || "").trim();
+  if (/^(nao informado|não informado|n\/i|ni|-+)$/i.test(marca)) return "—";
+  return marca || "—";
+}
+
+function formatFornecedorRelatorio(item, f) {
+  const fornecedor = String(item?.fornecedor || f?.fornecedor || "").trim();
+  return fornecedor || "—";
+}
+
 /** Lista unidades únicas presentes em finalizações. */
 export function listUnidadesFinalizadas(finalizacoes = [], unidades = []) {
   const map = new Map();
@@ -757,12 +769,15 @@ export function buildRelatorioCompletoRows({
     const valor = Number(item.valor) || 0;
     rows.push({
       itemId: item.id,
+      idInterno: getItemIdInterno(item, f),
       unidadeId: item.unidadeId,
       unidade: cleanUnidadeRelatorio(unidadeFull),
       unidadeFull,
       tombo: formatTomboRelatorio(item),
       descricao: f.descricaoEdit || item.descricao || item.especie || "—",
       localId: f.localId || "",
+      marca: formatMarcaRelatorio(item, f),
+      fornecedor: formatFornecedorRelatorio(item, f),
       nf: item.nf || "",
       valor,
       valorFmt: valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 }),
@@ -791,11 +806,22 @@ export async function gerarRelatorioCompletoExcel(rows, { tituloUnidades = "Toda
     [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
     [`Total de itens: ${enriched.length}`],
     [],
-    ["Unidade", "Tombo", "Local", "Descricao", "NF", "Valor", "Estado"],
+    ["Unidade", "Tombo", "ID interno", "Local", "Descricao", "Marca", "Fornecedor", "NF", "Valor", "Estado"],
   ];
 
   for (const row of enriched) {
-    worksheetData.push([row.unidade, row.tombo, row.local, row.descricao, row.nf, row.valor, row.estado]);
+    worksheetData.push([
+      row.unidade,
+      row.tombo,
+      row.idInterno || "",
+      row.local,
+      row.descricao,
+      row.marca,
+      row.fornecedor,
+      row.nf,
+      row.valor,
+      row.estado,
+    ]);
   }
 
   const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
@@ -845,13 +871,15 @@ export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloU
 
   if (!comFoto) {
     const cols = [
-      { label: "Unidade", w: 32 },
-      { label: "Tombo", w: 18 },
-      { label: "Local", w: 32 },
-      { label: "Descricao", w: 48 },
-      { label: "NF", w: 18 },
-      { label: "Valor", w: 18 },
-      { label: "Estado", w: 18 },
+      { label: "Unidade", w: 26 },
+      { label: "Tombo", w: 15 },
+      { label: "Local", w: 26 },
+      { label: "Descricao", w: 34 },
+      { label: "Marca", w: 20 },
+      { label: "Fornecedor", w: 26 },
+      { label: "NF", w: 13 },
+      { label: "Valor", w: 14 },
+      { label: "Estado", w: 13 },
     ];
     const rowH = 6;
     let currentUnit = "";
@@ -892,15 +920,17 @@ export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloU
       ensureSpace(rowH + 2);
       let x = margin;
       const cells = [
-        row.unidade.slice(0, 18),
-        String(row.tombo).slice(0, 12),
-        String(row.local || "Sem local").slice(0, 18),
-        String(row.descricao).slice(0, 30),
-        String(row.nf).slice(0, 12),
+        row.unidade.slice(0, 16),
+        String(row.tombo).slice(0, 10),
+        String(row.local || "Sem local").slice(0, 16),
+        String(row.descricao).slice(0, 22),
+        String(row.marca).slice(0, 12),
+        String(row.fornecedor).slice(0, 16),
+        String(row.nf).slice(0, 10),
         row.valorFmt,
-        String(row.estado).slice(0, 12),
+        String(row.estado).slice(0, 10),
       ];
-      doc.setFontSize(7.5);
+      doc.setFontSize(7);
       for (let c = 0; c < cols.length; c++) {
         doc.text(cells[c], x + 1, y);
         x += cols[c].w;
@@ -915,7 +945,7 @@ export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloU
   } else {
     const photoH = 40;
     const photoW = 54;
-    const blockH = 32 + photoH + 4;
+    const blockH = 38 + photoH + 4;
 
     for (let i = 0; i < enriched.length; i++) {
       const row = enriched[i];
@@ -940,10 +970,21 @@ export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloU
 
       doc.setFontSize(8);
       doc.text(`Local: ${String(row.local || "Sem local").slice(0, 60)}`, margin + 3, y + 14);
-      doc.text(`NF: ${row.nf || "—"}  ·  Valor: R$ ${row.valorFmt}  ·  Estado: ${row.estado}`, margin + 3, y + 18.5);
+      doc.text(
+        `Marca: ${String(row.marca).slice(0, 28)}  ·  Fornecedor: ${String(row.fornecedor).slice(0, 32)}`,
+        margin + 3,
+        y + 18.5
+      );
+      doc.text(`NF: ${row.nf || "—"}  ·  Valor: R$ ${row.valorFmt}  ·  Estado: ${row.estado}`, margin + 3, y + 23);
+      if (row.idInterno) {
+        doc.setFontSize(7);
+        doc.setTextColor(100);
+        doc.text(`ID interno: ${String(row.idInterno).slice(0, 44)}`, margin + 3, y + 26.5);
+        doc.setTextColor(0);
+      }
 
       const foto = row.fotoUrls[0];
-      const imgY = y + 22.5;
+      const imgY = y + 27;
       if (foto) {
         const dataUrl = await photoSrcToJpegDataUrl(foto);
         if (dataUrl && dataUrl.startsWith("data:image")) {

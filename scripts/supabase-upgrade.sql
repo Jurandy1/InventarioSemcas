@@ -71,5 +71,12 @@ CREATE POLICY "backups_auth" ON backups FOR ALL USING (auth.jwt() IS NOT NULL) W
 ALTER TABLE inventariantes ALTER COLUMN status SET DEFAULT 'pendente_aprovacao';
 ALTER TABLE coordenadores ALTER COLUMN status SET DEFAULT 'pendente_aprovacao';
 
+-- ID interna estável (UUID) por item — com ou sem tombo
+-- O app também grava em extras.idInterno até esta coluna existir.
+ALTER TABLE inventario ADD COLUMN IF NOT EXISTS id_interno UUID;
+ALTER TABLE manuais ADD COLUMN IF NOT EXISTS id_interno UUID;
+CREATE UNIQUE INDEX IF NOT EXISTS inventario_id_interno_uidx ON inventario (id_interno) WHERE id_interno IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS manuais_id_interno_uidx ON manuais (id_interno) WHERE id_interno IS NOT NULL;
+
 -- Recarrega o cache de schema do PostgREST (necessário após ALTER TABLE)
 NOTIFY pgrst, 'reload schema';

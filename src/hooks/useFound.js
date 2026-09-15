@@ -8,6 +8,7 @@ import { mergeFoundRecords } from "../utils/inventorySession.js";
 import { getFoundEntry, normalizePatrimonioId } from "../utils/patrimonioId.js";
 import { fetchInventarioAll, fetchInventarioForUnits, normalizeFoundRecord } from "../services/inventarioLoad.js";
 import { saveOfflinePhotos } from "../utils/offlineStore.js";
+import { getItemIdInterno, newInternalId } from "../app/helpers/appHelpers.js";
 
 export function useFound({ showT, applyDescOverride } = {}) {
   const [found, setFound] = useState([]);
@@ -114,6 +115,10 @@ export function useFound({ showT, applyDescOverride } = {}) {
       const unit = itemUnit?.id ? itemUnit : unidadeAtiva;
       const entryUnidadeId = unit?.id || "";
       const entryUnidadeNome = unit?.nome || "";
+      const currentFound = foundRef.current || [];
+      const existing = currentFound.find((f) => normalizePatrimonioId(f.patrimonioId) === docId);
+      const idInterno =
+        extras?.idInterno || getItemIdInterno(null, existing) || newInternalId();
       const entry = {
         patrimonioId: docId,
         unidadeId: entryUnidadeId,
@@ -134,10 +139,9 @@ export function useFound({ showT, applyDescOverride } = {}) {
         user: logado?.nome || "",
         ...(isManual ? { isManual: true } : {}),
         ...extras,
+        idInterno,
       };
 
-      const currentFound = foundRef.current || [];
-      const existing = currentFound.find((f) => normalizePatrimonioId(f.patrimonioId) === docId);
       if (existing) {
         const prevUser = existing.usuario || existing.user || "";
         const prevEmail = existing.email || "";

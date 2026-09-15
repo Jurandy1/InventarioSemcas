@@ -9,6 +9,7 @@ import { inferEspecieFromDesc, supportsImei } from "../utils/itemHelpers.js";
 import { PhotoThumb } from "./PhotoThumb.jsx";
 import { SmartImg } from "./SmartImg.jsx";
 import { CorPicker } from "./CorPicker.jsx";
+import { getItemIdInterno } from "../app/helpers/appHelpers.js";
 
 export function ItemDetailModal({
   item,
@@ -70,6 +71,7 @@ export function ItemDetailModal({
   );
 
   const getItemCode = (it) => it?.patrimonioLabel || it?.id || "—";
+  const idInterno = getItemIdInterno(item, foundEntry);
 
   return (
     <>
@@ -83,6 +85,11 @@ export function ItemDetailModal({
       <p style={{ margin: "0 0 4px", fontSize: 12, color: "#64748b" }}>
         Nº {getItemCode(item)} · {item.data} · R$ {(item.valor || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
       </p>
+      {idInterno ? (
+        <p style={{ margin: "0 0 4px", fontSize: 11, color: "#64748b", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", overflowWrap: "anywhere" }}>
+          ID interno: {idInterno}
+        </p>
+      ) : null}
       <p style={{ margin: "0 0 12px", fontSize: 12, color: "#94a3b8", overflowWrap: "anywhere" }}>
         Fornecedor: {item.fornecedor || "—"} · NF: {item.nf || "—"} · Empenho: {item.empenho || "—"}
       </p>

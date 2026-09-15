@@ -464,6 +464,7 @@ export function AppMainView({ ctx }) {
             <LazyCorrecaoNomesPage
               todosItens={todosItens}
               unidades={unidades}
+              locais={locais.locais}
               foundMap={found.foundMap}
               foundSet={found.foundSet}
               especies={gerarSugestoesEspecie(todosItens)}
@@ -477,6 +478,7 @@ export function AppMainView({ ctx }) {
               inp={inp}
               cd={cd}
               bs={bs}
+              bp={bp}
             />
           </Suspense>
         )}

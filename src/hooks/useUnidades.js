@@ -22,6 +22,7 @@ export function useUnidades({ showT } = {}) {
               if (!byUnit.has(unidadeId)) byUnit.set(unidadeId, []);
               byUnit.get(unidadeId).push({
                 id: m._id || m.id,
+                ...(m.idInterno ? { idInterno: m.idInterno } : {}),
                 patrimonioLabel: m.patrimonioLabel ?? null,
                 data: m.data || "",
                 especie: m.especie || "",

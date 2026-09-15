@@ -112,7 +112,7 @@ export function RelatorioCompletoModal({
       <div>
         <h2 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 700 }}>Relatório completo</h2>
         <p style={{ margin: "0 0 14px", fontSize: 13, color: "#64748b", lineHeight: 1.45 }}>
-          Exporta itens <strong>inventariados</strong> das unidades finalizadas: unidade, tombo, local, descrição, NF, valor e estado.
+          Exporta itens <strong>inventariados</strong> das unidades finalizadas: unidade, tombo, local, descrição, marca, fornecedor, NF, valor e estado.
         </p>
 
         <label style={{ display: "block", marginBottom: 12 }}>
@@ -183,7 +183,7 @@ export function RelatorioCompletoModal({
             <p style={{ margin: "0 0 6px", fontWeight: 700, color: "#64748b" }}>Prévia (primeiros {previewRows.length})</p>
             {previewRows.map((r) => (
               <p key={`${r.unidadeId}_${r.itemId}`} style={{ margin: "0 0 4px", color: "#334155" }}>
-                {r.unidade} · {r.tombo} · {r.local || "Sem local"} · {String(r.descricao).slice(0, 40)} · R$ {r.valorFmt} · {r.estado}
+                {r.unidade} · {r.tombo} · {r.local || "Sem local"} · {String(r.descricao).slice(0, 30)} · {r.marca} · {r.fornecedor} · R$ {r.valorFmt} · {r.estado}
               </p>
             ))}
             {rows.length > previewRows.length && (

@@ -12,7 +12,7 @@ import { resolveUnitForItem } from "../../utils/inventorySession.js";
 import { getTeamMemberEditingItem } from "../../utils/inventoryPresence.js";
 import { rankTombosForAjuste } from "../../utils/ajusteMatch.js";
 import { buildFinalizacaoStats, criarFinalizacao, atualizarStatsFinalizacao } from "../../services/finalizacoes.js";
-import { buildManualPatrimonio } from "../helpers/appHelpers.js";
+import { buildManualPatrimonio, newInternalId } from "../helpers/appHelpers.js";
 import { isManualItem } from "../../utils/nomeCorrecao.js";
 import { clearUiResume } from "../../utils/uiResume.js";
 
@@ -38,12 +38,15 @@ export function useAppItemActions({ state, data }) {
       for (const batch of batches) {
         const desc = String(batch?.descricao || "").trim();
         const esp = String(batch?.especie || "").trim();
+        const atualizarEspecie = batch?.atualizarEspecie !== false;
         if (!desc) continue;
         for (const id of batch?.targetIds || []) {
           if (!id) continue;
           const item = todosItens.find((i) => i.id === id);
           if (!item) continue;
-          patches.set(id, { desc, esp, item });
+          const f = getFoundEntry(id, found.foundMap);
+          const especieAtual = String(f?.especieEdit || item.especie || "").trim();
+          patches.set(id, { desc, esp: atualizarEspecie ? esp : especieAtual, item });
         }
       }
       if (!patches.size) return;
@@ -316,7 +319,11 @@ export function useAppItemActions({ state, data }) {
       ...(manImei ? { imei: manImei } : {}),
     };
 
-    const newItems = ids.map((id) => ({ ...baseItem, id }));
+    const newItems = ids.map((id) => ({
+      ...baseItem,
+      id,
+      idInterno: id === manualPatrimonio.id ? manualPatrimonio.idInterno || newInternalId() : newInternalId(),
+    }));
     const manLocalId = getField("manLocal") || sessionLocais[0]?.id || "";
     const manEstado = getField("manEstado") || "Bom";
     const manSituacao = getField("manSituacao") || "Em uso";
@@ -343,6 +350,7 @@ export function useAppItemActions({ state, data }) {
         marca: manMarca,
         origem: manOrigem,
         ...doacaoExtras,
+        idInterno: it.idInterno || newInternalId(),
         fotoUrls: urls,
         data: now.toLocaleDateString("pt-BR"),
         hora: now.toLocaleTimeString("pt-BR"),
@@ -379,7 +387,7 @@ export function useAppItemActions({ state, data }) {
           obs: desc.trim(),
           marca: manMarca,
           origem: manOrigem,
-          extras: doacaoExtras,
+          extras: { ...doacaoExtras, idInterno: it.idInterno },
           fotoUrls: [],
           unidadeAtiva,
           logado: auth.logado,
@@ -424,7 +432,7 @@ export function useAppItemActions({ state, data }) {
         obs: desc.trim(),
         marca: getField("manMarca"),
         origem: getField("manOrigem") || "Próprio",
-        extras: doacaoExtras,
+        extras: { ...doacaoExtras, idInterno: it.idInterno },
         fotoUrls,
         unidadeAtiva,
         logado: auth.logado,
@@ -463,8 +471,10 @@ export function useAppItemActions({ state, data }) {
     }
 
     const id = `ST_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const idInterno = newInternalId();
     const item = {
       id,
+      idInterno,
       patrimonioLabel: "S/T",
       data: new Date().toLocaleDateString("pt-BR"),
       especie: inferEspecieFromDesc(desc, sugestoes?.especies),
@@ -485,6 +495,7 @@ export function useAppItemActions({ state, data }) {
     const stImei = String(getField("stImei") || "").trim();
     const stCor = String(getField("stCor") || "").trim();
     const stExtras = {
+      idInterno,
       semTombo: true,
       identificadoPorFoto: true,
       descricaoEdit: desc,
@@ -647,8 +658,10 @@ export function useAppItemActions({ state, data }) {
       }
       existingIds.add(itemId);
 
+      const idInterno = newInternalId();
       const item = {
         id: itemId,
+        idInterno,
         patrimonioLabel,
         ...(tombamento ? { tomboRef: tombamento } : {}),
         data: new Date().toLocaleDateString("pt-BR"),
@@ -667,6 +680,7 @@ export function useAppItemActions({ state, data }) {
       };
 
       const extras = {
+        idInterno,
         ...(patrimonioLabel === "S/T"
           ? { semTombo: true, identificadoPorFoto: rowPhotos.length > 0, descricaoEdit: desc }
           : { descricaoEdit: desc }),
@@ -1111,10 +1125,12 @@ export function useAppItemActions({ state, data }) {
     try {
       const unit = editScopeUnits.find((u) => u.id === (f.unidadeId || item.unidadeId)) || unidadeAtiva;
       const newId = `ST_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const idInterno = f.idInterno || newInternalId();
       const desc = f.descricaoEdit || item.descricao || item.especie || "";
       const temFoto = (f.fotoUrls || []).length > 0;
       const manualItem = {
         id: newId,
+        idInterno,
         patrimonioLabel: "S/T",
         data: new Date().toLocaleDateString("pt-BR"),
         especie: f.especieEdit || item.especie || "",
@@ -1140,6 +1156,7 @@ export function useAppItemActions({ state, data }) {
         semTombo: true,
         identificadoPorFoto: temFoto,
         descricaoEdit: desc,
+        idInterno,
         corrigidoDeTombo: item.id,
         corrigidoDeLabel: label,
         ultimaAtualizacao: new Date().toISOString(),

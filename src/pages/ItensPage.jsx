@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
-import MiniSearch from "minisearch";
 import { Badge } from "../components/Badge.jsx";
 import { TInput } from "../components/FormFields.jsx";
 import { ESTADOS, EC } from "../constants/inventory.js";
 import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "../constants/categories.js";
 import { SmartImg } from "../components/SmartImg.jsx";
 import { RelatorioFotosModal } from "../components/modals/RelatorioFotosModal.jsx";
+import { PlanilhaItensModal } from "../components/modals/PlanilhaItensModal.jsx";
 import { getListLimits } from "../utils/mobilePerf.js";
+import { getFoundEntry, isItemInventariado } from "../utils/patrimonioId.js";
 
 function getItemCode(item) {
   return item?.patrimonioLabel || item?.id || "—";
@@ -14,6 +15,46 @@ function getItemCode(item) {
 
 function getDisplayDesc(item, foundEntry) {
   return foundEntry?.descricaoEdit || item.descricao || item.especie || "—";
+}
+
+function stripSearch(s) {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function getItemEspecieDisplay(item, foundMap) {
+  const f = getFoundEntry(item?.id, foundMap);
+  return f?.especieEdit || item?.especie || "";
+}
+
+function itemMatchesQuery(item, foundMap, rawQuery) {
+  const q = stripSearch(rawQuery).trim();
+  if (!q) return true;
+  const f = getFoundEntry(item?.id, foundMap);
+  const hay = stripSearch(
+    [
+      item?.id,
+      item?.patrimonioLabel,
+      item?.descricao,
+      item?.especie,
+      item?.marca,
+      item?.fornecedor,
+      item?.nf,
+      item?.unidadeNome,
+      f?.descricaoEdit,
+      f?.especieEdit,
+      f?.marca,
+      f?.unidadeNome,
+      f?.permutaDesc,
+      f?.permutaMarca,
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+  const terms = q.split(/\s+/).filter(Boolean);
+  return terms.every((t) => hay.includes(t));
 }
 
 export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [], saveAtiva, formRef, bumpFt, setModal, isMob, inp, cd, bs, bp, showT, onViewImage }) {
@@ -39,6 +80,7 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
     try { return localStorage.getItem("inv-hide-incorporados") === "1"; } catch { return false; }
   });
   const [showRelatorioFotos, setShowRelatorioFotos] = useState(false);
+  const [showPlanilhaItens, setShowPlanilhaItens] = useState(false);
   const [relatorioInitialView, setRelatorioInitialView] = useState("preview");
 
   const openRelatorio = (view = "preview") => {
@@ -60,69 +102,45 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
   const catCounts = React.useMemo(() => {
     const m = { Todas: todosItens.length };
     for (const i of todosItens) {
-      const g = getCategoryGroup(i.especie);
+      const g = getCategoryGroup(getItemEspecieDisplay(i, foundMap));
       m[g] = (m[g] || 0) + 1;
     }
     return m;
-  }, [todosItens]);
+  }, [todosItens, foundMap]);
 
   const subCounts = React.useMemo(() => {
     if (localCat === "Todas") return {};
     const m = {};
     for (const i of todosItens) {
-      if (getCategoryGroup(i.especie) !== localCat) continue;
-      const s = getSubcategoryLabel(i.especie, localCat) || "Outros";
+      const esp = getItemEspecieDisplay(i, foundMap);
+      if (getCategoryGroup(esp) !== localCat) continue;
+      const s = getSubcategoryLabel(esp, localCat) || "Outros";
       m[s] = (m[s] || 0) + 1;
     }
     return m;
-  }, [todosItens, localCat]);
+  }, [todosItens, localCat, foundMap]);
 
   const activeCatDef = React.useMemo(() => CATEGORY_TREE.find((c) => c.name === localCat) || null, [localCat]);
-
-  const miniSearch = React.useMemo(() => {
-    const ms = new MiniSearch({
-      fields: ["id", "descricao", "especie", "marca", "fornecedor", "nf", "descricaoEdit", "permutaDesc", "permutaMarca"],
-      storeFields: ["id"],
-      searchOptions: {
-        prefix: true,
-        fuzzy: 0.2,
-      },
-      tokenize: (str) => str.toLowerCase().split(/[\s,]+/),
-    });
-    const docs = todosItens.map((i) => ({
-      ...i,
-      descricaoEdit: foundMap[i.id]?.descricaoEdit || "",
-      permutaDesc: foundMap[i.id]?.permutaDesc || "",
-      permutaMarca: foundMap[i.id]?.permutaMarca || "",
-    }));
-    ms.addAll(docs);
-    return ms;
-  }, [todosItens, foundMap]);
-
-  const searchResults = React.useMemo(() => {
-    const q = defQ.toLowerCase().trim();
-    if (!q) return null;
-    return new Set(miniSearch.search(q).map((r) => r.id));
-  }, [miniSearch, defQ]);
 
   const filtered = React.useMemo(() => {
     return todosItens.filter((i) => {
       if (hideIncorporados && (i.tipoEntrada || "Próprio") === "Incorporado") return false;
-      const esp = i.especie || "";
+      const esp = getItemEspecieDisplay(i, foundMap);
       if (localCat !== "Todas") {
         if (getCategoryGroup(esp) !== localCat) return false;
         if (localSub !== null) {
           if (getSubcategoryLabel(esp, localCat) !== localSub) return false;
         }
       }
-      if (localEst !== "Todos" && foundMap[i.id]?.estado !== localEst) return false;
+      const f = getFoundEntry(i.id, foundMap);
+      if (localEst !== "Todos" && f?.estado !== localEst) return false;
       if (localUnit !== "Todas" && i.unidadeId !== localUnit) return false;
-      if (localStat === "Inventariados" && !foundSet.has(i.id)) return false;
-      if (localStat === "Pendentes" && foundSet.has(i.id)) return false;
-      if (searchResults && !searchResults.has(i.id)) return false;
+      if (localStat === "Inventariados" && !isItemInventariado(i.id, foundSet)) return false;
+      if (localStat === "Pendentes" && isItemInventariado(i.id, foundSet)) return false;
+      if (!itemMatchesQuery(i, foundMap, defQ)) return false;
       return true;
     });
-  }, [todosItens, foundMap, foundSet, localCat, localSub, localEst, localUnit, localStat, searchResults, hideIncorporados]);
+  }, [todosItens, foundMap, foundSet, localCat, localSub, localEst, localUnit, localStat, defQ, hideIncorporados]);
 
   const selectCat = (name) => {
     setLocalCat(name);
@@ -216,19 +234,37 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
     return m;
   }, [locais]);
 
+  const unidadeNomeById = React.useMemo(() => {
+    const m = new Map();
+    for (const unidade of unidades || []) {
+      if (unidade?.id) m.set(unidade.id, unidade.nome || unidade.id);
+    }
+    return m;
+  }, [unidades]);
+
+  const resolveUnidadeNome = (unidadeId, fallback = "") =>
+    unidadeNomeById.get(unidadeId) || String(fallback || "").trim() || unidadeId || "—";
+
   const resolveLocalNome = (localId) => {
     if (!localId || localId === "sem-local") return "Sem local";
     return localNomeById.get(localId) || localId;
   };
 
   const ItemCard = ({ item }) => {
-    const f = foundMap[item.id];
+    const f = getFoundEntry(item.id, foundMap);
     const foto = f?.fotoUrls?.[0];
     const isF = !!f;
-    const catDef = CATEGORY_TREE.find((c) => getCategoryGroup(item.especie) === c.name) || CATEGORY_TREE[CATEGORY_TREE.length - 1];
+    const esp = getItemEspecieDisplay(item, foundMap);
+    const catDef = CATEGORY_TREE.find((c) => getCategoryGroup(esp) === c.name) || CATEGORY_TREE[CATEGORY_TREE.length - 1];
     const displayDesc = getDisplayDesc(item, f);
     const isPermuta = f?.situacao === "Permuta";
-    const unidadeLabel = ((f?.unidadeNome || item.unidadeNome || "").replace(/^\d+[\d.]*\s*-\s*/, "") || "—").slice(0, 40);
+    const unidadeCadastrada = resolveUnidadeNome(item.unidadeId, item.unidadeNome);
+    const unidadeEncontrada = isF
+      ? resolveUnidadeNome(f?.unidadeId || item.unidadeId, f?.unidadeNome || item.unidadeNome)
+      : unidadeCadastrada;
+    const encontradoEmOutraUnidade = Boolean(
+      isF && item?.unidadeId && f?.unidadeId && item.unidadeId !== f.unidadeId
+    );
     const localLabel = isF ? resolveLocalNome(f?.localId) : "";
 
     return (
@@ -327,9 +363,27 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
             </p>
           )}
           <p style={{ margin: 0, fontSize: 9, color: "#64748b", fontWeight: 600 }}>Nº {getItemCode(item)}</p>
-          <p style={{ margin: "1px 0 0", fontSize: 9, color: "#475569", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            Unidade: {unidadeLabel}
+          <p
+            title={unidadeEncontrada}
+            style={{
+              margin: "3px 0 0",
+              fontSize: 10,
+              lineHeight: 1.35,
+              color: encontradoEmOutraUnidade ? "#991b1b" : "#334155",
+              fontWeight: 700,
+              overflowWrap: "anywhere",
+            }}
+          >
+            {isF ? "Unidade encontrada" : "Unidade cadastrada"}: {unidadeEncontrada}
           </p>
+          {encontradoEmOutraUnidade && (
+            <p
+              title={unidadeCadastrada}
+              style={{ margin: "1px 0 0", fontSize: 9, lineHeight: 1.35, color: "#64748b", overflowWrap: "anywhere" }}
+            >
+              Cadastrada em: {unidadeCadastrada}
+            </p>
+          )}
           {isF && (
             <p style={{ margin: "1px 0 0", fontSize: 9, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               Local: {localLabel}
@@ -363,7 +417,7 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
     () =>
       unidades.map((u) => ({
         id: u.id,
-        label: u.nome.replace(/^\d+[\d.]*\s*-\s*/, "").slice(0, 52),
+        label: u.nome,
       })),
     [unidades]
   );
@@ -516,6 +570,22 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 type="button"
+                onClick={() => setShowPlanilhaItens(true)}
+                disabled={!filtered.length}
+                style={{
+                  ...(bs || { background: "#fff", color: "#166534", border: "1.5px solid #16a34a", borderRadius: 9, fontWeight: 700, cursor: "pointer" }),
+                  fontSize: 12,
+                  padding: "8px 14px",
+                  whiteSpace: "nowrap",
+                  borderColor: "#16a34a",
+                  color: "#166534",
+                  opacity: filtered.length ? 1 : 0.55,
+                }}
+              >
+                Planilha Excel
+              </button>
+              <button
+                type="button"
                 onClick={() => openRelatorio("preview")}
                 style={{
                   ...(bs || { background: "#fff", color: "#1351B4", border: "1.5px solid #1351B4", borderRadius: 9, fontWeight: 700, cursor: "pointer" }),
@@ -657,6 +727,21 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
             bs={bs}
             showT={showT}
             onViewImage={onViewImage}
+          />
+        )}
+
+        {showPlanilhaItens && (
+          <PlanilhaItensModal
+            isMob={isMob}
+            onClose={() => setShowPlanilhaItens(false)}
+            itens={filtered}
+            foundMap={foundMap}
+            foundSet={foundSet}
+            unidades={unidades}
+            locais={locais}
+            bp={bp || { background: "#1351B4", color: "#fff", border: "none", borderRadius: 9, padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}
+            bs={bs || { background: "#fff", color: "#334155", border: "1px solid #cbd5e1", borderRadius: 9, padding: "10px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+            showT={showT}
           />
         )}
 

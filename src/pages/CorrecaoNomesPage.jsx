@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TInput } from "../components/FormFields.jsx";
 import { AtributoChips } from "../components/correcao/AtributoChips.jsx";
 import { CorrecaoItemPhoto } from "../components/correcao/CorrecaoItemPhoto.jsx";
@@ -24,6 +24,8 @@ import {
 } from "../utils/nomeCorrecao.js";
 import { getFoundEntry } from "../utils/patrimonioId.js";
 import { isGeminiNomeConfigured, sugerirNomeComGemini } from "../services/geminiNome.js";
+import { gerarPacoteManuaisParaIA } from "../services/exportManuaisIA.js";
+import { CATEGORY_TREE } from "../constants/categories.js";
 import "../styles/correcao-nomes.css";
 
 const PER_PAGE_DESK = 30;
@@ -51,11 +53,15 @@ export function CorrecaoNomesPage({
   inp,
   cd,
   bs,
+  bp,
+  locais = [],
 }) {
   const [modo, setModo] = useState("revisar");
   const [unidadeId, setUnidadeId] = useState("todas");
   const [especieFiltro, setEspecieFiltro] = useState("todas");
   const [somenteManuais, setSomenteManuais] = useState(true);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportCat, setExportCat] = useState("Cadeiras");
   const [query, setQuery] = useState("");
   const [filtroProblema, setFiltroProblema] = useState(FILTRO_PROBLEMA.TODOS);
   const [nomePersonalizado, setNomePersonalizado] = useState("");
@@ -71,7 +77,29 @@ export function CorrecaoNomesPage({
   const [nomeInputKey, setNomeInputKey] = useState(0);
   const [especieIa, setEspecieIa] = useState("");
   const [loteEspecies, setLoteEspecies] = useState(() => new Map());
+  const selecionarTudoRef = useRef(null);
   const geminiOk = isGeminiNomeConfigured();
+
+  const exportarPacoteIA = useCallback(async () => {
+    if (exportBusy) return;
+    setExportBusy(true);
+    try {
+      const { count } = await gerarPacoteManuaisParaIA({
+        todosItens,
+        foundMap,
+        unidades,
+        locais,
+        somenteComFoto: true,
+        categoria: exportCat === "todas" ? null : exportCat,
+        unidadeId: unidadeId === "todas" ? null : unidadeId,
+      });
+      showT?.(`Preview local aberto: ${count} item(ns) — PDF também baixado`);
+    } catch (e) {
+      showT?.(e?.message || "Erro ao gerar pacote para IA");
+    } finally {
+      setExportBusy(false);
+    }
+  }, [exportBusy, todosItens, foundMap, unidades, locais, exportCat, unidadeId, showT]);
 
   const itensBase = useMemo(
     () => expandItensComInventariadosOrfaos(todosItens, foundMap),
@@ -149,6 +177,19 @@ export function CorrecaoNomesPage({
     ? itensLista
     : itensLista.slice((pageSafe - 1) * perPage, pageSafe * perPage);
 
+  const idsPendentes = useMemo(() => new Set(itensPendentes.map((item) => item.id)), [itensPendentes]);
+  const selecionadosValidos = useMemo(
+    () => [...selecionados].filter((id) => idsPendentes.has(id)),
+    [selecionados, idsPendentes]
+  );
+  const totalSelecionados = selecionadosValidos.length;
+  const todosFiltradosSelecionados = itensPendentes.length > 0 && totalSelecionados === itensPendentes.length;
+  const selecaoParcial = totalSelecionados > 0 && !todosFiltradosSelecionados;
+
+  useEffect(() => {
+    if (selecionarTudoRef.current) selecionarTudoRef.current.indeterminate = selecaoParcial;
+  }, [selecaoParcial]);
+
   useEffect(() => {
     setPage(1);
     setPageCorrigidos(1);
@@ -178,21 +219,42 @@ export function CorrecaoNomesPage({
   };
 
   const selecionarTudo = () => {
-    setSelecionados(new Set(itensPendentes.map((i) => i.id)));
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (todosFiltradosSelecionados) {
+        for (const item of itensPendentes) next.delete(item.id);
+      } else {
+        for (const item of itensPendentes) next.add(item.id);
+      }
+      return next;
+    });
     if (itensPendentes.length) {
-      showT?.(`${itensPendentes.length} item(ns) selecionado(s)`);
+      showT?.(
+        todosFiltradosSelecionados
+          ? "Seleção dos resultados removida"
+          : `${itensPendentes.length} resultado(s) selecionado(s)`
+      );
     }
   };
 
   const limparSelecao = () => setSelecionados(new Set());
 
   const selecionarEspecie = (members) => {
+    const ids = (members || []).map((item) => item.id);
+    const todosDoGrupoSelecionados = ids.length > 0 && ids.every((id) => selecionados.has(id));
     setSelecionados((prev) => {
       const next = new Set(prev);
-      for (const item of members || []) next.add(item.id);
+      for (const id of ids) {
+        if (todosDoGrupoSelecionados) next.delete(id);
+        else next.add(id);
+      }
       return next;
     });
-    showT?.(`${(members || []).length} item(ns) da espécie selecionado(s)`);
+    showT?.(
+      todosDoGrupoSelecionados
+        ? `Seleção de ${ids.length} item(ns) removida`
+        : `${ids.length} item(ns) da espécie selecionado(s)`
+    );
   };
 
   const toggleEspecieOpen = (esp) => {
@@ -208,27 +270,32 @@ export function CorrecaoNomesPage({
   const primeiroSel = [...selecionados][0];
   const itemPreview = primeiroSel ? itensBase.find((i) => i.id === primeiroSel) : null;
   const labelPreview = itemPreview ? getItemLabel(itemPreview, foundMap) : "";
-  const especieAplicar =
-    String(especieIa || "").trim() ||
-    (nomeAplicar && inferEspecieFromDesc
-      ? inferEspecieFromDesc(nomeAplicar, especies) || itemPreview?.especie || ""
-      : "") ||
-    "";
+  const especieAplicar = String(especieIa || "").trim();
 
   const aplicarNomeDigitado = async () => {
     if (!nomeAplicar) {
       showT?.("Digite o nome padrão no campo ao lado");
       return;
     }
-    const ids = [...selecionados];
+    const ids = selecionadosValidos;
     if (!ids.length) {
       showT?.("Selecione os itens que receberão o novo nome");
+      return;
+    }
+    if (
+      ids.length > 1 &&
+      !window.confirm(
+        `Aplicar o nome "${nomeAplicar}" em ${ids.length} itens selecionados?` +
+          (especieAplicar ? `\n\nA espécie também será alterada para "${especieAplicar}".` : "\n\nA espécie atual de cada item será mantida.")
+      )
+    ) {
       return;
     }
     await onAplicarCorrecao?.({
       targetIds: ids,
       descricao: nomeAplicar,
       especie: especieAplicar,
+      atualizarEspecie: Boolean(especieAplicar),
     });
     setSelecionados(new Set());
     setNomePersonalizado("");
@@ -257,7 +324,7 @@ export function CorrecaoNomesPage({
     setSelecionados(new Set());
   };
 
-  const aplicarSelecionados = () => aplicarPadronizacaoItens([...selecionados]);
+  const aplicarSelecionados = () => aplicarPadronizacaoItens(selecionadosValidos);
 
   const pickItemComFoto = useCallback(
     (ids) => {
@@ -501,6 +568,18 @@ export function CorrecaoNomesPage({
       <article
         key={item.id}
         className={`correcao-item${checked ? " correcao-item--sel" : ""} correcao-item--low`}
+        role="checkbox"
+        aria-checked={checked}
+        tabIndex={0}
+        onClick={(e) => {
+          if (e.target.closest("button, input, a, select, textarea")) return;
+          toggleSel(item.id);
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== " " && e.key !== "Enter") return;
+          e.preventDefault();
+          toggleSel(item.id);
+        }}
       >
         <span className={scoreClass(score)} title="Qualidade do nome">{score}</span>
         <input
@@ -591,6 +670,56 @@ export function CorrecaoNomesPage({
         onFiltro={handleFiltroStat}
       />
 
+      <div
+        className="correcao-panel"
+        style={{
+          ...cd,
+          marginBottom: 12,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+          <div className="correcao-panel__title" style={{ marginBottom: 4 }}>
+            Preview local PDF (itens manuais)
+          </div>
+          <p style={{ margin: 0, fontSize: 12, color: "#64748b", lineHeight: 1.4 }}>
+            Abre o <strong>PDF no navegador</strong> (preview local) com fotos, nome, marca, unidade e local —
+            e também baixa o arquivo para enviar à IA.
+          </p>
+        </div>
+        <select
+          value={exportCat}
+          disabled={exportBusy}
+          onChange={(e) => setExportCat(e.target.value)}
+          style={{ ...inp, minWidth: isMob ? "100%" : 160 }}
+          title="Categoria do pacote"
+        >
+          <option value="todas">Todas as categorias</option>
+          {CATEGORY_TREE.map((c) => (
+            <option key={c.name} value={c.name}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          disabled={exportBusy || busy}
+          onClick={exportarPacoteIA}
+          style={{
+            ...(bp || bs),
+            fontSize: 12,
+            background: exportBusy ? "#94a3b8" : "#7c3aed",
+            opacity: exportBusy || busy ? 0.7 : 1,
+            cursor: exportBusy ? "wait" : "pointer",
+          }}
+        >
+          {exportBusy ? "Gerando preview…" : "Preview PDF local"}
+        </button>
+      </div>
+
       <div className="correcao-toolbar">
         <select value={unidadeId} onChange={(e) => setUnidadeId(e.target.value)} style={{ ...inp, minWidth: isMob ? "100%" : 200 }}>
           <option value="todas">Todas as unidades</option>
@@ -661,13 +790,22 @@ export function CorrecaoNomesPage({
                     {somenteManuais
                       ? "Só itens manuais / sem tombo — nomes digitados na coleta."
                       : "Incluindo itens do tombo (catálogo)."}
-                    {agruparPorEspecie ? " Agrupado por espécie." : ` · página ${pageSafe}/${totalPages}`}
+                    {agruparPorEspecie ? " Agrupado por espécie." : ` · página ${pageSafe}/${totalPages}`} Clique no cartão ou na caixa para selecionar.
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <button type="button" className="gov-btn gov-btn--secondary" style={bs} onClick={selecionarTudo}>
-                    Selecionar tudo ({itensPendentes.length})
-                  </button>
+                  <label className="correcao-select-all">
+                    <input
+                      ref={selecionarTudoRef}
+                      type="checkbox"
+                      checked={todosFiltradosSelecionados}
+                      onChange={selecionarTudo}
+                    />
+                    <span>
+                      {todosFiltradosSelecionados ? "Desmarcar resultados" : "Selecionar todos os resultados"}
+                      <strong>{itensPendentes.length}</strong>
+                    </span>
+                  </label>
                   {!agruparPorEspecie && (
                     <button type="button" className="gov-btn gov-btn--secondary" style={bs} onClick={selecionarTodosVisiveis}>
                       Marcar página
@@ -676,6 +814,53 @@ export function CorrecaoNomesPage({
                   <button type="button" className="gov-btn gov-btn--ghost" style={bs} onClick={limparSelecao}>Limpar</button>
                 </div>
               </div>
+              {totalSelecionados > 0 && (
+                <div className="correcao-selection-summary" role="status">
+                  <strong>{totalSelecionados} item(ns) selecionado(s)</strong>
+                  <span>Digite um nome no painel “Nome e espécie” e aplique somente aos selecionados.</span>
+                </div>
+              )}
+              {isMob && totalSelecionados > 0 && (
+                <div className="correcao-mobile-bulk-editor">
+                  <label className="correcao-label">Novo nome para os selecionados</label>
+                  <TInput
+                    key={`nome-mobile-${nomeInputKey}`}
+                    initial={nomePersonalizado}
+                    onVal={setNomePersonalizado}
+                    placeholder="Ex.: Cadeira de plástico sem braço"
+                    style={{ ...inp, width: "100%", marginBottom: 10 }}
+                  />
+                  <label className="correcao-label">Espécie (opcional)</label>
+                  <TInput
+                    key={`esp-mobile-${nomeInputKey}-${especieIa}`}
+                    initial={especieIa}
+                    onVal={setEspecieIa}
+                    suggestions={especies}
+                    placeholder="Deixe vazio para manter a espécie atual"
+                    style={{ ...inp, width: "100%", marginBottom: 10 }}
+                  />
+                  <div className="correcao-mobile-bulk-editor__actions">
+                    <button
+                      type="button"
+                      className="gov-btn gov-btn--secondary"
+                      style={bs}
+                      disabled={busy || iaBusy}
+                      onClick={() => sugerirComIa(selecionadosValidos)}
+                    >
+                      {iaBusy ? "Analisando…" : "Sugerir com IA"}
+                    </button>
+                    <button
+                      type="button"
+                      className="gov-btn gov-btn--primary"
+                      style={bs}
+                      disabled={busy || !nomeAplicar}
+                      onClick={aplicarNomeDigitado}
+                    >
+                      Aplicar em {totalSelecionados}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {agruparPorEspecie && gruposPendentes.length > 0 && (
@@ -717,7 +902,7 @@ export function CorrecaoNomesPage({
                               Só esta
                             </button>
                             <button type="button" className="gov-btn gov-btn--secondary" style={bs} onClick={() => selecionarEspecie(grupo.members)}>
-                              Selecionar
+                              {grupo.members.every((item) => selecionados.has(item.id)) ? "Desmarcar" : "Selecionar todos"}
                             </button>
                           </div>
                         </header>
@@ -746,8 +931,8 @@ export function CorrecaoNomesPage({
               type="button"
               className="gov-btn gov-btn--primary correcao-ia-btn"
               style={{ ...bs, width: "100%", marginBottom: 12 }}
-              disabled={busy || iaBusy || !selecionados.size}
-              onClick={() => sugerirComIa([...selecionados])}
+              disabled={busy || iaBusy || !totalSelecionados}
+              onClick={() => sugerirComIa(selecionadosValidos)}
               title={geminiOk ? "Analisa a foto: nome + espécie" : "Falta VITE_GEMINI_API_KEY na Vercel"}
             >
               {iaBusy ? "Analisando foto…" : "Analisar com IA"}
@@ -775,7 +960,7 @@ export function CorrecaoNomesPage({
               style={{ ...inp, width: "100%", marginBottom: 10 }}
             />
             <p style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>
-              {selecionados.size} item(ns) selecionado(s)
+              {totalSelecionados} item(ns) selecionado(s)
             </p>
             {nomeAplicar && labelPreview && (
               <NomeDiff antes={labelPreview} depois={nomeAplicar} />
@@ -783,20 +968,23 @@ export function CorrecaoNomesPage({
             {especieAplicar && (
               <div className="correcao-especie">Espécie: <strong>{especieAplicar}</strong></div>
             )}
+            {!especieAplicar && totalSelecionados > 0 && (
+              <div className="correcao-especie correcao-especie--keep">A espécie atual de cada item será mantida.</div>
+            )}
             <button
               type="button"
               className="gov-btn gov-btn--primary"
               style={{ ...bs, width: "100%", marginTop: 12 }}
-              disabled={busy || !selecionados.size || !nomeAplicar}
+              disabled={busy || !totalSelecionados || !nomeAplicar}
               onClick={aplicarNomeDigitado}
             >
-              Aplicar nome e espécie ({selecionados.size || "…"})
+              Aplicar nome{especieAplicar ? " e espécie" : ""} ({totalSelecionados || "…"})
             </button>
             <button
               type="button"
               className="gov-btn gov-btn--secondary"
               style={{ ...bs, width: "100%", marginTop: 8 }}
-              disabled={busy || !selecionados.size}
+              disabled={busy || !totalSelecionados}
               onClick={aplicarSelecionados}
             >
               Padronizar grafia automaticamente
@@ -931,15 +1119,15 @@ export function CorrecaoNomesPage({
         </div>
       )}
 
-      {isMob && modo === "revisar" && selecionados.size > 0 && (
+      {isMob && modo === "revisar" && totalSelecionados > 0 && (
         <div className="correcao-floating-bar">
-          <span className="correcao-floating-bar__info">{selecionados.size} selecionado(s)</span>
+          <span className="correcao-floating-bar__info">{totalSelecionados} selecionado(s)</span>
           <button
             type="button"
             className="gov-btn gov-btn--secondary"
             style={bs}
             disabled={busy || iaBusy}
-            onClick={() => sugerirComIa([...selecionados])}
+            onClick={() => sugerirComIa(selecionadosValidos)}
           >
             {iaBusy ? "…" : "IA"}
           </button>

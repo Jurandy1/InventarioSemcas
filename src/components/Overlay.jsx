@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { getDisplayPhotoUrl } from "../services/storage.js";
 
-export function Overlay({ children, onClose, isMobile, suppressBackdropMs = 0 }) {
+export function Overlay({ children, onClose, isMobile, suppressBackdropMs = 0, panelStyle }) {
   const mountedAt = useRef(Date.now());
 
   useEffect(() => {
@@ -22,6 +22,7 @@ export function Overlay({ children, onClose, isMobile, suppressBackdropMs = 0 })
         onClick={(e) => e.stopPropagation()}
         style={{
           paddingBottom: isMobile ? "calc(24px + env(safe-area-inset-bottom, 0px))" : 24,
+          ...panelStyle,
         }}
       >
         {children}

@@ -1,16 +1,38 @@
 export const EMPTY_SUGESTOES = { descricoes: [], especies: [], marcas: [], fornecedores: [] };
 
+/** UUID estável por item (com ou sem tombo) — para updates futuros e exports. */
+export function newInternalId() {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {}
+  return `iid_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Lê a ID interna do item/inventário (campo próprio ou extras). */
+export function getItemIdInterno(item, foundEntry) {
+  return (
+    foundEntry?.idInterno ||
+    item?.idInterno ||
+    foundEntry?.extras?.idInterno ||
+    item?.extras?.idInterno ||
+    ""
+  );
+}
+
 export function getItemCode(item) {
   return item?.patrimonioLabel || item?.id || "—";
 }
 
 export function buildManualPatrimonio(rawValue) {
   const raw = String(rawValue || "").trim();
-  if (!raw) return { id: `MAN_${Date.now()}`, patrimonioLabel: null, tomboRef: null };
+  const idInterno = newInternalId();
+  if (!raw) return { id: `MAN_${Date.now()}`, patrimonioLabel: null, tomboRef: null, idInterno };
 
   const upper = raw.toUpperCase();
   if (upper === "S/T" || upper === "ST" || upper === "SEM TOMBAMENTO") {
-    return { id: `ST_${Date.now()}`, patrimonioLabel: "S/T", tomboRef: null };
+    return { id: `ST_${Date.now()}`, patrimonioLabel: "S/T", tomboRef: null, idInterno };
   }
 
   const rand = Math.random().toString(36).slice(2, 6);
@@ -18,6 +40,7 @@ export function buildManualPatrimonio(rawValue) {
     id: `MAN_${Date.now()}_${rand}`,
     patrimonioLabel: raw,
     tomboRef: raw,
+    idInterno,
   };
 }
 
