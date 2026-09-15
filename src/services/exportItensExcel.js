@@ -69,6 +69,20 @@ export const DEFAULT_ITEM_EXPORT_COLUMNS = [
   "estado",
 ];
 
+/** Sempre vão no Excel, mesmo se o usuário desmarcar outras colunas. */
+export const REQUIRED_ITEM_EXPORT_COLUMNS = ["idInterno", "tipoRegistro"];
+
+function resolveExportColumns(columnKeys) {
+  const requested = Array.isArray(columnKeys) ? columnKeys.filter(Boolean) : [];
+  const orderedKeys = [
+    ...REQUIRED_ITEM_EXPORT_COLUMNS,
+    ...requested.filter((key) => !REQUIRED_ITEM_EXPORT_COLUMNS.includes(key)),
+  ];
+  return orderedKeys
+    .map((key) => ITEM_EXPORT_COLUMNS.find((column) => column.key === key))
+    .filter(Boolean);
+}
+
 function buildNameMap(rows) {
   const map = new Map();
   for (const row of rows || []) {
@@ -218,9 +232,7 @@ function safeSheetName(rawName, usedNames) {
 }
 
 export async function gerarPlanilhaItens({ rows, columnKeys, separarPorCategoria = false }) {
-  const columns = columnKeys
-    .map((key) => ITEM_EXPORT_COLUMNS.find((column) => column.key === key))
-    .filter(Boolean);
+  const columns = resolveExportColumns(columnKeys);
   if (!rows?.length) throw new Error("Selecione pelo menos um item.");
   if (!columns.length) throw new Error("Selecione pelo menos uma coluna.");
 

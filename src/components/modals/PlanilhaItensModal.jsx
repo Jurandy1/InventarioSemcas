@@ -5,6 +5,7 @@ import {
   DEFAULT_ITEM_EXPORT_COLUMNS,
   gerarPlanilhaItens,
   ITEM_EXPORT_COLUMNS,
+  REQUIRED_ITEM_EXPORT_COLUMNS,
 } from "../../services/exportItensExcel.js";
 
 function normalizeSearch(value) {
@@ -38,6 +39,20 @@ export function PlanilhaItensModal({
   const [selectedColumns, setSelectedColumns] = useState(() => new Set(DEFAULT_ITEM_EXPORT_COLUMNS));
   const [separarPorCategoria, setSepararPorCategoria] = useState(true);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setSelectedColumns((current) => {
+      const next = new Set(current);
+      let changed = false;
+      for (const key of REQUIRED_ITEM_EXPORT_COLUMNS) {
+        if (!next.has(key)) {
+          next.add(key);
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, []);
 
   const eligibleRows = useMemo(
     () => somenteEncontrados ? rows.filter((row) => row.statusInventario === "Inventariado") : rows,
@@ -121,7 +136,14 @@ export function PlanilhaItensModal({
     });
   };
 
+  const selectPreset = (keys) => {
+    const next = new Set(REQUIRED_ITEM_EXPORT_COLUMNS);
+    for (const key of keys || []) next.add(key);
+    setSelectedColumns(next);
+  };
+
   const toggleColumn = (key) => {
+    if (REQUIRED_ITEM_EXPORT_COLUMNS.includes(key)) return;
     setSelectedColumns((current) => {
       const next = new Set(current);
       if (next.has(key)) next.delete(key);
@@ -129,8 +151,6 @@ export function PlanilhaItensModal({
       return next;
     });
   };
-
-  const selectPreset = (keys) => setSelectedColumns(new Set(keys));
 
   const exportFile = async () => {
     const selectedRows = candidateRows.filter((row) => selectedItems.has(row._selectionKey));
@@ -313,7 +333,7 @@ export function PlanilhaItensModal({
           <>
             <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
               <button type="button" disabled={busy} onClick={() => selectPreset(["descricao"])} style={{ ...bs, padding: "7px 12px", fontSize: 12 }}>
-                Somente descrição
+                Somente descrição (+ IDs)
               </button>
               <button type="button" disabled={busy} onClick={() => selectPreset(DEFAULT_ITEM_EXPORT_COLUMNS)} style={{ ...bs, padding: "7px 12px", fontSize: 12 }}>
                 Campos principais
@@ -322,9 +342,13 @@ export function PlanilhaItensModal({
                 Todos os campos
               </button>
               <button type="button" disabled={busy} onClick={() => selectPreset([])} style={{ ...bs, padding: "7px 12px", fontSize: 12 }}>
-                Limpar
+                Só IDs obrigatórios
               </button>
             </div>
+
+            <p style={{ margin: "0 0 10px", fontSize: 12, color: "#1e40af", fontWeight: 600 }}>
+              Cabeçalhos obrigatórios: ID interno e Tipo de registro (sempre saem na planilha).
+            </p>
 
             <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", marginBottom: 10, borderRadius: 8, background: "#ecfdf5", color: "#166534", fontSize: 12, fontWeight: 700, cursor: busy ? "default" : "pointer" }}>
               <input type="checkbox" checked={separarPorCategoria} disabled={busy} onChange={(event) => setSepararPorCategoria(event.target.checked)} />
@@ -337,11 +361,12 @@ export function PlanilhaItensModal({
                   <h3 style={{ margin: "0 0 7px", fontSize: 12, color: "#1351B4", textTransform: "uppercase", letterSpacing: ".04em" }}>{group}</h3>
                   <div style={{ display: "grid", gridTemplateColumns: isMob ? "1fr" : "repeat(2, minmax(0, 1fr))", gap: 6 }}>
                     {columns.map((column) => {
-                      const checked = selectedColumns.has(column.key);
+                      const required = REQUIRED_ITEM_EXPORT_COLUMNS.includes(column.key);
+                      const checked = required || selectedColumns.has(column.key);
                       return (
-                        <label key={column.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", borderRadius: 8, border: `1px solid ${checked ? "#93c5fd" : "#e2e8f0"}`, background: checked ? "#eff6ff" : "#fff", color: "#1e293b", fontSize: 12, fontWeight: checked ? 700 : 500, cursor: busy ? "default" : "pointer" }}>
-                          <input type="checkbox" checked={checked} disabled={busy} onChange={() => toggleColumn(column.key)} />
-                          {column.label}
+                        <label key={column.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 9px", borderRadius: 8, border: `1px solid ${checked ? "#93c5fd" : "#e2e8f0"}`, background: checked ? "#eff6ff" : "#fff", color: "#1e293b", fontSize: 12, fontWeight: checked ? 700 : 500, cursor: busy || required ? "default" : "pointer", opacity: required ? 0.95 : 1 }}>
+                          <input type="checkbox" checked={checked} disabled={busy || required} onChange={() => toggleColumn(column.key)} />
+                          {column.label}{required ? " *" : ""}
                         </label>
                       );
                     })}

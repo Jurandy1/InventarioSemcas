@@ -194,7 +194,14 @@ export function mergeFoundRecords(prev = [], incoming = [], options = {}) {
     }
     const oldTs = old.ultimaAtualizacao ? new Date(old.ultimaAtualizacao).getTime() : 0;
     const newTs = n.ultimaAtualizacao ? new Date(n.ultimaAtualizacao).getTime() : 0;
-    if (newTs >= oldTs) mergedMap.set(id, n);
+    const winner = newTs >= oldTs ? n : old;
+    const loser = newTs >= oldTs ? old : n;
+    // Backfill de idInterno/tipoRegistro não muda ultimaAtualizacao — preserva do lado que tiver.
+    mergedMap.set(id, {
+      ...winner,
+      idInterno: winner.idInterno || loser.idInterno || winner.extras?.idInterno || loser.extras?.idInterno,
+      tipoRegistro: winner.tipoRegistro || loser.tipoRegistro || winner.extras?.tipoRegistro || loser.extras?.tipoRegistro,
+    });
   }
 
   if (keepIds?.size) {

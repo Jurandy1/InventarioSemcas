@@ -6,6 +6,7 @@ import { createVisibilityAwarePoller, isLikelySlowDevice, isPageHidden } from ".
 import { getCategoryGroup } from "../constants/categories.js";
 import { fetchLocaisForUnits } from "./locaisLoad.js";
 import { getItemIdInterno, getTipoRegistroItem } from "../app/helpers/appHelpers.js";
+import { getFoundEntry, normalizePatrimonioId } from "../utils/patrimonioId.js";
 
 import { get, set } from "idb-keyval";
 
@@ -1096,6 +1097,16 @@ export async function gerarRelatorioExcel(unidadeId, unidades, found) {
     const unidade = unidades.find((u) => u.id === unidadeId);
     if (!unidade) throw new Error("Unidade não encontrada");
 
+    const foundList = Array.isArray(found) ? found : [];
+    const foundMap = {};
+    for (const f of foundList) {
+      const rawId = f?.patrimonioId || f?._id;
+      if (!rawId) continue;
+      foundMap[String(rawId)] = f;
+      const n = normalizePatrimonioId(rawId);
+      if (n) foundMap[n] = f;
+    }
+
     const worksheetData = [
       ["RELATORIO DE INVENTARIO"],
       [`Unidade: ${unidade.nome}`],
@@ -1105,7 +1116,7 @@ export async function gerarRelatorioExcel(unidadeId, unidades, found) {
     ];
 
     for (const item of unidade.itens) {
-      const foundItem = found.find((f) => f.patrimonioId === item.id);
+      const foundItem = getFoundEntry(item.id, foundMap);
       worksheetData.push([
         getItemIdInterno(item, foundItem),
         getTipoRegistroItem(item, foundItem),

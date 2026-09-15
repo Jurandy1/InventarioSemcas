@@ -15,8 +15,12 @@ export function getItemIdInterno(item, foundEntry) {
   return (
     foundEntry?.idInterno ||
     item?.idInterno ||
+    foundEntry?.id_interno ||
+    item?.id_interno ||
     foundEntry?.extras?.idInterno ||
     item?.extras?.idInterno ||
+    foundEntry?.extras?.id_interno ||
+    item?.extras?.id_interno ||
     ""
   );
 }
