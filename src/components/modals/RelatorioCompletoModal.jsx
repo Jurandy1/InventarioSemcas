@@ -183,7 +183,8 @@ export function RelatorioCompletoModal({
             <p style={{ margin: "0 0 6px", fontWeight: 700, color: "#64748b" }}>Prévia (primeiros {previewRows.length})</p>
             {previewRows.map((r) => (
               <p key={`${r.unidadeId}_${r.itemId}`} style={{ margin: "0 0 4px", color: "#334155" }}>
-                {r.unidade} · {r.tombo} · {r.local || "Sem local"} · {String(r.descricao).slice(0, 30)} · {r.marca} · {r.fornecedor} · R$ {r.valorFmt} · {r.estado}
+                {r.unidade} · {r.tombo} · {r.tipoRegistro || "—"} · {r.local || "Sem local"} · {String(r.descricao).slice(0, 28)} · {r.marca} · R$ {r.valorFmt}
+                {r.idInterno ? ` · ${String(r.idInterno).slice(0, 8)}…` : ""}
               </p>
             ))}
             {rows.length > previewRows.length && (

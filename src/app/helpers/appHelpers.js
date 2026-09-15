@@ -21,6 +21,39 @@ export function getItemIdInterno(item, foundEntry) {
   );
 }
 
+/** Como o item entrou no inventário — importante para planilhas/atualizações. */
+export const TIPO_REGISTRO = {
+  ENCONTRADO: "Item encontrado",
+  MANUAL: "Manual",
+  VARIOS: "Vários iguais",
+};
+
+/**
+ * Classifica o registro: Item encontrado (tombo da planilha), Manual ou Vários iguais.
+ * Usa campo gravado quando existir; senão infere por flags/padrão de ID.
+ */
+export function getTipoRegistroItem(item, foundEntry) {
+  const stored =
+    foundEntry?.tipoRegistro ||
+    item?.tipoRegistro ||
+    foundEntry?.extras?.tipoRegistro ||
+    item?.extras?.tipoRegistro ||
+    "";
+  if (stored === TIPO_REGISTRO.ENCONTRADO || stored === TIPO_REGISTRO.MANUAL || stored === TIPO_REGISTRO.VARIOS) {
+    return stored;
+  }
+
+  const id = String(item?.id || foundEntry?.patrimonioId || foundEntry?._id || "");
+  const manual = Boolean(
+    foundEntry?.isManual || item?.isManual || /^(MAN_|ST_)/i.test(id)
+  );
+  if (!manual) return TIPO_REGISTRO.ENCONTRADO;
+
+  // qty>1 / multi: MAN_ts_rand_n  ou  ST_ts_rand_n  (índice no final)
+  if (/^(MAN|ST)_\d+_[a-z0-9]+_\d+/i.test(id)) return TIPO_REGISTRO.VARIOS;
+  return TIPO_REGISTRO.MANUAL;
+}
+
 export function getItemCode(item) {
   return item?.patrimonioLabel || item?.id || "—";
 }

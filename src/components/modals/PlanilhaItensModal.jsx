@@ -71,7 +71,10 @@ export function PlanilhaItensModal({
     const terms = q.split(/\s+/).filter(Boolean);
     return candidateRows.filter((row) => {
       const haystack = normalizeSearch([
+        row.idInterno,
+        row.tipoRegistro,
         row.patrimonio,
+        row.idRegistro,
         row.descricao,
         row.marca,
         row.unidadeCadastrada,
@@ -278,7 +281,7 @@ export function PlanilhaItensModal({
                 value={query}
                 disabled={busy}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Filtrar nº, descrição, marca, unidade, local…"
+                placeholder="Filtrar ID interno, tipo, nº, descrição…"
                 style={{ flex: 1, minWidth: 220, border: "1.5px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: 12 }}
               />
             </div>
@@ -293,6 +296,10 @@ export function PlanilhaItensModal({
                     <input type="checkbox" checked={checked} disabled={busy} onChange={() => toggleItem(row._selectionKey)} style={{ marginTop: 3 }} />
                     <span style={{ minWidth: 0 }}>
                       <strong style={{ display: "block", color: "#0f172a", fontSize: 12 }}>Nº {row.patrimonio || "—"} — {row.descricao || "Sem descrição"}</strong>
+                      <span style={{ display: "block", marginTop: 2, color: "#1351B4", fontSize: 11, fontWeight: 700 }}>
+                        {row.tipoRegistro || "—"}
+                        {row.idInterno ? ` · ${row.idInterno}` : ""}
+                      </span>
                       <span style={{ display: "block", marginTop: 2, color: "#475569", fontSize: 11, whiteSpace: "normal", overflowWrap: "anywhere" }}>
                         {row.marca ? `${row.marca} · ` : ""}{row.unidadeEncontrada || row.unidadeCadastrada || "Sem unidade"}{row.local ? ` · ${row.local}` : ""}
                       </span>

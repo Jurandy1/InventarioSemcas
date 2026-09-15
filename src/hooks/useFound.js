@@ -8,7 +8,7 @@ import { mergeFoundRecords } from "../utils/inventorySession.js";
 import { getFoundEntry, normalizePatrimonioId } from "../utils/patrimonioId.js";
 import { fetchInventarioAll, fetchInventarioForUnits, normalizeFoundRecord } from "../services/inventarioLoad.js";
 import { saveOfflinePhotos } from "../utils/offlineStore.js";
-import { getItemIdInterno, newInternalId } from "../app/helpers/appHelpers.js";
+import { getItemIdInterno, getTipoRegistroItem, newInternalId, TIPO_REGISTRO } from "../app/helpers/appHelpers.js";
 
 export function useFound({ showT, applyDescOverride } = {}) {
   const [found, setFound] = useState([]);
@@ -119,6 +119,14 @@ export function useFound({ showT, applyDescOverride } = {}) {
       const existing = currentFound.find((f) => normalizePatrimonioId(f.patrimonioId) === docId);
       const idInterno =
         extras?.idInterno || getItemIdInterno(null, existing) || newInternalId();
+      const tipoRegistro =
+        extras?.tipoRegistro ||
+        existing?.tipoRegistro ||
+        getTipoRegistroItem(
+          { id: docId, isManual: isManual || existing?.isManual },
+          existing
+        ) ||
+        (isManual ? TIPO_REGISTRO.MANUAL : TIPO_REGISTRO.ENCONTRADO);
       const entry = {
         patrimonioId: docId,
         unidadeId: entryUnidadeId,
@@ -140,6 +148,7 @@ export function useFound({ showT, applyDescOverride } = {}) {
         ...(isManual ? { isManual: true } : {}),
         ...extras,
         idInterno,
+        tipoRegistro,
       };
 
       if (existing) {

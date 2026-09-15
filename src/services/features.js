@@ -5,7 +5,7 @@ import { deleteOfflinePhotos, loadOfflinePhotos, saveOfflinePhotos } from "../ut
 import { createVisibilityAwarePoller, isLikelySlowDevice, isPageHidden } from "../utils/mobilePerf.js";
 import { getCategoryGroup } from "../constants/categories.js";
 import { fetchLocaisForUnits } from "./locaisLoad.js";
-import { getItemIdInterno } from "../app/helpers/appHelpers.js";
+import { getItemIdInterno, getTipoRegistroItem } from "../app/helpers/appHelpers.js";
 
 import { get, set } from "idb-keyval";
 
@@ -770,6 +770,7 @@ export function buildRelatorioCompletoRows({
     rows.push({
       itemId: item.id,
       idInterno: getItemIdInterno(item, f),
+      tipoRegistro: getTipoRegistroItem(item, f),
       unidadeId: item.unidadeId,
       unidade: cleanUnidadeRelatorio(unidadeFull),
       unidadeFull,
@@ -806,7 +807,7 @@ export async function gerarRelatorioCompletoExcel(rows, { tituloUnidades = "Toda
     [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
     [`Total de itens: ${enriched.length}`],
     [],
-    ["Unidade", "Tombo", "ID interno", "Local", "Descricao", "Marca", "Fornecedor", "NF", "Valor", "Estado"],
+    ["Unidade", "Tombo", "ID interno", "Tipo de registro", "Local", "Descricao", "Marca", "Fornecedor", "NF", "Valor", "Estado"],
   ];
 
   for (const row of enriched) {
@@ -814,6 +815,7 @@ export async function gerarRelatorioCompletoExcel(rows, { tituloUnidades = "Toda
       row.unidade,
       row.tombo,
       row.idInterno || "",
+      row.tipoRegistro || "",
       row.local,
       row.descricao,
       row.marca,
@@ -976,12 +978,14 @@ export async function gerarRelatorioCompletoPDF(rows, { comFoto = false, tituloU
         y + 18.5
       );
       doc.text(`NF: ${row.nf || "—"}  ·  Valor: R$ ${row.valorFmt}  ·  Estado: ${row.estado}`, margin + 3, y + 23);
-      if (row.idInterno) {
-        doc.setFontSize(7);
-        doc.setTextColor(100);
-        doc.text(`ID interno: ${String(row.idInterno).slice(0, 44)}`, margin + 3, y + 26.5);
-        doc.setTextColor(0);
-      }
+      doc.setFontSize(7);
+      doc.setTextColor(100);
+      doc.text(
+        `${row.tipoRegistro || "—"}${row.idInterno ? `  ·  ID: ${String(row.idInterno).slice(0, 36)}` : ""}`,
+        margin + 3,
+        y + 26.5
+      );
+      doc.setTextColor(0);
 
       const foto = row.fotoUrls[0];
       const imgY = y + 27;
@@ -1027,6 +1031,8 @@ export async function gerarRelatorioExcelCoord(itens, foundMap, unidadeNome = ""
       [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
       [],
       [
+        "ID interno",
+        "Tipo de registro",
         "N Patrimonio",
         "Descricao",
         "Especie",
@@ -1047,7 +1053,9 @@ export async function gerarRelatorioExcelCoord(itens, foundMap, unidadeNome = ""
       const f = foundMap[item.id];
       const ev = f?.registroInventariante;
       worksheetData.push([
-        item.id,
+        getItemIdInterno(item, f),
+        getTipoRegistroItem(item, f),
+        item.patrimonioLabel || item.id,
         item.descricao || "",
         item.especie || "",
         f ? "Localizado" : "Pendente",
@@ -1093,13 +1101,15 @@ export async function gerarRelatorioExcel(unidadeId, unidades, found) {
       [`Unidade: ${unidade.nome}`],
       [`Data: ${new Date().toLocaleDateString("pt-BR")}`],
       [],
-      ["N Patrimonio", "Descricao", "Especie", "Marca", "Fornecedor", "Valor", "Status", "Estado", "Observacoes"],
+      ["ID interno", "Tipo de registro", "N Patrimonio", "Descricao", "Especie", "Marca", "Fornecedor", "Valor", "Status", "Estado", "Observacoes"],
     ];
 
     for (const item of unidade.itens) {
       const foundItem = found.find((f) => f.patrimonioId === item.id);
       worksheetData.push([
-        item.id,
+        getItemIdInterno(item, foundItem),
+        getTipoRegistroItem(item, foundItem),
+        item.patrimonioLabel || item.id,
         item.descricao || "",
         item.especie || "",
         item.marca || "",

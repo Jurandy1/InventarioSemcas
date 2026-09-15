@@ -1,14 +1,17 @@
 import { getFoundEntry, isItemInventariado } from "../utils/patrimonioId.js";
 import { getCategoryGroup } from "../constants/categories.js";
+import { getItemIdInterno, getTipoRegistroItem } from "../app/helpers/appHelpers.js";
 
 export const ITEM_EXPORT_COLUMNS = [
+  { key: "idInterno", label: "ID interno", group: "Identificação", width: 38 },
+  { key: "tipoRegistro", label: "Tipo de registro", group: "Identificação", width: 18 },
   { key: "patrimonio", label: "Nº Patrimônio", group: "Identificação", width: 18 },
+  { key: "idRegistro", label: "ID do registro", group: "Identificação", width: 28 },
   { key: "descricao", label: "Descrição", group: "Identificação", width: 42 },
   { key: "especie", label: "Espécie", group: "Identificação", width: 26 },
   { key: "categoria", label: "Categoria", group: "Identificação", width: 24 },
   { key: "marca", label: "Marca", group: "Identificação", width: 22 },
   { key: "imei", label: "IMEI / Nº de série", group: "Identificação", width: 22 },
-  { key: "identificadorInterno", label: "Identificador interno", group: "Identificação", width: 22 },
 
   { key: "unidadeCadastrada", label: "Unidade cadastrada", group: "Localização", width: 42 },
   { key: "unidadeEncontrada", label: "Unidade encontrada", group: "Localização", width: 42 },
@@ -53,6 +56,8 @@ export const ITEM_EXPORT_COLUMNS = [
 ];
 
 export const DEFAULT_ITEM_EXPORT_COLUMNS = [
+  "idInterno",
+  "tipoRegistro",
   "patrimonio",
   "descricao",
   "marca",
@@ -109,15 +114,20 @@ export function buildItemExportRows({ itens = [], foundMap, foundSet, unidades =
 
     const especie = valueFrom(found, "especieEdit") || valueFrom(item, "especie");
 
+    const tipoRegistro = getTipoRegistroItem(item, found);
+    const idInterno = getItemIdInterno(item, found);
+
     return {
       _selectionKey: `${String(item?.unidadeId || "sem-unidade")}_${String(item?.id || index)}_${index}`,
+      idInterno: String(idInterno || ""),
+      tipoRegistro,
       patrimonio: String(valueFrom(item, "patrimonioLabel", "id") || ""),
+      idRegistro: String(valueFrom(item, "id") || valueFrom(found, "patrimonioId", "_id") || ""),
       descricao: valueFrom(found, "descricaoEdit") || valueFrom(item, "descricao", "especie"),
       especie,
       categoria: especie ? getCategoryGroup(especie) : "",
       marca: valueFrom(found, "marca") || valueFrom(item, "marca"),
       imei: valueFrom(found, "imei", "numeroSerie", "serial") || valueFrom(item, "imei", "numeroSerie", "serial"),
-      identificadorInterno: String(valueFrom(item, "id") || ""),
 
       unidadeCadastrada: unidadeNomeById.get(String(unidadeCadastradaId)) || valueFrom(item, "unidadeNome") || String(unidadeCadastradaId || ""),
       unidadeEncontrada: unidadeNomeById.get(String(unidadeEncontradaId)) || valueFrom(found, "unidadeNome") || valueFrom(item, "unidadeNome") || String(unidadeEncontradaId || ""),
@@ -141,7 +151,7 @@ export function buildItemExportRows({ itens = [], foundMap, foundSet, unidades =
       ultimaAtualizacao: valueFrom(found, "ultimaAtualizacao", "updatedAt"),
       quantidadeFotos: fotos.length,
       fotos: fotos.join(" | "),
-      inseridoManualmente: yesNo(Boolean(found?.isManual || item?.isManual)),
+      inseridoManualmente: yesNo(tipoRegistro !== "Item encontrado"),
       semTombo: yesNo(Boolean(found?.semTombo || item?.semTombo)),
       tomboReferencia: String(valueFrom(found, "tomboReferencia") || valueFrom(item, "tomboRef", "tomboReferencia") || ""),
       plaquetaAusente: yesNo(Boolean(found?.plaquetaAusente)),

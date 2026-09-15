@@ -13,7 +13,7 @@ import {
   isManualItem,
 } from "../utils/nomeCorrecao.js";
 import { getFoundEntry } from "../utils/patrimonioId.js";
-import { getItemIdInterno } from "../app/helpers/appHelpers.js";
+import { getItemIdInterno, getTipoRegistroItem } from "../app/helpers/appHelpers.js";
 import { fetchLocaisForUnits } from "./locaisLoad.js";
 import { loadJsPDF, photoSrcToJpegDataUrl } from "./features.js";
 
@@ -82,6 +82,7 @@ export function buildPacoteManuaisParaIARows({
     rows.push({
       id: String(item.id),
       idInterno: getItemIdInterno(item, f),
+      tipoRegistro: getTipoRegistroItem(item, f),
       nomeAtual: getItemLabel(item, foundMap) || "—",
       marca: getItemMarca(item, foundMap) || "—",
       especie,
@@ -172,7 +173,7 @@ async function gerarPdfManuaisIA(rows, { tituloFiltro, onProgress } = {}) {
   const photoH = 42;
   const photoW = 56;
   const maxFotos = 2;
-  const textBlockH = 32;
+  const textBlockH = 34;
   const blockH = textBlockH + photoH + 6;
 
   for (let i = 0; i < rows.length; i++) {
@@ -199,19 +200,21 @@ async function gerarPdfManuaisIA(rows, { tituloFiltro, onProgress } = {}) {
     doc.setTextColor(100);
     doc.text(`ID interno: ${String(row.idInterno || "—").slice(0, 44)}`, margin + 3, y + 8);
     doc.setTextColor(0);
+    doc.setFontSize(8);
+    doc.text(`Tipo: ${String(row.tipoRegistro || "Manual").slice(0, 24)}`, margin + 3, y + 11.5);
 
     doc.setFontSize(9);
     doc.setFont(undefined, "bold");
     const nomeLines = doc.splitTextToSize(`Nome: ${String(row.nomeAtual).slice(0, 120)}`, usableW - 6);
-    doc.text(nomeLines.slice(0, 1), margin + 3, y + 12.5);
+    doc.text(nomeLines.slice(0, 1), margin + 3, y + 16);
     doc.setFont(undefined, "normal");
     doc.setFontSize(8);
-    doc.text(`Marca: ${String(row.marca).slice(0, 40)}  ·  Especie: ${String(row.especie).slice(0, 24)}`, margin + 3, y + 17);
-    doc.text(`Unidade: ${String(row.unidade).slice(0, 48)}`, margin + 3, y + 21);
+    doc.text(`Marca: ${String(row.marca).slice(0, 40)}  ·  Especie: ${String(row.especie).slice(0, 24)}`, margin + 3, y + 20.5);
+    doc.text(`Unidade: ${String(row.unidade).slice(0, 48)}`, margin + 3, y + 24.5);
     doc.text(
       `Local: ${String(row.local || "Sem local").slice(0, 40)}${row.cor ? `  ·  Cor: ${String(row.cor).slice(0, 16)}` : ""}  ·  Estado: ${String(row.estado).slice(0, 12)}`,
       margin + 3,
-      y + 25
+      y + 28.5
     );
 
     const imgY = y + textBlockH;

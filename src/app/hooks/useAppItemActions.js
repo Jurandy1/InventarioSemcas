@@ -12,7 +12,7 @@ import { resolveUnitForItem } from "../../utils/inventorySession.js";
 import { getTeamMemberEditingItem } from "../../utils/inventoryPresence.js";
 import { rankTombosForAjuste } from "../../utils/ajusteMatch.js";
 import { buildFinalizacaoStats, criarFinalizacao, atualizarStatsFinalizacao } from "../../services/finalizacoes.js";
-import { buildManualPatrimonio, newInternalId } from "../helpers/appHelpers.js";
+import { buildManualPatrimonio, newInternalId, TIPO_REGISTRO } from "../helpers/appHelpers.js";
 import { isManualItem } from "../../utils/nomeCorrecao.js";
 import { clearUiResume } from "../../utils/uiResume.js";
 
@@ -323,6 +323,7 @@ export function useAppItemActions({ state, data }) {
       ...baseItem,
       id,
       idInterno: id === manualPatrimonio.id ? manualPatrimonio.idInterno || newInternalId() : newInternalId(),
+      tipoRegistro: qty > 1 ? TIPO_REGISTRO.VARIOS : TIPO_REGISTRO.MANUAL,
     }));
     const manLocalId = getField("manLocal") || sessionLocais[0]?.id || "";
     const manEstado = getField("manEstado") || "Bom";
@@ -351,6 +352,7 @@ export function useAppItemActions({ state, data }) {
         origem: manOrigem,
         ...doacaoExtras,
         idInterno: it.idInterno || newInternalId(),
+        tipoRegistro: it.tipoRegistro || (qty > 1 ? TIPO_REGISTRO.VARIOS : TIPO_REGISTRO.MANUAL),
         fotoUrls: urls,
         data: now.toLocaleDateString("pt-BR"),
         hora: now.toLocaleTimeString("pt-BR"),
@@ -387,7 +389,7 @@ export function useAppItemActions({ state, data }) {
           obs: desc.trim(),
           marca: manMarca,
           origem: manOrigem,
-          extras: { ...doacaoExtras, idInterno: it.idInterno },
+          extras: { ...doacaoExtras, idInterno: it.idInterno, tipoRegistro: it.tipoRegistro },
           fotoUrls: [],
           unidadeAtiva,
           logado: auth.logado,
@@ -432,7 +434,7 @@ export function useAppItemActions({ state, data }) {
         obs: desc.trim(),
         marca: getField("manMarca"),
         origem: getField("manOrigem") || "Próprio",
-        extras: { ...doacaoExtras, idInterno: it.idInterno },
+        extras: { ...doacaoExtras, idInterno: it.idInterno, tipoRegistro: it.tipoRegistro },
         fotoUrls,
         unidadeAtiva,
         logado: auth.logado,
@@ -475,6 +477,7 @@ export function useAppItemActions({ state, data }) {
     const item = {
       id,
       idInterno,
+      tipoRegistro: TIPO_REGISTRO.MANUAL,
       patrimonioLabel: "S/T",
       data: new Date().toLocaleDateString("pt-BR"),
       especie: inferEspecieFromDesc(desc, sugestoes?.especies),
@@ -496,6 +499,7 @@ export function useAppItemActions({ state, data }) {
     const stCor = String(getField("stCor") || "").trim();
     const stExtras = {
       idInterno,
+      tipoRegistro: TIPO_REGISTRO.MANUAL,
       semTombo: true,
       identificadoPorFoto: true,
       descricaoEdit: desc,
@@ -662,6 +666,7 @@ export function useAppItemActions({ state, data }) {
       const item = {
         id: itemId,
         idInterno,
+        tipoRegistro: TIPO_REGISTRO.VARIOS,
         patrimonioLabel,
         ...(tombamento ? { tomboRef: tombamento } : {}),
         data: new Date().toLocaleDateString("pt-BR"),
@@ -681,6 +686,7 @@ export function useAppItemActions({ state, data }) {
 
       const extras = {
         idInterno,
+        tipoRegistro: TIPO_REGISTRO.VARIOS,
         ...(patrimonioLabel === "S/T"
           ? { semTombo: true, identificadoPorFoto: rowPhotos.length > 0, descricaoEdit: desc }
           : { descricaoEdit: desc }),
@@ -1131,6 +1137,7 @@ export function useAppItemActions({ state, data }) {
       const manualItem = {
         id: newId,
         idInterno,
+        tipoRegistro: TIPO_REGISTRO.MANUAL,
         patrimonioLabel: "S/T",
         data: new Date().toLocaleDateString("pt-BR"),
         especie: f.especieEdit || item.especie || "",
@@ -1157,6 +1164,7 @@ export function useAppItemActions({ state, data }) {
         identificadoPorFoto: temFoto,
         descricaoEdit: desc,
         idInterno,
+        tipoRegistro: TIPO_REGISTRO.MANUAL,
         corrigidoDeTombo: item.id,
         corrigidoDeLabel: label,
         ultimaAtualizacao: new Date().toISOString(),
