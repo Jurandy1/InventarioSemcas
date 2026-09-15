@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Badge } from "../components/Badge.jsx";
 import { TInput } from "../components/FormFields.jsx";
 import { ESTADOS, EC } from "../constants/inventory.js";
-import { CATEGORY_TREE, getCategoryGroup, getSubcategoryLabel } from "../constants/categories.js";
+import { CATEGORY_TREE, getItemCategory, getItemSubcategory } from "../constants/categories.js";
 import { SmartImg } from "../components/SmartImg.jsx";
 import { RelatorioFotosModal } from "../components/modals/RelatorioFotosModal.jsx";
 import { PlanilhaItensModal } from "../components/modals/PlanilhaItensModal.jsx";
@@ -22,11 +22,6 @@ function stripSearch(s) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
-}
-
-function getItemEspecieDisplay(item, foundMap) {
-  const f = getFoundEntry(item?.id, foundMap);
-  return f?.especieEdit || item?.especie || "";
 }
 
 function itemMatchesQuery(item, foundMap, rawQuery) {
@@ -49,6 +44,9 @@ function itemMatchesQuery(item, foundMap, rawQuery) {
       f?.unidadeNome,
       f?.permutaDesc,
       f?.permutaMarca,
+      f?.categoria,
+      f?.subcategoria,
+      f?.idInterno,
     ]
       .filter(Boolean)
       .join(" ")
@@ -102,7 +100,8 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
   const catCounts = React.useMemo(() => {
     const m = { Todas: todosItens.length };
     for (const i of todosItens) {
-      const g = getCategoryGroup(getItemEspecieDisplay(i, foundMap));
+      const f = getFoundEntry(i.id, foundMap);
+      const g = getItemCategory(i, f);
       m[g] = (m[g] || 0) + 1;
     }
     return m;
@@ -112,9 +111,9 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
     if (localCat === "Todas") return {};
     const m = {};
     for (const i of todosItens) {
-      const esp = getItemEspecieDisplay(i, foundMap);
-      if (getCategoryGroup(esp) !== localCat) continue;
-      const s = getSubcategoryLabel(esp, localCat) || "Outros";
+      const f = getFoundEntry(i.id, foundMap);
+      if (getItemCategory(i, f) !== localCat) continue;
+      const s = getItemSubcategory(i, f, localCat) || "Outros";
       m[s] = (m[s] || 0) + 1;
     }
     return m;
@@ -125,14 +124,13 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
   const filtered = React.useMemo(() => {
     return todosItens.filter((i) => {
       if (hideIncorporados && (i.tipoEntrada || "Próprio") === "Incorporado") return false;
-      const esp = getItemEspecieDisplay(i, foundMap);
+      const f = getFoundEntry(i.id, foundMap);
       if (localCat !== "Todas") {
-        if (getCategoryGroup(esp) !== localCat) return false;
+        if (getItemCategory(i, f) !== localCat) return false;
         if (localSub !== null) {
-          if (getSubcategoryLabel(esp, localCat) !== localSub) return false;
+          if (getItemSubcategory(i, f, localCat) !== localSub) return false;
         }
       }
-      const f = getFoundEntry(i.id, foundMap);
       if (localEst !== "Todos" && f?.estado !== localEst) return false;
       if (localUnit !== "Todas" && i.unidadeId !== localUnit) return false;
       if (localStat === "Inventariados" && !isItemInventariado(i.id, foundSet)) return false;
@@ -141,6 +139,15 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
       return true;
     });
   }, [todosItens, foundMap, foundSet, localCat, localSub, localEst, localUnit, localStat, defQ, hideIncorporados]);
+
+  const activeSubLabels = React.useMemo(() => {
+    if (localCat === "Todas") return [];
+    const treeOrder = (activeCatDef?.subs || []).map((s) => s.label).filter((label) => subCounts[label] > 0);
+    const extras = Object.keys(subCounts)
+      .filter((label) => subCounts[label] > 0 && !treeOrder.includes(label))
+      .sort((a, b) => a.localeCompare(b, "pt-BR"));
+    return [...treeOrder, ...extras];
+  }, [localCat, activeCatDef, subCounts]);
 
   const selectCat = (name) => {
     setLocalCat(name);
@@ -254,8 +261,8 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
     const f = getFoundEntry(item.id, foundMap);
     const foto = f?.fotoUrls?.[0];
     const isF = !!f;
-    const esp = getItemEspecieDisplay(item, foundMap);
-    const catDef = CATEGORY_TREE.find((c) => getCategoryGroup(esp) === c.name) || CATEGORY_TREE[CATEGORY_TREE.length - 1];
+    const catName = getItemCategory(item, f);
+    const catDef = CATEGORY_TREE.find((c) => c.name === catName) || CATEGORY_TREE[CATEGORY_TREE.length - 1];
     const displayDesc = getDisplayDesc(item, f);
     const isPermuta = f?.situacao === "Permuta";
     const unidadeCadastrada = resolveUnidadeNome(item.unidadeId, item.unidadeNome);
@@ -510,13 +517,11 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
           {CATEGORY_TREE.map((cat) => (
             <React.Fragment key={cat.name}>
               <SidebarCatBtn cat={cat} />
-              {localCat === cat.name && cat.subs && (
+              {localCat === cat.name && (
                 <div style={{ marginBottom: 4 }}>
-                  {cat.subs
-                    .filter((s) => subCounts[s.label] > 0)
-                    .map((s) => (
-                      <SidebarSubBtn key={s.label} sub={s.label} />
-                    ))}
+                  {activeSubLabels.map((label) => (
+                    <SidebarSubBtn key={label} sub={label} />
+                  ))}
                 </div>
               )}
             </React.Fragment>
@@ -618,9 +623,9 @@ export function ItensPage({ todosItens, unidades, foundMap, foundSet, locais = [
         {isMob && (
           <>
             <MobileChips items={[{ name: "Todas" }, ...CATEGORY_TREE]} selected={localCat} onSelect={(name) => selectCat(name || "Todas")} />
-            {localCat !== "Todas" && activeCatDef && (
+            {localCat !== "Todas" && activeSubLabels.length > 0 && (
               <MobileChips
-                items={activeCatDef.subs.filter((s) => subCounts[s.label] > 0).map((s) => s.label)}
+                items={activeSubLabels}
                 selected={localSub}
                 onSelect={(sub) => selectSub(sub)}
                 size={11}

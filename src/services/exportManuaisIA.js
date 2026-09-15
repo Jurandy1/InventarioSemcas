@@ -3,7 +3,7 @@
  * em PDF com fotos embutidas — pronto para uma IA analisar.
  */
 
-import { getCategoryGroup } from "../constants/categories.js";
+import { getItemCategory } from "../constants/categories.js";
 import {
   expandItensComInventariadosOrfaos,
   getItemEspecie,
@@ -73,7 +73,7 @@ export function buildPacoteManuaisParaIARows({
     if (somenteComFoto && fotos.length === 0) continue;
 
     const especie = getItemEspecie(item, foundMap);
-    const cat = getCategoryGroup(especie);
+    const cat = getItemCategory(item, f);
     if (categoria && categoria !== "todas" && cat !== categoria) continue;
 
     const uid = f.unidadeId || item.unidadeId || "";

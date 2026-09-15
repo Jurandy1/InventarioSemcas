@@ -3,7 +3,7 @@ import { fetchPhotoBlob, isStorageOk, uploadPhotos } from "./storage.js";
 import { compressPhoto, compressPhotoArray } from "../utils/performance.js";
 import { deleteOfflinePhotos, loadOfflinePhotos, saveOfflinePhotos } from "../utils/offlineStore.js";
 import { createVisibilityAwarePoller, isLikelySlowDevice, isPageHidden } from "../utils/mobilePerf.js";
-import { getCategoryGroup } from "../constants/categories.js";
+import { getItemCategory } from "../constants/categories.js";
 import { fetchLocaisForUnits } from "./locaisLoad.js";
 import { getItemIdInterno, getTipoRegistroItem } from "../app/helpers/appHelpers.js";
 import { getFoundEntry, normalizePatrimonioId } from "../utils/patrimonioId.js";
@@ -494,7 +494,7 @@ export async function gerarRelatorioFotosCategorias({
     const f = foundMap[item.id];
     if (!f) continue;
     if (idSet && !idSet.has(String(item.id))) continue;
-    const cat = getCategoryGroup(f.especieEdit || item.especie);
+    const cat = getItemCategory(item, f);
     if (!idSet && catSet && !catSet.has(cat)) continue;
     const fotos = Array.isArray(f.fotoUrls) ? f.fotoUrls.filter(Boolean) : [];
     if (somenteComFoto && fotos.length === 0) continue;

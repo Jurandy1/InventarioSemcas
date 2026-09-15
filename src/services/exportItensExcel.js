@@ -1,5 +1,5 @@
 import { getFoundEntry, isItemInventariado } from "../utils/patrimonioId.js";
-import { getCategoryGroup } from "../constants/categories.js";
+import { getItemCategory, getItemSubcategory } from "../constants/categories.js";
 import { getItemIdInterno, getTipoRegistroItem } from "../app/helpers/appHelpers.js";
 
 export const ITEM_EXPORT_COLUMNS = [
@@ -9,7 +9,8 @@ export const ITEM_EXPORT_COLUMNS = [
   { key: "idRegistro", label: "ID do registro", group: "Identificação", width: 28 },
   { key: "descricao", label: "Descrição", group: "Identificação", width: 42 },
   { key: "especie", label: "Espécie", group: "Identificação", width: 26 },
-  { key: "categoria", label: "Categoria", group: "Identificação", width: 24 },
+  { key: "categoria", label: "Categoria", group: "Identificação", width: 28 },
+  { key: "subcategoria", label: "Subcategoria", group: "Identificação", width: 32 },
   { key: "marca", label: "Marca", group: "Identificação", width: 22 },
   { key: "imei", label: "IMEI / Nº de série", group: "Identificação", width: 22 },
 
@@ -60,8 +61,9 @@ export const DEFAULT_ITEM_EXPORT_COLUMNS = [
   "tipoRegistro",
   "patrimonio",
   "descricao",
-  "marca",
   "categoria",
+  "subcategoria",
+  "marca",
   "unidadeCadastrada",
   "unidadeEncontrada",
   "local",
@@ -130,6 +132,8 @@ export function buildItemExportRows({ itens = [], foundMap, foundSet, unidades =
 
     const tipoRegistro = getTipoRegistroItem(item, found);
     const idInterno = getItemIdInterno(item, found);
+    const categoria = getItemCategory(item, found);
+    const subcategoria = getItemSubcategory(item, found, categoria);
 
     return {
       _selectionKey: `${String(item?.unidadeId || "sem-unidade")}_${String(item?.id || index)}_${index}`,
@@ -139,7 +143,8 @@ export function buildItemExportRows({ itens = [], foundMap, foundSet, unidades =
       idRegistro: String(valueFrom(item, "id") || valueFrom(found, "patrimonioId", "_id") || ""),
       descricao: valueFrom(found, "descricaoEdit") || valueFrom(item, "descricao", "especie"),
       especie,
-      categoria: especie ? getCategoryGroup(especie) : "",
+      categoria,
+      subcategoria,
       marca: valueFrom(found, "marca") || valueFrom(item, "marca"),
       imei: valueFrom(found, "imei", "numeroSerie", "serial") || valueFrom(item, "imei", "numeroSerie", "serial"),
 

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Overlay } from "../Overlay.jsx";
 import { SmartImg } from "../SmartImg.jsx";
-import { CATEGORY_TREE, getCategoryGroup } from "../../constants/categories.js";
+import { CATEGORY_TREE, getItemCategory } from "../../constants/categories.js";
 import { gerarRelatorioFotosCategorias } from "../../services/features.js";
+import { getFoundEntry, isItemInventariado } from "../../utils/patrimonioId.js";
 
 function cleanUnidade(nome) {
   return String(nome || "").replace(/^\d+[\d.]*\s*-\s*/, "") || "—";
@@ -52,10 +53,10 @@ export function RelatorioFotosModal({
     const m = {};
     for (const c of CATEGORY_TREE) m[c.name] = { total: 0, comFoto: 0 };
     for (const item of todosItens || []) {
-      if (!foundSet?.has(item.id)) continue;
-      const f = foundMap?.[item.id];
+      if (!isItemInventariado(item.id, foundSet)) continue;
+      const f = getFoundEntry(item.id, foundMap);
       if (!f) continue;
-      const cat = getCategoryGroup(f.especieEdit || item.especie);
+      const cat = getItemCategory(item, f);
       if (!m[cat]) m[cat] = { total: 0, comFoto: 0 };
       m[cat].total += 1;
       if ((f.fotoUrls || []).length > 0) m[cat].comFoto += 1;
@@ -66,10 +67,10 @@ export function RelatorioFotosModal({
   const candidateRows = useMemo(() => {
     const rows = [];
     for (const item of todosItens || []) {
-      if (!foundSet?.has(item.id)) continue;
-      const f = foundMap?.[item.id];
+      if (!isItemInventariado(item.id, foundSet)) continue;
+      const f = getFoundEntry(item.id, foundMap);
       if (!f) continue;
-      const cat = getCategoryGroup(f.especieEdit || item.especie);
+      const cat = getItemCategory(item, f);
       if (!selectedCats.has(cat)) continue;
       const fotos = Array.isArray(f.fotoUrls) ? f.fotoUrls.filter(Boolean) : [];
       if (somenteComFoto && fotos.length === 0) continue;
